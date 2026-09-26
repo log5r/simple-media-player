@@ -340,7 +340,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
 
         let dragStart = rows[0].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let dragEnd = rows[4].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        dragStart.press(forDuration: 0.2, thenDragTo: dragEnd)
+        dragStart.click(forDuration: 0.2, thenDragTo: dragEnd)
 
         expectation(
             for: NSPredicate(format: "value == %@", "5"),
@@ -403,7 +403,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
 
         let dragStart = rows[0].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let dragEnd = rows[4].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        dragStart.press(forDuration: 0.2, thenDragTo: dragEnd)
+        dragStart.click(forDuration: 0.2, thenDragTo: dragEnd)
 
         expectation(
             for: NSPredicate(format: "value == %@", "5"),
@@ -416,7 +416,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
             withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
         )
         let clickWithPointerJitter = clickStart.withOffset(CGVector(dx: 2, dy: 1))
-        clickStart.press(forDuration: 0.1, thenDragTo: clickWithPointerJitter)
+        clickStart.click(forDuration: 0.1, thenDragTo: clickWithPointerJitter)
 
         expectation(
             for: NSPredicate(format: "value == %@", "4"),
@@ -456,7 +456,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
 
         let dragStart = rows[0].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let dragEnd = rows[4].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        dragStart.press(forDuration: 0.2, thenDragTo: dragEnd)
+        dragStart.click(forDuration: 0.2, thenDragTo: dragEnd)
 
         expectation(
             for: NSPredicate(format: "value == %@", "5"),
