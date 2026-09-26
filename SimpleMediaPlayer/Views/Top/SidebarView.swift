@@ -10,6 +10,9 @@ struct SidebarView: View {
     @State private var playlistToRename: Playlist?
     @State private var playlistToDelete: Playlist?
     @State private var nameDraft = ""
+    #if os(macOS)
+    @FocusState private var isSidebarFocused: Bool
+    #endif
 
     var body: some View {
         sidebarList
@@ -57,6 +60,13 @@ struct SidebarView: View {
         List(selection: $selection) {
             sidebarContent
         }
+        .focused($isSidebarFocused)
+        // List can select a row through its whitespace without moving keyboard focus.
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                isSidebarFocused = true
+            }
+        )
         #else
         List {
             sidebarContent
@@ -93,6 +103,7 @@ struct SidebarView: View {
     private func libraryRow(_ section: LibrarySection) -> some View {
         Label(section.title, systemImage: section.icon)
             .tag(SidebarSelection.library(section))
+            .accessibilityIdentifier("sidebarLibraryRow.\(section.rawValue)")
             .onTapGesture {
                 selection = .library(section)
             }
@@ -102,6 +113,7 @@ struct SidebarView: View {
         Label(playlist.name, systemImage: "music.note.list")
             .lineLimit(1)
             .tag(SidebarSelection.playlist(playlist.id))
+            .accessibilityIdentifier("sidebarPlaylistRow.\(playlist.id.uuidString)")
             .onTapGesture {
                 selection = .playlist(playlist.id)
             }
