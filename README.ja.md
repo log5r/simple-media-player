@@ -7,8 +7,9 @@
 
 ## 必要な環境
 
-- Xcode 26以降（Swift 6以降）
+- Xcode 27以降（Swift 6以降とMusic UnderstandingのSDKを含む）
 - Xcodeプロジェクトが対応するAppleプラットフォームのSDK
+- [Music Understanding](https://developer.apple.com/documentation/musicunderstanding)を使った音楽解析には、macOS 27以降、iOS 27以降、またはiPadOS 27以降が必要です。それより前のOSでは音楽解析を利用できません。
 
 ## ローカライズ
 

@@ -7,8 +7,9 @@ It supports importing audio and video files, browsing a local library, playlist 
 
 ## Requirements
 
-- Xcode 26+ (with Swift 6+)
+- Xcode 27+ (with Swift 6+ and the Music Understanding SDK)
 - Apple platform SDKs supported by the Xcode project
+- Music analysis using [Music Understanding](https://developer.apple.com/documentation/musicunderstanding) requires macOS 27+, iOS 27+, or iPadOS 27+. Music analysis is unavailable on earlier OS versions.
 
 ## Localization
 
