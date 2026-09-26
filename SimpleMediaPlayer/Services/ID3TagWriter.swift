@@ -301,6 +301,7 @@ enum ID3TagWriter {
     nonisolated static func readEmbeddedTag(_ data: Data) throws -> AudioTagReadResult? {
         guard let tag = try existingTag(in: data) else { return nil }
         var result = AudioTagReadResult()
+        var otherArtwork: Data?
         result.values = embeddedValues(in: tag)
         for frame in tag.frames {
             let payload = frame.payload
@@ -313,12 +314,17 @@ enum ID3TagWriter {
                     cursor = payload.index(after: terminator)
                 } else { continue }
                 guard cursor < payload.endIndex else { continue }
+                let pictureType = payload[cursor]
                 cursor = payload.index(after: cursor) // picture type
                 guard cursor < payload.endIndex,
                       let terminator = encodedStringTerminator(in: payload[cursor...], encodingByte: encoding)
                 else { continue }
                 let end = payload.index(terminator, offsetBy: encoding == 1 || encoding == 2 ? 2 : 1)
-                if end < payload.endIndex { result.artworkData = Data(payload[end...]) }
+                if end < payload.endIndex {
+                    let artwork = Data(payload[end...])
+                    if pictureType == 3 { result.artworkData = artwork }
+                    else if otherArtwork == nil { otherArtwork = artwork }
+                }
             } else if (frame.id == "USLT" || frame.id == "ULT"), result.lyrics == nil, payload.count >= 5 {
                 let encoding = payload[payload.startIndex]
                 let body = payload.dropFirst(4)
@@ -328,6 +334,7 @@ enum ID3TagWriter {
                 }
             }
         }
+        result.artworkData = result.artworkData ?? otherArtwork
         return result
     }
 

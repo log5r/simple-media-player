@@ -58,6 +58,29 @@ struct EmbeddedLyricsReaderTests {
         #expect(try await empty.read(from: temporaryURL(extension: "wav")) == nil)
     }
 
+    @Test func wavWithoutCustomLyricsFallsBackToAsset() async throws {
+        let source = Bundle.allBundles.compactMap { $0.url(forResource: "tag-test", withExtension: "wav") }.first
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appendingPathComponent("Fixtures/tag-test.wav")
+        let url = temporaryURL(extension: "wav")
+        try FileManager.default.copyItem(at: source, to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(AdditionalAudioMetadata.canWrite(to: url))
+        #expect(try AdditionalAudioMetadata.read(from: url).lyrics == nil)
+
+        let reader = EmbeddedLyricsReader(readAsset: { _ in "Asset lyrics" })
+        #expect(try await reader.read(from: url) == "Asset lyrics")
+        let failingAsset = EmbeddedLyricsReader(readAsset: { _ in throw ReaderFailure.assetFailure })
+        #expect(try await failingAsset.read(from: url) == nil)
+
+        try WAVMetadataWriter.write(
+            MediaMetadataEditDraft(title: "", artist: "", album: "", genre: "",
+                                   lyrics: "Embedded lyrics", editsTextMetadata: false, editsLyrics: true),
+            to: url
+        )
+        #expect(try await failingAsset.read(from: url) == "Embedded lyrics")
+    }
+
     @Test func cancellationBeforeReadingSkipsBothReaders() async throws {
         let reader = EmbeddedLyricsReader(
             readMP4: { _ in throw ReaderFailure.unexpectedMP4Read },

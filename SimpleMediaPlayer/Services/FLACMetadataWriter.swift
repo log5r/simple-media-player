@@ -40,15 +40,7 @@ nonisolated enum FLACMetadataWriter {
             let oldComment = try blocks.first(where: { $0.type == 4 }).map {
                 try XiphMetadata.parse(readPayload($0, source: source))
             } ?? XiphMetadata.Comment(vendor: Data("SimpleMediaPlayer".utf8), fields: [])
-            var comment = XiphMetadata.updating(oldComment, with: draft)
-            if draft.editsArtwork {
-                comment.fields.removeAll {
-                    guard let separator = $0.firstIndex(of: 61),
-                          let key = String(data: $0.prefix(upTo: separator), encoding: .ascii)?.uppercased()
-                    else { return false }
-                    return key == "METADATA_BLOCK_PICTURE" || key == "COVERART" || key == "COVERARTMIME"
-                }
-            }
+            let comment = XiphMetadata.updating(oldComment, with: draft)
             replacements.append((4, try XiphMetadata.encode(comment)))
             if draft.editsArtwork, let artwork = draft.artworkData {
                 replacements.append((6, try XiphMetadata.pictureBlock(artwork)))

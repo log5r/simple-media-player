@@ -36,16 +36,23 @@ nonisolated struct EmbeddedLyricsReader: Sendable {
                 if let lyrics = Self.nonempty(lyrics) { return lyrics }
             }
 
-            if AdditionalAudioMetadata.canWrite(to: url) {
+            let hasCustomReader = AdditionalAudioMetadata.canWrite(to: url)
+            if hasCustomReader {
                 let lyrics = try AdditionalAudioMetadata.read(from: url).lyrics
                 try Task.checkCancellation()
-                return Self.nonempty(lyrics)
+                if let lyrics = Self.nonempty(lyrics) { return lyrics }
             }
 
             try Task.checkCancellation()
-            let lyrics = try await readAsset(url)
-            try Task.checkCancellation()
-            return Self.nonempty(lyrics)
+            do {
+                let lyrics = try await readAsset(url)
+                try Task.checkCancellation()
+                return Self.nonempty(lyrics)
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError || hasCustomReader == false { throw error }
+                return nil
+            }
         }
         return try await withTaskCancellationHandler {
             let lyrics = try await task.value

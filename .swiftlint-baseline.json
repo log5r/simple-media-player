@@ -1519,7 +1519,7 @@
       "severity": "error",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleName": "Type Body Length",
-      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 489 lines",
+      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 496 lines",
       "ruleIdentifier": "type_body_length",
       "location": {
         "line": 276,

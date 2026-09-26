@@ -8,6 +8,9 @@ nonisolated enum WAVMetadataWriter {
     }
     private static let id3IDs = [Data("id3 ".utf8), Data("ID3 ".utf8)]
     private static let infoID = Data("LIST".utf8)
+    private static let editableInfoIDs: Set<Data> = [
+        "INAM", "IART", "IPRD", "IGNR", "ICRD", "ITRK", "ICMT"
+    ].reduce(into: []) { $0.insert(Data($1.utf8)) }
 
     static func canWriteMetadata(to url: URL) -> Bool {
         url.pathExtension.lowercased() == "wav"
@@ -49,7 +52,6 @@ nonisolated enum WAVMetadataWriter {
                 for: draft, existingTagData: existingTag, requiresExistingTag: existingTag != nil
             )
             let updatedID3 = try makeChunk(id: Data("id3 ".utf8), payload: updatedTag)
-            let updatedINFO = try draft.editsTextMetadata ? makeChunk(id: infoID, payload: infoPayload(draft)) : nil
             var contentsSize: UInt64 = 4
             var didWriteID3 = false
             var didWriteINFO = false
@@ -63,11 +65,14 @@ nonisolated enum WAVMetadataWriter {
                         didWriteID3 = true
                     }
                 } else if draft.editsTextMetadata && isInfo {
-                    if didWriteINFO == false, let updatedINFO {
-                        pieces.append((nil, updatedINFO))
-                        contentsSize += UInt64(updatedINFO.count)
-                        didWriteINFO = true
-                    }
+                    let payload = try infoPayload(
+                        draft, preserving: read(chunk.content, source: source),
+                        includeEditableFields: didWriteINFO == false
+                    )
+                    let updated = try makeChunk(id: infoID, payload: payload)
+                    pieces.append((nil, updated))
+                    contentsSize += UInt64(updated.count)
+                    didWriteINFO = true
                 } else {
                     pieces.append((chunk.range, nil))
                     contentsSize += chunk.range.upperBound - chunk.range.lowerBound
@@ -77,7 +82,8 @@ nonisolated enum WAVMetadataWriter {
                 pieces.append((nil, updatedID3))
                 contentsSize += UInt64(updatedID3.count)
             }
-            if didWriteINFO == false, let updatedINFO {
+            if draft.editsTextMetadata && didWriteINFO == false {
+                let updatedINFO = try makeChunk(id: infoID, payload: infoPayload(draft))
                 pieces.append((nil, updatedINFO))
                 contentsSize += UInt64(updatedINFO.count)
             }
@@ -125,15 +131,34 @@ nonisolated enum WAVMetadataWriter {
         return try MediaFileRewriter.read(from: source, at: chunk.content.lowerBound, count: 4) == Data("INFO".utf8)
     }
 
-    private static func infoPayload(_ draft: MediaMetadataEditDraft) -> Data {
+    private static func infoPayload(
+        _ draft: MediaMetadataEditDraft, preserving existing: Data? = nil,
+        includeEditableFields: Bool = true
+    ) throws -> Data {
+        var data = Data("INFO".utf8)
+        if let existing {
+            guard existing.starts(with: data) else { throw MediaMetadataEditError.invalidAudioMetadata }
+            var cursor = 4
+            while cursor < existing.count {
+                guard cursor <= existing.count - 8 else { throw MediaMetadataEditError.invalidAudioMetadata }
+                let length = Int(XiphMetadata.uint32(existing, at: cursor + 4, little: true))
+                guard length <= existing.count - cursor - 8 else { throw MediaMetadataEditError.invalidAudioMetadata }
+                let end = cursor + 8 + length + length % 2
+                guard end <= existing.count else { throw MediaMetadataEditError.invalidAudioMetadata }
+                if editableInfoIDs.contains(Data(existing[cursor..<(cursor + 4)])) == false {
+                    data += existing[cursor..<end]
+                }
+                cursor = end
+            }
+        }
+        guard includeEditableFields else { return data }
         let fields: [(String, String)] = [
             ("INAM", draft.title), ("IART", draft.artist), ("IPRD", draft.album),
             ("IGNR", draft.genre), ("ICRD", draft.year), ("ITRK", draft.trackNumber),
             ("ICMT", draft.comment)
         ]
-        var data = Data("INFO".utf8)
         for (key, value) in fields where value.isEmpty == false {
-            data += (try? makeChunk(id: Data(key.utf8), payload: Data(value.utf8) + Data([0]))) ?? Data()
+            data += try makeChunk(id: Data(key.utf8), payload: Data(value.utf8) + Data([0]))
         }
         return data
     }
