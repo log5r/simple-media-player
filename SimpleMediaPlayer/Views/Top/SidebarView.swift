@@ -57,6 +57,7 @@ struct SidebarView: View {
         List(selection: $selection) {
             sidebarContent
         }
+        .modifier(FocusOnTapModifier())
         #else
         List {
             sidebarContent
@@ -93,6 +94,7 @@ struct SidebarView: View {
     private func libraryRow(_ section: LibrarySection) -> some View {
         Label(section.title, systemImage: section.icon)
             .tag(SidebarSelection.library(section))
+            .accessibilityIdentifier("sidebarLibraryRow.\(section.rawValue)")
             .onTapGesture {
                 selection = .library(section)
             }
@@ -102,6 +104,7 @@ struct SidebarView: View {
         Label(playlist.name, systemImage: "music.note.list")
             .lineLimit(1)
             .tag(SidebarSelection.playlist(playlist.id))
+            .accessibilityIdentifier("sidebarPlaylistRow.\(playlist.id.uuidString)")
             .onTapGesture {
                 selection = .playlist(playlist.id)
             }
