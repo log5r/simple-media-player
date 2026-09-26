@@ -245,7 +245,7 @@ private struct LEDSettingsSection: View {
     private var vuMeterShadowExtent = AppSettingsDefault.vuMeterShadowExtent
     @State private var colorEditorResetID = 0
     private var bottomPanelLayout: BottomPanelLayout {
-        BottomPanelLayout(rawValue: bottomPanelLayoutRaw) ?? .classic
+        BottomPanelLayout(rawValue: bottomPanelLayoutRaw) ?? .ledHalf
     }
 
     private var ledDisplayStyle: LEDDisplayStyle {

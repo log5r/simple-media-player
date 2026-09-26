@@ -65,7 +65,7 @@ enum AppSettingsDefault {
     static let ledBacklitGlassIntensityRange = 0.0...0.5
     static let ledBacklitGlassIntensityStep = 0.02
     static let dockIconFollowsLEDColor = true
-    static let bottomPanelLayout = BottomPanelLayout.classic.rawValue
+    static let bottomPanelLayout = BottomPanelLayout.ledHalf.rawValue
     static let ledPanelSide = LEDPanelSide.right.rawValue
     static let ledPanelCorner = LEDPanelCorner.adaptive.rawValue
     static let mediaListColumnOrder = MediaListColumn.encoded(MediaListColumn.allCases)

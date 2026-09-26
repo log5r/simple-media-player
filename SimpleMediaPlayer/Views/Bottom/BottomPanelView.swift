@@ -22,7 +22,7 @@ struct BottomPanelView: View {
     @AppStorage(AppSettingsKey.bottomPanelLayout) private var layoutRaw = AppSettingsDefault.bottomPanelLayout
 
     var body: some View {
-        switch BottomPanelLayout(rawValue: layoutRaw) ?? .classic {
+        switch BottomPanelLayout(rawValue: layoutRaw) ?? .ledHalf {
         case .classic:
             ClassicBottomPanelView(
                 player: player,

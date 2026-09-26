@@ -204,8 +204,8 @@ struct EqualizerPresetTests {
 
 @MainActor
 struct BottomPanelSettingsTests {
-    @Test func defaultsPreserveClassicLayoutAndRecommendedHalfPanelOptions() {
-        #expect(BottomPanelLayout(rawValue: AppSettingsDefault.bottomPanelLayout) == .classic)
+    @Test func defaultsUseLEDHalfLayoutAndRecommendedHalfPanelOptions() {
+        #expect(BottomPanelLayout(rawValue: AppSettingsDefault.bottomPanelLayout) == .ledHalf)
         #expect(LEDPanelSide(rawValue: AppSettingsDefault.ledPanelSide) == .right)
         #expect(LEDPanelCorner(rawValue: AppSettingsDefault.ledPanelCorner) == .adaptive)
         #expect(LEDDisplayStyle(rawValue: AppSettingsDefault.ledDisplayStyle) == .dark)
