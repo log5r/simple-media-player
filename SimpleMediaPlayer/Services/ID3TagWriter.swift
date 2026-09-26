@@ -283,7 +283,6 @@ enum ID3TagWriter {
         "TIT2", "TPE1", "TALB", "TCON", "TDRC", "TYER", "TRCK", "COMM", "TPE2", "TCOM", "TPOS", "TCMP",
         "TT2", "TP1", "TAL", "TCO", "TYE", "TRK", "COM", "TP2", "TCM", "TPA", "TCP"
     ]
-    nonisolated private static let artworkFrameIDs: Set<String> = ["APIC", "PIC"]
     nonisolated private static let lyricsFrameIDs: Set<String> = ["USLT", "ULT"]
 
     nonisolated static func canWriteMetadata(to url: URL) -> Bool {
@@ -390,13 +389,12 @@ enum ID3TagWriter {
         if draft.editsTextMetadata {
             removedFrameIDs.formUnion(editableFrameIDs)
         }
-        if draft.editsArtwork {
-            removedFrameIDs.formUnion(artworkFrameIDs)
-        }
         if draft.editsLyrics {
             removedFrameIDs.formUnion(lyricsFrameIDs)
         }
-        var frames = existingTag?.preservedFrames(removing: removedFrameIDs) ?? []
+        var frames = existingTag?.preservedFrames(
+            removing: removedFrameIDs, removeFrontArtwork: draft.editsArtwork
+        ) ?? []
         if draft.editsTextMetadata {
             for frame in textFrames(for: version) {
                 if let value = draft.writableFrameValues[frame.canonicalID] {
@@ -842,9 +840,11 @@ private struct ID3Tag {
     let totalRange: Range<Int>
     let frames: [ID3Frame]
 
-    nonisolated func preservedFrames(removing frameIDs: Set<String>) -> [Data] {
+    nonisolated func preservedFrames(removing frameIDs: Set<String>, removeFrontArtwork: Bool) -> [Data] {
         frames
-            .filter { frameIDs.contains($0.id) == false }
+            .filter { frame in
+                frameIDs.contains(frame.id) == false && (removeFrontArtwork == false || frame.pictureType != 3)
+            }
             .map(\.rawData)
     }
 }
@@ -855,6 +855,15 @@ private struct ID3Frame {
 
     nonisolated var payload: Data.SubSequence {
         rawData.dropFirst(id.count == 3 ? 6 : 10)
+    }
+
+    nonisolated var pictureType: UInt8? {
+        let data = payload
+        guard data.count >= 5 else { return nil }
+        if id == "PIC" { return data[data.startIndex + 4] }
+        guard id == "APIC", let terminator = data[data.startIndex...].dropFirst().firstIndex(of: 0),
+              terminator + 1 < data.endIndex else { return nil }
+        return data[terminator + 1]
     }
 
     nonisolated var canonicalID: String {
