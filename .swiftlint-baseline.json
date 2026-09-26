@@ -1,0 +1,1622 @@
+[
+  {
+    "text": "    var year: String? = nil",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Models/MediaItem.swift",
+        "line": 11
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    var trackNumber: String? = nil",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Models/MediaItem.swift",
+        "line": 12
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    var comment: String? = nil",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Models/MediaItem.swift",
+        "line": 13
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    var albumArtist: String? = nil",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Models/MediaItem.swift",
+        "line": 14
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    var composer: String? = nil",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Models/MediaItem.swift",
+        "line": 15
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    var discNumber: String? = nil",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Models/MediaItem.swift",
+        "line": 16
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    var importFingerprint: String? = nil",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Models/MediaItem.swift",
+        "line": 26
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "nonisolated struct MusicAnalysis: Codable, Sendable {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Models/MusicAnalysis.swift",
+        "line": 3
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 302 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    mutating func applyRhythmExcerpts(_ excerpts: [RhythmExcerpt]) {",
+    "violation": {
+      "location": {
+        "character": 14,
+        "file": "SimpleMediaPlayer/Models/MusicAnalysis.swift",
+        "line": 102
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 11",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    mutating func applyRhythmExcerpts(_ excerpts: [RhythmExcerpt]) {",
+    "violation": {
+      "location": {
+        "character": 14,
+        "file": "SimpleMediaPlayer/Models/MusicAnalysis.swift",
+        "line": 102
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 70 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        nonisolated struct Stop: Equatable {",
+    "violation": {
+      "location": {
+        "character": 21,
+        "file": "SimpleMediaPlayer/Models/VUMeterPalette.swift",
+        "line": 56
+      },
+      "reason": "Types should be nested at most 1 level deep",
+      "ruleDescription": "Types should be nested at most 1 level deep, and functions should be nested at most 2 levels deep.",
+      "ruleIdentifier": "nesting",
+      "ruleName": "Nesting",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    nonisolated static func write(_ draft: MediaMetadataEditDraft, to url: URL) throws {",
+    "violation": {
+      "location": {
+        "character": 24,
+        "file": "SimpleMediaPlayer/Services/AIFFMetadataWriter.swift",
+        "line": 14
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "nonisolated final class AudioEngineService: @unchecked Sendable {",
+    "violation": {
+      "location": {
+        "character": 19,
+        "file": "SimpleMediaPlayer/Services/AudioEngineService.swift",
+        "line": 8
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 436 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "extension AudioEngineService: AudioPlaybackControlling {}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Services/AudioEngineService.swift",
+        "line": 538
+      },
+      "reason": "File should contain 400 lines or less: currently contains 538",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    nonisolated func applying(to original: MediaMetadataEditDraft) -> MediaMetadataEditDraft {",
+    "violation": {
+      "location": {
+        "character": 17,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "line": 172
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 13",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "enum ID3TagWriter {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "line": 273
+      },
+      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 457 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    nonisolated static func updatedTagData(",
+    "violation": {
+      "location": {
+        "character": 17,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "line": 321
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    ) throws -> (version: UInt8, flags: UInt8, contentEnd: Int, totalEnd: Int)? {",
+    "violation": {
+      "location": {
+        "character": 17,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "line": 397
+      },
+      "reason": "Tuples should have at most 2 members",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleIdentifier": "large_tuple",
+      "ruleName": "Large Tuple",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    nonisolated private static func embeddedValues(in tag: ID3Tag) -> MediaMetadataEmbeddedValues {",
+    "violation": {
+      "location": {
+        "character": 25,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "line": 643
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 14",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "line": 840
+      },
+      "reason": "File should contain 400 lines or less: currently contains 840",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "final class LibraryService {",
+    "violation": {
+      "location": {
+        "character": 7,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 24
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 667 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    private func performImport(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 73
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 14",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func performImport(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 73
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 71 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func makeMediaItem(from sourceURL: URL, importFingerprint: String) async throws -> MediaItem {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 472
+      },
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 129 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "private enum MediaInfoInspector {",
+    "violation": {
+      "location": {
+        "character": 9,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 882
+      },
+      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 432 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    private static func assetSummaryRows(for item: MediaInfoItemSnapshot, asset: AVURLAsset) async -> [MediaInfoRow] {",
+    "violation": {
+      "location": {
+        "character": 20,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 1003
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private static func formatDescriptionRows(_ descriptions: [CMFormatDescription]) -> [MediaInfoRow] {",
+    "violation": {
+      "location": {
+        "character": 20,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 1184
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 51 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private static func displayValue(_ value: Any?) -> String? {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 1300
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "line": 1367
+      },
+      "reason": "File should contain 1000 lines or less: currently contains 1367",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "enum MP4MetadataWriter {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Services/MP4MetadataWriter.swift",
+        "line": 3
+      },
+      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 456 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Services/MP4MetadataWriter.swift",
+        "line": 553
+      },
+      "reason": "File should contain 400 lines or less: currently contains 553",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    nonisolated private static func result(",
+    "violation": {
+      "location": {
+        "character": 25,
+        "file": "SimpleMediaPlayer/Services/MP4TitleReader.swift",
+        "line": 44
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 26",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    nonisolated private static func result(",
+    "violation": {
+      "location": {
+        "character": 32,
+        "file": "SimpleMediaPlayer/Services/MP4TitleReader.swift",
+        "line": 44
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 73 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        let excerpt = composition.copy() as! AVComposition",
+    "violation": {
+      "location": {
+        "character": 42,
+        "file": "SimpleMediaPlayer/Services/MusicAnalysisService.swift",
+        "line": 215
+      },
+      "reason": "Force casts should be avoided",
+      "ruleDescription": "Force casts should be avoided",
+      "ruleIdentifier": "force_cast",
+      "ruleName": "Force Cast",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "        let excerpt = composition.copy() as! AVComposition",
+    "violation": {
+      "location": {
+        "character": 42,
+        "file": "SimpleMediaPlayer/Services/MusicAnalysisService.swift",
+        "line": 275
+      },
+      "reason": "Force casts should be avoided",
+      "ruleDescription": "Force casts should be avoided",
+      "ruleIdentifier": "force_cast",
+      "ruleName": "Force Cast",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    nonisolated static func appleScriptSource(url: URL, hints: MusicLibraryMatchHints) -> String {",
+    "violation": {
+      "location": {
+        "character": 24,
+        "file": "SimpleMediaPlayer/Services/MusicLibraryMetadataProvider.swift",
+        "line": 28
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 56 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "nonisolated final class SpectrumAnalyzer: @unchecked Sendable {",
+    "violation": {
+      "location": {
+        "character": 19,
+        "file": "SimpleMediaPlayer/Services/SpectrumAnalyzer.swift",
+        "line": 39
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 397 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    private func scheduleChunkedAnalysis(",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Services/SpectrumAnalyzer.swift",
+        "line": 204
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 7",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func processChunk(",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Services/SpectrumAnalyzer.swift",
+        "line": 237
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 7",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Services/SpectrumAnalyzer.swift",
+        "line": 480
+      },
+      "reason": "File should contain 400 lines or less: currently contains 480",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func render(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Services/TransformedAudioRenderer.swift",
+        "line": 5
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func render(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Services/TransformedAudioRenderer.swift",
+        "line": 20
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 12",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func render(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Services/TransformedAudioRenderer.swift",
+        "line": 20
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 92 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func render(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Services/TransformedAudioRenderer.swift",
+        "line": 20
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func export(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Services/TransformedTrackExporter.swift",
+        "line": 24
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 86 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func export(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Services/TransformedTrackExporter.swift",
+        "line": 24
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 7",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func process(_ buffer: AVAudioPCMBuffer) {",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Services/VideoEqualizerProcessor.swift",
+        "line": 130
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func processChannel(",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Services/VideoEqualizerProcessor.swift",
+        "line": 194
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Settings/AppSettings.swift",
+        "line": 758
+      },
+      "reason": "File should contain 400 lines or less: currently contains 758",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "final class PlayerViewModel {",
+    "violation": {
+      "location": {
+        "character": 7,
+        "file": "SimpleMediaPlayer/ViewModels/PlayerViewModel.swift",
+        "line": 52
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 450 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/ViewModels/PlayerViewModel.swift",
+        "line": 589
+      },
+      "reason": "File should contain 400 lines or less: currently contains 589",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct LEDDisplayView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Bottom/LEDDisplayView.swift",
+        "line": 3
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 267 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func displayBackground(shape: ConcentricRectangle) -> some View {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Bottom/LEDDisplayView.swift",
+        "line": 155
+      },
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 129 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Bottom/LEDDisplayView.swift",
+        "line": 417
+      },
+      "reason": "File should contain 400 lines or less: currently contains 417",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func controlButton(",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Bottom/PitchSpeedControlsView.swift",
+        "line": 91
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func transportButton(",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Bottom/TransportButtonsView.swift",
+        "line": 170
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func drawWellShadow(in context: inout GraphicsContext, face: CGRect) {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Bottom/VUMeterView.swift",
+        "line": 263
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Bottom/VUMeterView.swift",
+        "line": 541
+      },
+      "reason": "File should contain 400 lines or less: currently contains 541",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func draw(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Views/Bottom/Visualizers/LEDVisualizer.swift",
+        "line": 23
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func draw(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Views/Bottom/Visualizers/LEDVisualizer.swift",
+        "line": 55
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 72 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func draw(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Views/Bottom/Visualizers/LEDVisualizer.swift",
+        "line": 55
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func drawChannel(",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Bottom/Visualizers/LEDVisualizer.swift",
+        "line": 160
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 8",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Settings/AppSettingsView.swift",
+        "line": 616
+      },
+      "reason": "File should contain 400 lines or less: currently contains 616",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct DetailAreaView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/DetailAreaView.swift",
+        "line": 3
+      },
+      "reason": "Struct body should span 350 lines or less excluding comments and whitespace: currently spans 511 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/DetailAreaView.swift",
+        "line": 725
+      },
+      "reason": "File should contain 400 lines or less: currently contains 725",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct EqualizerPanelView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/EqualizerPanelView.swift",
+        "line": 7
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 266 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "#endif",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/EqualizerPanelView.swift",
+        "line": 459
+      },
+      "reason": "File should contain 400 lines or less: currently contains 459",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct LyricsPanelView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/LyricsPanelView.swift",
+        "line": 4
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 321 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func informationValue(for column: MediaListColumn, item: MediaItem) -> String {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Top/LyricsPanelView.swift",
+        "line": 266
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 17",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/LyricsPanelView.swift",
+        "line": 498
+      },
+      "reason": "File should contain 400 lines or less: currently contains 498",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    init?(column: MediaListColumn) {",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Views/Top/MainView.swift",
+        "line": 100
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 15",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func compare(_ lhs: MediaItem, _ rhs: MediaItem) -> ComparisonResult {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Top/MainView.swift",
+        "line": 146
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 14",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct MainView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/MainView.swift",
+        "line": 281
+      },
+      "reason": "Struct body should span 350 lines or less excluding comments and whitespace: currently spans 372 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/MainView.swift",
+        "line": 722
+      },
+      "reason": "File should contain 400 lines or less: currently contains 722",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct MediaListView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 9
+      },
+      "reason": "Struct body should span 350 lines or less excluding comments and whitespace: currently spans 750 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    private func tableCellContent(for column: MediaListColumn, row: MediaTableRow) -> some View {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 318
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 18",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func tableCellContent(for column: MediaListColumn, row: MediaTableRow) -> some View {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 318
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 67 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func groupedRow(_ row: MediaTableRow) -> some View {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 595
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 60 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func rowMenu(for item: MediaItem) -> some View {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 665
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 59 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    private func albumTrackRow(_ item: MediaItem, fallbackNumber: Int, tracks: [MediaItem]) -> some View {",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 1007
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    static func sortField(forKeyPathDescription keyPathDescription: String) -> LibrarySortField? {",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 1750
+      },
+      "reason": "Function should have complexity 10 or less; currently complexity is 16",
+      "ruleDescription": "Complexity of function bodies should be limited.",
+      "ruleIdentifier": "cyclomatic_complexity",
+      "ruleName": "Cyclomatic Complexity",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct BulkMetadataEditView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 1780
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 337 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct MediaInfoView: View {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 2156
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 319 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
+        "line": 2607
+      },
+      "reason": "File should contain 1000 lines or less: currently contains 2607",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "struct AudioLoudnessNormalizationTests {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerTests/AudioLoudnessNormalizationTests.swift",
+        "line": 5
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 288 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerTests/AudioLoudnessNormalizationTests.swift",
+        "line": 452
+      },
+      "reason": "File should contain 400 lines or less: currently contains 452",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    @Test func opensExistingLibraryAndPreservesPlaylistRelationships() throws {",
+    "violation": {
+      "location": {
+        "character": 11,
+        "file": "SimpleMediaPlayerTests/MediaImportMigrationTests.swift",
+        "line": 8
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 72 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        var year: String? = nil",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayerTests/MediaImportMigrationTests.swift",
+        "line": 100
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        var trackNumber: String? = nil",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayerTests/MediaImportMigrationTests.swift",
+        "line": 101
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        var comment: String? = nil",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayerTests/MediaImportMigrationTests.swift",
+        "line": 102
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        var albumArtist: String? = nil",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayerTests/MediaImportMigrationTests.swift",
+        "line": 103
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        var composer: String? = nil",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayerTests/MediaImportMigrationTests.swift",
+        "line": 104
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "        var discNumber: String? = nil",
+    "violation": {
+      "location": {
+        "character": 13,
+        "file": "SimpleMediaPlayerTests/MediaImportMigrationTests.swift",
+        "line": 105
+      },
+      "reason": "Optional should be implicitly initialized without nil",
+      "ruleDescription": "Optionals should be consistently initialized, either with `= nil` or without.",
+      "ruleIdentifier": "implicit_optional_initialization",
+      "ruleName": "Implicit Optional Initialization",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "            let type = String(decoding: data[(offset + 4)..<(offset + 8)], as: UTF8.self)",
+    "violation": {
+      "location": {
+        "character": 24,
+        "file": "SimpleMediaPlayerTests/MetadataStreamingTests.swift",
+        "line": 262
+      },
+      "reason": "Prefer failable `String(bytes:encoding:)` initializer when converting `Data` to `String`",
+      "ruleDescription": "Prefer failable `String(bytes:encoding:)` initializer when converting `Data` to `String`",
+      "ruleIdentifier": "optional_data_string_conversion",
+      "ruleName": "Optional Data -> String Conversion",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct MusicAnalysisTests {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerTests/MusicAnalysisTests.swift",
+        "line": 5
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 305 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerTests/MusicAnalysisTests.swift",
+        "line": 684
+      },
+      "reason": "File should contain 400 lines or less: currently contains 684",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "private func makePersistenceFixture(mediaDirectory: URL) throws -> (",
+    "violation": {
+      "location": {
+        "character": 68,
+        "file": "SimpleMediaPlayerTests/ServiceIntegrationTests.swift",
+        "line": 298
+      },
+      "reason": "Tuples should have at most 2 members",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleIdentifier": "large_tuple",
+      "ruleName": "Large Tuple",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct ID3TagWriterTests {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
+        "line": 1127
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 268 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "struct PlayerViewModelTests {",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
+        "line": 1918
+      },
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 303 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": ") -> (",
+    "violation": {
+      "location": {
+        "character": 6,
+        "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
+        "line": 2743
+      },
+      "reason": "Tuples should have at most 2 members",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleIdentifier": "large_tuple",
+      "ruleName": "Large Tuple",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
+        "line": 2902
+      },
+      "reason": "File should contain 1000 lines or less: currently contains 2902",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    func render(",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayerTests/TransformedExportCancellationTests.swift",
+        "line": 278
+      },
+      "reason": "Function should have 5 parameters or less: it currently has 6",
+      "ruleDescription": "Number of function parameters should be low.",
+      "ruleIdentifier": "function_parameter_count",
+      "ruleName": "Function Parameter Count",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "final class SimpleMediaPlayerUITests: XCTestCase {",
+    "violation": {
+      "location": {
+        "character": 7,
+        "file": "SimpleMediaPlayerUITests/SimpleMediaPlayerUITests.swift",
+        "line": 10
+      },
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 657 lines",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleIdentifier": "type_body_length",
+      "ruleName": "Type Body Length",
+      "severity": "error"
+    }
+  },
+  {
+    "text": "    func testMultipleSelectionKeepsEverySelectedRow() throws {",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayerUITests/SimpleMediaPlayerUITests.swift",
+        "line": 103
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 77 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func testColumnBoundariesCannotBypassBulkSelection() throws {",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayerUITests/SimpleMediaPlayerUITests.swift",
+        "line": 193
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 53 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func testDragSelectedRowCanBeDeselectedByClickingIt() throws {",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayerUITests/SimpleMediaPlayerUITests.swift",
+        "line": 317
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 52 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "    func testMainPlayerScreenExposesEveryAppOwnedButton() throws {",
+    "violation": {
+      "location": {
+        "character": 5,
+        "file": "SimpleMediaPlayerUITests/SimpleMediaPlayerUITests.swift",
+        "line": 491
+      },
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 57 lines",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleIdentifier": "function_body_length",
+      "ruleName": "Function Body Length",
+      "severity": "warning"
+    }
+  },
+  {
+    "text": "}",
+    "violation": {
+      "location": {
+        "character": 1,
+        "file": "SimpleMediaPlayerUITests/SimpleMediaPlayerUITests.swift",
+        "line": 763
+      },
+      "reason": "File should contain 400 lines or less: currently contains 763",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleIdentifier": "file_length",
+      "ruleName": "File Length",
+      "severity": "warning"
+    }
+  }
+]

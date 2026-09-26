@@ -1,0 +1,12 @@
+included:
+  - SimpleMediaPlayer
+  - SimpleMediaPlayerTests
+  - SimpleMediaPlayerUITests
+
+excluded:
+  - .build
+  - tmp
+
+# Keep existing violations visible in version control without blocking adoption.
+# New violations still use SwiftLint's default rules and severities.
+baseline: .swiftlint-baseline.json

@@ -1,0 +1,11 @@
+.DS_Store
+tmp/
+.build/
+
+# Xcode user-specific state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Personal signing settings (see README)
+Configs/Signing.local.xcconfig

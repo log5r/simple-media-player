@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "C7E5851D-7478-4DE5-8085-5230231707B0",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:SimpleMediaPlayer.xcodeproj",
+      "identifier" : "C6381F392FF810D800377C67",
+      "name" : "SimpleMediaPlayer"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:SimpleMediaPlayer.xcodeproj",
+        "identifier" : "C6381F482FF810DA00377C67",
+        "name" : "SimpleMediaPlayerTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:SimpleMediaPlayer.xcodeproj",
+        "identifier" : "C6381F522FF810DA00377C67",
+        "name" : "SimpleMediaPlayerUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

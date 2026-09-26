@@ -1,0 +1,4 @@
+// Shared signing configuration.
+// Personal settings (e.g. DEVELOPMENT_TEAM) live in Signing.local.xcconfig,
+// which is gitignored. See README for setup.
+#include? "Signing.local.xcconfig"

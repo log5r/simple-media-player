@@ -1,0 +1,630 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXContainerItemProxy section */
+		C6381F4A2FF810DA00377C67 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C6381F322FF810D800377C67 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C6381F392FF810D800377C67;
+			remoteInfo = SimpleMediaPlayer;
+		};
+		C6381F542FF810DA00377C67 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C6381F322FF810D800377C67 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C6381F392FF810D800377C67;
+			remoteInfo = SimpleMediaPlayer;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		C6381F3A2FF810D800377C67 /* SimpleMediaPlayer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMediaPlayer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6381F492FF810DA00377C67 /* SimpleMediaPlayerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMediaPlayerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6381F532FF810DA00377C67 /* SimpleMediaPlayerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMediaPlayerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6A214972FFAB59B00E0233F /* SimpleMediaPlayer.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = SimpleMediaPlayer.xctestplan; sourceTree = "<group>"; };
+		C6A214982FFAB59C00E0233F /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Configs/Signing.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		C6381F3C2FF810D800377C67 /* SimpleMediaPlayer */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SimpleMediaPlayer;
+			sourceTree = "<group>";
+		};
+		C6381F4C2FF810DA00377C67 /* SimpleMediaPlayerTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SimpleMediaPlayerTests;
+			sourceTree = "<group>";
+		};
+		C6381F562FF810DA00377C67 /* SimpleMediaPlayerUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = SimpleMediaPlayerUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C6381F372FF810D800377C67 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6381F462FF810DA00377C67 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6381F502FF810DA00377C67 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C6381F312FF810D800377C67 = {
+			isa = PBXGroup;
+			children = (
+				C6A214982FFAB59C00E0233F /* Signing.xcconfig */,
+				C6A214972FFAB59B00E0233F /* SimpleMediaPlayer.xctestplan */,
+				C6381F3C2FF810D800377C67 /* SimpleMediaPlayer */,
+				C6381F4C2FF810DA00377C67 /* SimpleMediaPlayerTests */,
+				C6381F562FF810DA00377C67 /* SimpleMediaPlayerUITests */,
+				C6381F3B2FF810D800377C67 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C6381F3B2FF810D800377C67 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C6381F3A2FF810D800377C67 /* SimpleMediaPlayer.app */,
+				C6381F492FF810DA00377C67 /* SimpleMediaPlayerTests.xctest */,
+				C6381F532FF810DA00377C67 /* SimpleMediaPlayerUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C6381F392FF810D800377C67 /* SimpleMediaPlayer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C6381F5D2FF810DA00377C67 /* Build configuration list for PBXNativeTarget "SimpleMediaPlayer" */;
+			buildPhases = (
+				C6381F362FF810D800377C67 /* Sources */,
+				C6381F372FF810D800377C67 /* Frameworks */,
+				C6381F382FF810D800377C67 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C6F110000000000000000002 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C6381F3C2FF810D800377C67 /* SimpleMediaPlayer */,
+			);
+			name = SimpleMediaPlayer;
+			packageProductDependencies = (
+			);
+			productName = SimpleMediaPlayer;
+			productReference = C6381F3A2FF810D800377C67 /* SimpleMediaPlayer.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C6381F482FF810DA00377C67 /* SimpleMediaPlayerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C6381F602FF810DA00377C67 /* Build configuration list for PBXNativeTarget "SimpleMediaPlayerTests" */;
+			buildPhases = (
+				C6381F452FF810DA00377C67 /* Sources */,
+				C6381F462FF810DA00377C67 /* Frameworks */,
+				C6381F472FF810DA00377C67 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C6381F4B2FF810DA00377C67 /* PBXTargetDependency */,
+				C6F110000000000000000003 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C6381F4C2FF810DA00377C67 /* SimpleMediaPlayerTests */,
+			);
+			name = SimpleMediaPlayerTests;
+			packageProductDependencies = (
+			);
+			productName = SimpleMediaPlayerTests;
+			productReference = C6381F492FF810DA00377C67 /* SimpleMediaPlayerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C6381F522FF810DA00377C67 /* SimpleMediaPlayerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C6381F632FF810DA00377C67 /* Build configuration list for PBXNativeTarget "SimpleMediaPlayerUITests" */;
+			buildPhases = (
+				C6381F4F2FF810DA00377C67 /* Sources */,
+				C6381F502FF810DA00377C67 /* Frameworks */,
+				C6381F512FF810DA00377C67 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C6381F552FF810DA00377C67 /* PBXTargetDependency */,
+				C6F110000000000000000004 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C6381F562FF810DA00377C67 /* SimpleMediaPlayerUITests */,
+			);
+			name = SimpleMediaPlayerUITests;
+			packageProductDependencies = (
+			);
+			productName = SimpleMediaPlayerUITests;
+			productReference = C6381F532FF810DA00377C67 /* SimpleMediaPlayerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C6381F322FF810D800377C67 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					C6381F392FF810D800377C67 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					C6381F482FF810DA00377C67 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = C6381F392FF810D800377C67;
+					};
+					C6381F522FF810DA00377C67 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = C6381F392FF810D800377C67;
+					};
+				};
+			};
+			buildConfigurationList = C6381F352FF810D800377C67 /* Build configuration list for PBXProject "SimpleMediaPlayer" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				ja,
+				Base,
+			);
+			mainGroup = C6381F312FF810D800377C67;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C6F110000000000000000001 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C6381F3B2FF810D800377C67 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C6381F392FF810D800377C67 /* SimpleMediaPlayer */,
+				C6381F482FF810DA00377C67 /* SimpleMediaPlayerTests */,
+				C6381F522FF810DA00377C67 /* SimpleMediaPlayerUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C6381F382FF810D800377C67 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6381F472FF810DA00377C67 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6381F512FF810DA00377C67 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C6381F362FF810D800377C67 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6381F452FF810DA00377C67 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C6381F4F2FF810DA00377C67 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C6381F4B2FF810DA00377C67 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C6381F392FF810D800377C67 /* SimpleMediaPlayer */;
+			targetProxy = C6381F4A2FF810DA00377C67 /* PBXContainerItemProxy */;
+		};
+		C6381F552FF810DA00377C67 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C6381F392FF810D800377C67 /* SimpleMediaPlayer */;
+			targetProxy = C6381F542FF810DA00377C67 /* PBXContainerItemProxy */;
+		};
+		C6F110000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = C6F110000000000000000005 /* SwiftLintBuildToolPlugin */;
+		};
+		C6F110000000000000000003 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = C6F110000000000000000005 /* SwiftLintBuildToolPlugin */;
+		};
+		C6F110000000000000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = C6F110000000000000000005 /* SwiftLintBuildToolPlugin */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		C6381F5B2FF810DA00377C67 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C6A214982FFAB59C00E0233F /* Signing.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		C6381F5C2FF810DA00377C67 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C6A214982FFAB59C00E0233F /* Signing.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		C6381F5E2FF810DA00377C67 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = SimpleMediaPlayer/SimpleMediaPlayer.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8V3F7N3VG2;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Musicライブラリから曲情報を読み取るために使用します。";
+				"INFOPLIST_KEY_NSAppleEventsUsageDescription[sdk=macosx*]" = "Musicライブラリから曲情報を読み取るために使用します。";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.log5.SimpleMediaPlayer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Debug;
+		};
+		C6381F5F2FF810DA00377C67 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = SimpleMediaPlayer/SimpleMediaPlayer.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8V3F7N3VG2;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Musicライブラリから曲情報を読み取るために使用します。";
+				"INFOPLIST_KEY_NSAppleEventsUsageDescription[sdk=macosx*]" = "Musicライブラリから曲情報を読み取るために使用します。";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.log5.SimpleMediaPlayer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
+			};
+			name = Release;
+		};
+		C6381F612FF810DA00377C67 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.log5.SimpleMediaPlayerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleMediaPlayer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleMediaPlayer";
+			};
+			name = Debug;
+		};
+		C6381F622FF810DA00377C67 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.log5.SimpleMediaPlayerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleMediaPlayer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleMediaPlayer";
+			};
+			name = Release;
+		};
+		C6381F642FF810DA00377C67 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.log5.SimpleMediaPlayerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = SimpleMediaPlayer;
+			};
+			name = Debug;
+		};
+		C6381F652FF810DA00377C67 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.log5.SimpleMediaPlayerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = SimpleMediaPlayer;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C6381F352FF810D800377C67 /* Build configuration list for PBXProject "SimpleMediaPlayer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6381F5B2FF810DA00377C67 /* Debug */,
+				C6381F5C2FF810DA00377C67 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C6381F5D2FF810DA00377C67 /* Build configuration list for PBXNativeTarget "SimpleMediaPlayer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6381F5E2FF810DA00377C67 /* Debug */,
+				C6381F5F2FF810DA00377C67 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C6381F602FF810DA00377C67 /* Build configuration list for PBXNativeTarget "SimpleMediaPlayerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6381F612FF810DA00377C67 /* Debug */,
+				C6381F622FF810DA00377C67 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C6381F632FF810DA00377C67 /* Build configuration list for PBXNativeTarget "SimpleMediaPlayerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6381F642FF810DA00377C67 /* Debug */,
+				C6381F652FF810DA00377C67 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C6F110000000000000000001 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SimplyDanny/SwiftLintPlugins";
+			requirement = {
+				kind = exactVersion;
+				version = 0.65.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C6F110000000000000000005 /* SwiftLintBuildToolPlugin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C6F110000000000000000001 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */;
+			productName = "plugin:SwiftLintBuildToolPlugin";
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C6381F322FF810D800377C67 /* Project object */;
+}
