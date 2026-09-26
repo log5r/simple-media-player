@@ -25,8 +25,7 @@ nonisolated enum WAVMetadataWriter {
         for chunk in chunks where chunk.id == infoID {
             let payload = try read(chunk.content, source: source)
             guard payload.starts(with: Data("INFO".utf8)) else { continue }
-            result.values = try infoValues(in: payload)
-            break
+            result.values = combine(primary: result.values, fallback: try infoValues(in: payload))
         }
         if let chunk = chunks.first(where: { id3IDs.contains($0.id) }) {
             let data = try read(chunk.content, source: source)
@@ -190,13 +189,22 @@ nonisolated enum WAVMetadataWriter {
 
     private static func combine(primary: MediaMetadataEmbeddedValues, fallback: MediaMetadataEmbeddedValues) -> MediaMetadataEmbeddedValues {
         MediaMetadataEmbeddedValues(
-            title: primary.title ?? fallback.title, artist: primary.artist ?? fallback.artist,
-            album: primary.album ?? fallback.album, genre: primary.genre ?? fallback.genre,
-            year: primary.year ?? fallback.year, trackNumber: primary.trackNumber ?? fallback.trackNumber,
-            comment: primary.comment ?? fallback.comment, albumArtist: primary.albumArtist ?? fallback.albumArtist,
-            composer: primary.composer ?? fallback.composer, discNumber: primary.discNumber ?? fallback.discNumber,
+            title: firstNonblank(primary.title, fallback.title),
+            artist: firstNonblank(primary.artist, fallback.artist),
+            album: firstNonblank(primary.album, fallback.album),
+            genre: firstNonblank(primary.genre, fallback.genre),
+            year: firstNonblank(primary.year, fallback.year),
+            trackNumber: firstNonblank(primary.trackNumber, fallback.trackNumber),
+            comment: firstNonblank(primary.comment, fallback.comment),
+            albumArtist: firstNonblank(primary.albumArtist, fallback.albumArtist),
+            composer: firstNonblank(primary.composer, fallback.composer),
+            discNumber: firstNonblank(primary.discNumber, fallback.discNumber),
             isCompilation: primary.isCompilation ?? fallback.isCompilation
         )
+    }
+
+    private static func firstNonblank(_ values: String?...) -> String? {
+        values.compactMap { $0 }.first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
     }
 
     private static func makeChunk(id: Data, payload: Data) throws -> Data {

@@ -29,6 +29,27 @@ struct AdditionalAudioMetadataReviewTests {
         #expect(try WAVMetadataWriter.read(from: target).values.title == "New title")
     }
 
+    @Test func wavReadFindsNonblankTagsAcrossMultipleINFOLists() throws {
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString).appendingPathExtension("wav")
+        defer { try? FileManager.default.removeItem(at: target) }
+        var source = try Data(contentsOf: fixture("wav"))
+        let firstStart = try #require(source.range(of: Data("LIST".utf8))?.lowerBound)
+        let firstLength = Int(XiphMetadata.uint32(source, at: firstStart + 4, little: true))
+        let firstEnd = firstStart + 8 + firstLength + firstLength % 2
+        let blankTitle = riffChunk("INAM", payload: Data([0]))
+        let software = riffChunk("ISFT", payload: Data("Encoder\0".utf8))
+        source.replaceSubrange(
+            firstStart..<firstEnd, with: riffChunk("LIST", payload: Data("INFO".utf8) + blankTitle + software)
+        )
+        let laterTitle = riffChunk("INAM", payload: Data("Later title\0".utf8))
+        source += riffChunk("LIST", payload: Data("INFO".utf8) + laterTitle)
+        source.replaceSubrange(4..<8, with: XiphMetadata.little32(UInt32(source.count - 8)))
+        try source.write(to: target)
+
+        #expect(try WAVMetadataWriter.read(from: target).values.title == "Later title")
+    }
+
     @Test func flacArtworkEditPreservesOtherCommentPictures() throws {
         let target = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString).appendingPathExtension("flac")
@@ -94,9 +115,9 @@ struct AdditionalAudioMetadataReviewTests {
         }
         try data.write(to: source)
         let embedded = try AdditionalAudioMetadata.read(from: source).values
-        #expect(embedded.title == embeddedTitle)
-        #expect(embedded.artist == "")
-        #expect(embedded.album == " \t ")
+        #expect(embedded.title == nil)
+        #expect(embedded.artist == nil)
+        #expect(embedded.album == nil)
 
         let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -125,6 +146,25 @@ struct AdditionalAudioMetadataReviewTests {
             Data("LYRICS=Primary lyrics".utf8), Data("UNSYNCEDLYRICS=Fallback lyrics".utf8)
         ])
         #expect(XiphMetadata.read(preferred).lyrics == "Primary lyrics")
+    }
+
+    @Test func xiphBlankFieldsDoNotHideLaterValues() {
+        let comment = XiphMetadata.Comment(vendor: Data("Encoder".utf8), fields: [
+            Data("TITLE=".utf8), Data("TITLE=Later title".utf8),
+            Data("DATE= \t".utf8), Data("YEAR=2026".utf8),
+            Data("ALBUMARTIST=".utf8), Data("ALBUM ARTIST=Later artist".utf8),
+            Data("COMPILATION= ".utf8)
+        ])
+        let values = XiphMetadata.read(comment).values
+        #expect(values.title == "Later title")
+        #expect(values.year == "2026")
+        #expect(values.albumArtist == "Later artist")
+        #expect(values.isCompilation == nil)
+
+        let compilation = XiphMetadata.Comment(vendor: comment.vendor, fields: [
+            Data("COMPILATION= YES ".utf8)
+        ])
+        #expect(XiphMetadata.read(compilation).values.isCompilation == true)
     }
 
     @Test func blankEmbeddedValuesPreserveDraftFallbacks() {

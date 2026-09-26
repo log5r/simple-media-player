@@ -82,28 +82,32 @@ nonisolated enum XiphMetadata {
                   let key = String(data: field.prefix(upTo: separator), encoding: .ascii)?.uppercased(),
                   let value = String(data: field.suffix(from: field.index(after: separator)), encoding: .utf8)
             else { continue }
-            if fields[key] == nil { fields[key] = value }
+            if firstNonblank(fields[key]) == nil {
+                fields[key] = value
+            }
         }
-        result.values.title = fields["TITLE"]
-        result.values.artist = fields["ARTIST"]
-        result.values.album = fields["ALBUM"]
-        result.values.genre = fields["GENRE"]
-        result.values.year = fields["DATE"] ?? fields["YEAR"]
+        result.values.title = firstNonblank(fields["TITLE"])
+        result.values.artist = firstNonblank(fields["ARTIST"])
+        result.values.album = firstNonblank(fields["ALBUM"])
+        result.values.genre = firstNonblank(fields["GENRE"])
+        result.values.year = firstNonblank(fields["DATE"], fields["YEAR"])
         result.values.trackNumber = numberPair(
-            fields["TRACKNUMBER"], total: fields["TRACKTOTAL"] ?? fields["TOTALTRACKS"]
+            firstNonblank(fields["TRACKNUMBER"]), total: firstNonblank(fields["TRACKTOTAL"], fields["TOTALTRACKS"])
         )
-        result.values.comment = fields["COMMENT"]
-        result.values.albumArtist = fields["ALBUMARTIST"] ?? fields["ALBUM ARTIST"]
-        result.values.composer = fields["COMPOSER"]
+        result.values.comment = firstNonblank(fields["COMMENT"])
+        result.values.albumArtist = firstNonblank(fields["ALBUMARTIST"], fields["ALBUM ARTIST"])
+        result.values.composer = firstNonblank(fields["COMPOSER"])
         result.values.discNumber = numberPair(
-            fields["DISCNUMBER"], total: fields["DISCTOTAL"] ?? fields["TOTALDISCS"]
+            firstNonblank(fields["DISCNUMBER"]), total: firstNonblank(fields["DISCTOTAL"], fields["TOTALDISCS"])
         )
-        if let compilation = fields["COMPILATION"] {
-            result.values.isCompilation = ["1", "true", "yes"].contains(compilation.lowercased())
+        let compilation = firstNonblank(fields["COMPILATION"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch compilation {
+        case "1", "true", "yes": result.values.isCompilation = true
+        case "0", "false", "no": result.values.isCompilation = false
+        default: break
         }
-        result.lyrics = [fields["LYRICS"], fields["UNSYNCEDLYRICS"]]
-            .compactMap { $0 }
-            .first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+        result.lyrics = firstNonblank(fields["LYRICS"], fields["UNSYNCEDLYRICS"])
         var otherPicture: Data?
         for field in comment.fields {
             guard key(in: field) == "METADATA_BLOCK_PICTURE",
@@ -175,6 +179,10 @@ nonisolated enum XiphMetadata {
         guard let number else { return nil }
         guard number.contains("/") == false, let total, total.isEmpty == false else { return number }
         return "\(number)/\(total)"
+    }
+
+    private static func firstNonblank(_ values: String?...) -> String? {
+        values.compactMap { $0 }.first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
     }
 
     static func little32(_ value: UInt32) -> Data {
