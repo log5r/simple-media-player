@@ -10,9 +10,6 @@ struct SidebarView: View {
     @State private var playlistToRename: Playlist?
     @State private var playlistToDelete: Playlist?
     @State private var nameDraft = ""
-    #if os(macOS)
-    @FocusState private var isSidebarFocused: Bool
-    #endif
 
     var body: some View {
         sidebarList
@@ -60,13 +57,7 @@ struct SidebarView: View {
         List(selection: $selection) {
             sidebarContent
         }
-        .focused($isSidebarFocused)
-        // List can select a row through its whitespace without moving keyboard focus.
-        .simultaneousGesture(
-            TapGesture().onEnded {
-                isSidebarFocused = true
-            }
-        )
+        .modifier(FocusOnTapModifier())
         #else
         List {
             sidebarContent

@@ -236,7 +236,7 @@ struct MediaListView: View {
                 .customizationID(MediaListColumn.fileName.rawValue)
             }
         }
-        .overlay {
+        .modifier(FocusOnTapModifier()).overlay {
             TableBulkSelectionInputBridge(
                 isEnabled: isBulkEditMode,
                 selection: bulkSelection,

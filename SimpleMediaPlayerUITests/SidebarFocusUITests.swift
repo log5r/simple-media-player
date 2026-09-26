@@ -59,6 +59,24 @@ final class SidebarFocusUITests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testTableRowClickMovesKeyboardFocusFromSidebar() {
+        let app = launchApp()
+        let allSongs = row(containing: "sidebarLibraryRow.allSongs", in: app)
+        let firstTrack = trackRow(number: 1, in: app)
+        let secondTrack = trackRow(number: 2, in: app)
+
+        click(allSongs, at: .content)
+        waitForSelection(of: allSongs)
+        firstTrack.click()
+        waitForSelection(of: firstTrack)
+
+        // A selected table row can stay gray when the sidebar retains keyboard focus.
+        app.typeKey(.downArrow, modifierFlags: [])
+        waitForSelection(of: secondTrack)
+        XCTAssertTrue(allSongs.isSelected)
+    }
+
     private enum RowClickLocation {
         case content
         case trailingWhitespace
