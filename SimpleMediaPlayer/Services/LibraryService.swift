@@ -539,11 +539,13 @@ final class LibraryService {
         )
         let metadataIsCompilation = await metadata.firstBool(whereKeyContains: Self.compilationKeyNeedles)
 
-        let title = additionalMetadata?.values.title
-            ?? id3Values?.title
-            ?? musicLibraryMetadata?.title
-            ?? mp4Metadata?.values.title
-            ?? metadataTitle
+        let title = [
+            additionalMetadata?.values.title,
+            id3Values?.title,
+            musicLibraryMetadata?.title,
+            mp4Metadata?.values.title,
+            metadataTitle
+        ].compactMap { $0 }.first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
             ?? sourceURL.deletingPathExtension().lastPathComponent
         let artist = additionalMetadata?.values.artist
             ?? id3Values?.artist
