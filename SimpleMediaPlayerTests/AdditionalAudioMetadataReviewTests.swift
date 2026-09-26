@@ -58,7 +58,7 @@ struct AdditionalAudioMetadataReviewTests {
     }
 
     @Test(arguments: [("flac", ""), ("flac", " \t "), ("wav", ""), ("wav", " \t ")])
-    func importFallsBackWhenEmbeddedTitleIsBlank(fileExtension: String, embeddedTitle: String) async throws {
+    func importFallsBackWhenEmbeddedCoreFieldsAreBlank(fileExtension: String, embeddedTitle: String) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -67,9 +67,12 @@ struct AdditionalAudioMetadataReviewTests {
         if fileExtension == "flac" {
             var comment = try flacComment(in: data)
             comment.fields.removeAll {
-                String(data: $0, encoding: .utf8)?.uppercased().hasPrefix("TITLE=") == true
+                let field = String(data: $0, encoding: .utf8)?.uppercased() ?? ""
+                return ["TITLE=", "ARTIST=", "ALBUM="].contains { field.hasPrefix($0) }
             }
-            comment.fields.append(Data("TITLE=\(embeddedTitle)".utf8))
+            comment.fields += [
+                Data("TITLE=\(embeddedTitle)".utf8), Data("ARTIST=".utf8), Data("ALBUM= \t ".utf8)
+            ]
             try replaceFlacComment(in: &data, with: comment)
         } else {
             try data.write(to: source)
@@ -78,16 +81,22 @@ struct AdditionalAudioMetadataReviewTests {
             )
             data = try Data(contentsOf: source)
             let title = riffChunk("INAM", payload: Data(embeddedTitle.utf8) + Data([0]))
+            let artist = riffChunk("IART", payload: Data([0]))
+            let album = riffChunk("IPRD", payload: Data(" \t \0".utf8))
             let infoStart = try #require(data.range(of: Data("LIST".utf8))?.lowerBound)
             let infoLength = Int(XiphMetadata.uint32(data, at: infoStart + 4, little: true))
             let infoPayload = Data(data[(infoStart + 8)..<(infoStart + 8 + infoLength)])
             #expect(infoPayload.starts(with: Data("INFO".utf8)))
             let infoEnd = infoStart + 8 + infoLength + infoLength % 2
-            data.replaceSubrange(infoStart..<infoEnd, with: riffChunk("LIST", payload: infoPayload + title))
+            let updatedInfo = riffChunk("LIST", payload: infoPayload + title + artist + album)
+            data.replaceSubrange(infoStart..<infoEnd, with: updatedInfo)
             data.replaceSubrange(4..<8, with: XiphMetadata.little32(UInt32(data.count - 8)))
         }
         try data.write(to: source)
-        #expect(try AdditionalAudioMetadata.read(from: source).values.title == embeddedTitle)
+        let embedded = try AdditionalAudioMetadata.read(from: source).values
+        #expect(embedded.title == embeddedTitle)
+        #expect(embedded.artist == "")
+        #expect(embedded.album == " \t ")
 
         let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -98,6 +107,35 @@ struct AdditionalAudioMetadataReviewTests {
         let item = try #require(container.mainContext.fetch(FetchDescriptor<MediaItem>()).first)
         #expect(service.lastImportErrors.isEmpty)
         #expect(item.title == "Filename fallback")
+        #expect(item.artist == "Unknown Artist")
+        #expect(item.album == "Unknown Album")
+    }
+
+    @Test func malformedOptionalWAVTagsDoNotBlockImportOrAssetLyrics() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("Playable.wav")
+        var data = try Data(contentsOf: fixture("wav"))
+        let infoStart = try #require(data.range(of: Data("LIST".utf8))?.lowerBound)
+        #expect(Data(data[(infoStart + 8)..<(infoStart + 12)]) == Data("INFO".utf8))
+        data.replaceSubrange((infoStart + 16)..<(infoStart + 20), with: XiphMetadata.little32(UInt32.max))
+        try data.write(to: source)
+        #expect(AdditionalAudioMetadata.canWrite(to: source))
+        #expect(throws: MediaMetadataEditError.invalidAudioMetadata) {
+            try AdditionalAudioMetadata.read(from: source)
+        }
+
+        let lyricsReader = EmbeddedLyricsReader(readAsset: { _ in "Asset lyrics" })
+        #expect(try await lyricsReader.read(from: source) == "Asset lyrics")
+
+        let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let service = LibraryService(mediaDirectoryURL: directory.appendingPathComponent("Managed"))
+        await service.importFiles(from: [source], into: container.mainContext, existingItems: [])
+        #expect(service.lastImportErrors.isEmpty)
+        #expect(try container.mainContext.fetch(FetchDescriptor<MediaItem>()).count == 1)
     }
 
     private func fixture(_ ext: String) -> URL {

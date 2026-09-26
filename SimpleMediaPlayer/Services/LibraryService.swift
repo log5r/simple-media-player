@@ -46,6 +46,10 @@ final class LibraryService {
     private static let lyricsKeyNeedles = ["lyrics", "ult", "uslt", "sylt", "©lyr", "lyr"]
     private static let compilationKeyNeedles = ["compilation", "cpil", "tcmp", "tcp"]
 
+    private static func firstNonblank(_ values: String?...) -> String? {
+        values.compactMap { $0 }.first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+    }
+
     init(
         mediaDirectoryURL: URL? = nil,
         artworkProcessor: ArtworkProcessor = ArtworkProcessor(),
@@ -513,9 +517,16 @@ final class LibraryService {
         }
         let additionalMetadata: AudioTagReadResult?
         if AdditionalAudioMetadata.canWrite(to: sourceURL) {
-            additionalMetadata = try await Task.detached(priority: .utility) {
-                try AdditionalAudioMetadata.read(from: sourceURL)
-            }.value
+            do {
+                additionalMetadata = try await Task.detached(priority: .utility) {
+                    try AdditionalAudioMetadata.read(from: sourceURL)
+                }.value
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+                additionalMetadata = nil
+            }
         } else {
             additionalMetadata = nil
         }
@@ -539,48 +550,58 @@ final class LibraryService {
         )
         let metadataIsCompilation = await metadata.firstBool(whereKeyContains: Self.compilationKeyNeedles)
 
-        let title = [
+        let title = Self.firstNonblank(
             additionalMetadata?.values.title,
             id3Values?.title,
             musicLibraryMetadata?.title,
             mp4Metadata?.values.title,
             metadataTitle
-        ].compactMap { $0 }.first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+        )
             ?? sourceURL.deletingPathExtension().lastPathComponent
-        let artist = additionalMetadata?.values.artist
-            ?? id3Values?.artist
-            ?? musicLibraryMetadata?.artist
-            ?? mp4Metadata?.values.artist
-            ?? metadataArtist
+        let artist = Self.firstNonblank(
+            additionalMetadata?.values.artist,
+            id3Values?.artist,
+            musicLibraryMetadata?.artist,
+            mp4Metadata?.values.artist,
+            metadataArtist
+        )
             ?? "Unknown Artist"
-        let album = additionalMetadata?.values.album
-            ?? id3Values?.album
-            ?? musicLibraryMetadata?.album
-            ?? mp4Metadata?.values.album
-            ?? metadataAlbum
+        let album = Self.firstNonblank(
+            additionalMetadata?.values.album,
+            id3Values?.album,
+            musicLibraryMetadata?.album,
+            mp4Metadata?.values.album,
+            metadataAlbum
+        )
             ?? "Unknown Album"
-        let genre = additionalMetadata?.values.genre ?? id3Values?.genre ?? musicLibraryMetadata?.genre ?? mp4Metadata?.values.genre ?? metadataGenre
-        let year = additionalMetadata?.values.year ?? id3Values?.year ?? musicLibraryMetadata?.year ?? mp4Metadata?.values.year ?? metadataYear
-        let trackNumber = additionalMetadata?.values.trackNumber ?? id3Values?.trackNumber
-            ?? musicLibraryMetadata?.trackNumber
-            ?? mp4Metadata?.values.trackNumber
-            ?? metadataTrackNumber
-        let comment = additionalMetadata?.values.comment ?? id3Values?.comment
-            ?? musicLibraryMetadata?.comment
-            ?? mp4Metadata?.values.comment
-            ?? metadataComment
-        let albumArtist = additionalMetadata?.values.albumArtist ?? id3Values?.albumArtist
-            ?? musicLibraryMetadata?.albumArtist
-            ?? mp4Metadata?.values.albumArtist
-            ?? metadataAlbumArtist
-        let composer = additionalMetadata?.values.composer ?? id3Values?.composer
-            ?? musicLibraryMetadata?.composer
-            ?? mp4Metadata?.values.composer
-            ?? metadataComposer
-        let discNumber = additionalMetadata?.values.discNumber ?? id3Values?.discNumber
-            ?? musicLibraryMetadata?.discNumber
-            ?? mp4Metadata?.values.discNumber
-            ?? metadataDiscNumber
+        let genre = Self.firstNonblank(
+            additionalMetadata?.values.genre, id3Values?.genre, musicLibraryMetadata?.genre,
+            mp4Metadata?.values.genre, metadataGenre
+        )
+        let year = Self.firstNonblank(
+            additionalMetadata?.values.year, id3Values?.year, musicLibraryMetadata?.year,
+            mp4Metadata?.values.year, metadataYear
+        )
+        let trackNumber = Self.firstNonblank(
+            additionalMetadata?.values.trackNumber, id3Values?.trackNumber, musicLibraryMetadata?.trackNumber,
+            mp4Metadata?.values.trackNumber, metadataTrackNumber
+        )
+        let comment = Self.firstNonblank(
+            additionalMetadata?.values.comment, id3Values?.comment, musicLibraryMetadata?.comment,
+            mp4Metadata?.values.comment, metadataComment
+        )
+        let albumArtist = Self.firstNonblank(
+            additionalMetadata?.values.albumArtist, id3Values?.albumArtist, musicLibraryMetadata?.albumArtist,
+            mp4Metadata?.values.albumArtist, metadataAlbumArtist
+        )
+        let composer = Self.firstNonblank(
+            additionalMetadata?.values.composer, id3Values?.composer, musicLibraryMetadata?.composer,
+            mp4Metadata?.values.composer, metadataComposer
+        )
+        let discNumber = Self.firstNonblank(
+            additionalMetadata?.values.discNumber, id3Values?.discNumber, musicLibraryMetadata?.discNumber,
+            mp4Metadata?.values.discNumber, metadataDiscNumber
+        )
         let isCompilation = additionalMetadata?.values.isCompilation ?? id3Values?.isCompilation
             ?? musicLibraryMetadata?.isCompilation
             ?? mp4Metadata?.values.isCompilation
