@@ -109,6 +109,35 @@ struct AdditionalAudioMetadataReviewTests {
         #expect(item.title == "Filename fallback")
         #expect(item.artist == "Unknown Artist")
         #expect(item.album == "Unknown Album")
+        let editable = await service.editableMetadataDraft(for: item)
+        #expect(editable.title == item.title)
+        #expect(editable.artist == "")
+        #expect(editable.album == "")
+    }
+
+    @Test func blankPrimaryXiphLyricsUseFallbackTag() {
+        let comment = XiphMetadata.Comment(vendor: Data("Encoder".utf8), fields: [
+            Data("LYRICS= \t ".utf8), Data("UNSYNCEDLYRICS=Fallback lyrics".utf8)
+        ])
+        #expect(XiphMetadata.read(comment).lyrics == "Fallback lyrics")
+
+        let preferred = XiphMetadata.Comment(vendor: comment.vendor, fields: [
+            Data("LYRICS=Primary lyrics".utf8), Data("UNSYNCEDLYRICS=Fallback lyrics".utf8)
+        ])
+        #expect(XiphMetadata.read(preferred).lyrics == "Primary lyrics")
+    }
+
+    @Test func blankEmbeddedValuesPreserveDraftFallbacks() {
+        let original = MediaMetadataEditDraft(
+            title: "Fallback title", artist: "Fallback artist", album: "Fallback album", genre: "Fallback genre",
+            year: "2026", trackNumber: "2", comment: "Fallback comment", albumArtist: "Fallback album artist",
+            composer: "Fallback composer", discNumber: "1"
+        )
+        let embedded = MediaMetadataEmbeddedValues(
+            title: "", artist: " \t ", album: "", genre: " ", year: "", trackNumber: " ",
+            comment: "", albumArtist: " ", composer: "", discNumber: " \n"
+        )
+        #expect(original.applying(embedded) == original)
     }
 
     @Test func malformedOptionalWAVTagsDoNotBlockImportOrAssetLyrics() async throws {

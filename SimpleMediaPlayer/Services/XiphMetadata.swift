@@ -101,7 +101,9 @@ nonisolated enum XiphMetadata {
         if let compilation = fields["COMPILATION"] {
             result.values.isCompilation = ["1", "true", "yes"].contains(compilation.lowercased())
         }
-        result.lyrics = fields["LYRICS"] ?? fields["UNSYNCEDLYRICS"]
+        result.lyrics = [fields["LYRICS"], fields["UNSYNCEDLYRICS"]]
+            .compactMap { $0 }
+            .first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
         var otherPicture: Data?
         for field in comment.fields {
             guard key(in: field) == "METADATA_BLOCK_PICTURE",

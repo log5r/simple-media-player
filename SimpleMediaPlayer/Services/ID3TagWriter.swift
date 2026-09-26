@@ -119,18 +119,23 @@ struct MediaMetadataEditDraft: Equatable, Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    nonisolated private func nonblank(_ value: String?) -> String? {
+        guard let value, value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { return nil }
+        return value
+    }
+
     nonisolated func applying(_ values: MediaMetadataEmbeddedValues) -> MediaMetadataEditDraft {
         MediaMetadataEditDraft(
-            title: values.title ?? title,
-            artist: values.artist ?? artist,
-            album: values.album ?? album,
-            genre: values.genre ?? genre,
-            year: values.year ?? year,
-            trackNumber: values.trackNumber ?? trackNumber,
-            comment: values.comment ?? comment,
-            albumArtist: values.albumArtist ?? albumArtist,
-            composer: values.composer ?? composer,
-            discNumber: values.discNumber ?? discNumber,
+            title: nonblank(values.title) ?? title,
+            artist: nonblank(values.artist) ?? artist,
+            album: nonblank(values.album) ?? album,
+            genre: nonblank(values.genre) ?? genre,
+            year: nonblank(values.year) ?? year,
+            trackNumber: nonblank(values.trackNumber) ?? trackNumber,
+            comment: nonblank(values.comment) ?? comment,
+            albumArtist: nonblank(values.albumArtist) ?? albumArtist,
+            composer: nonblank(values.composer) ?? composer,
+            discNumber: nonblank(values.discNumber) ?? discNumber,
             isCompilation: values.isCompilation ?? isCompilation,
             artworkData: artworkData,
             lyrics: lyrics,
