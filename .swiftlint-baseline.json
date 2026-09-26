@@ -225,21 +225,6 @@
     }
   },
   {
-    "text": "enum ID3TagWriter {",
-    "violation": {
-      "location": {
-        "character": 1,
-        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
-        "line": 273
-      },
-      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 457 lines",
-      "ruleDescription": "Type bodies should not span too many lines",
-      "ruleIdentifier": "type_body_length",
-      "ruleName": "Type Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "    nonisolated static func updatedTagData(",
     "violation": {
       "location": {
@@ -252,21 +237,6 @@
       "ruleIdentifier": "cyclomatic_complexity",
       "ruleName": "Cyclomatic Complexity",
       "severity": "warning"
-    }
-  },
-  {
-    "text": "    ) throws -> (version: UInt8, flags: UInt8, contentEnd: Int, totalEnd: Int)? {",
-    "violation": {
-      "location": {
-        "character": 17,
-        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
-        "line": 397
-      },
-      "reason": "Tuples should have at most 2 members",
-      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
-      "ruleIdentifier": "large_tuple",
-      "ruleName": "Large Tuple",
-      "severity": "error"
     }
   },
   {
@@ -300,21 +270,6 @@
     }
   },
   {
-    "text": "final class LibraryService {",
-    "violation": {
-      "location": {
-        "character": 7,
-        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
-        "line": 24
-      },
-      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 670 lines",
-      "ruleDescription": "Type bodies should not span too many lines",
-      "ruleIdentifier": "type_body_length",
-      "ruleName": "Type Body Length",
-      "severity": "error"
-    }
-  },
-  {
     "text": "    private func performImport(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {",
     "violation": {
       "location": {
@@ -342,36 +297,6 @@
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",
       "severity": "warning"
-    }
-  },
-  {
-    "text": "    private func makeMediaItem(from sourceURL: URL, importFingerprint: String) async throws -> MediaItem {",
-    "violation": {
-      "location": {
-        "character": 13,
-        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
-        "line": 472
-      },
-      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 129 lines",
-      "ruleDescription": "Function bodies should not span too many lines",
-      "ruleIdentifier": "function_body_length",
-      "ruleName": "Function Body Length",
-      "severity": "error"
-    }
-  },
-  {
-    "text": "private enum MediaInfoInspector {",
-    "violation": {
-      "location": {
-        "character": 9,
-        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
-        "line": 882
-      },
-      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 432 lines",
-      "ruleDescription": "Type bodies should not span too many lines",
-      "ruleIdentifier": "type_body_length",
-      "ruleName": "Type Body Length",
-      "severity": "error"
     }
   },
   {
@@ -417,21 +342,6 @@
       "ruleIdentifier": "cyclomatic_complexity",
       "ruleName": "Cyclomatic Complexity",
       "severity": "warning"
-    }
-  },
-  {
-    "text": "}",
-    "violation": {
-      "location": {
-        "character": 1,
-        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
-        "line": 1370
-      },
-      "reason": "File should contain 1000 lines or less: currently contains 1370",
-      "ruleDescription": "Files should not span too many lines.",
-      "ruleIdentifier": "file_length",
-      "ruleName": "File Length",
-      "severity": "error"
     }
   },
   {
@@ -1485,21 +1395,6 @@
     }
   },
   {
-    "text": ") -> (",
-    "violation": {
-      "location": {
-        "character": 6,
-        "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
-        "line": 2743
-      },
-      "reason": "Tuples should have at most 2 members",
-      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
-      "ruleIdentifier": "large_tuple",
-      "ruleName": "Large Tuple",
-      "severity": "error"
-    }
-  },
-  {
     "text": "}",
     "violation": {
       "location": {
@@ -1618,5 +1513,110 @@
       "ruleName": "File Length",
       "severity": "warning"
     }
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleName": "Type Body Length",
+      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 489 lines",
+      "ruleIdentifier": "type_body_length",
+      "location": {
+        "line": 276,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "character": 1
+      }
+    },
+    "text": "enum ID3TagWriter {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleName": "Large Tuple",
+      "reason": "Tuples should have at most 2 members",
+      "ruleIdentifier": "large_tuple",
+      "location": {
+        "line": 433,
+        "file": "SimpleMediaPlayer/Services/ID3TagWriter.swift",
+        "character": 17
+      }
+    },
+    "text": "    ) throws -> (version: UInt8, flags: UInt8, contentEnd: Int, totalEnd: Int)? {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Function bodies should not span too many lines",
+      "ruleName": "Function Body Length",
+      "reason": "Function body should span 100 lines or less excluding comments and whitespace: currently spans 140 lines",
+      "ruleIdentifier": "function_body_length",
+      "location": {
+        "line": 491,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "character": 13
+      }
+    },
+    "text": "    private func makeMediaItem(from sourceURL: URL, importFingerprint: String) async throws -> MediaItem {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Files should not span too many lines.",
+      "ruleName": "File Length",
+      "reason": "File should contain 1000 lines or less: currently contains 1400",
+      "ruleIdentifier": "file_length",
+      "location": {
+        "line": 1400,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "character": 1
+      }
+    },
+    "text": "}"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Tuples shouldn't have too many members. Create a custom type instead.",
+      "ruleName": "Large Tuple",
+      "reason": "Tuples should have at most 2 members",
+      "ruleIdentifier": "large_tuple",
+      "location": {
+        "line": 2744,
+        "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
+        "character": 6
+      }
+    },
+    "text": ") -> ("
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleName": "Type Body Length",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 699 lines",
+      "ruleIdentifier": "type_body_length",
+      "location": {
+        "line": 24,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "character": 7
+      }
+    },
+    "text": "final class LibraryService {"
+  },
+  {
+    "violation": {
+      "severity": "error",
+      "ruleDescription": "Type bodies should not span too many lines",
+      "ruleName": "Type Body Length",
+      "reason": "Enum body should span 350 lines or less excluding comments and whitespace: currently spans 432 lines",
+      "ruleIdentifier": "type_body_length",
+      "location": {
+        "line": 915,
+        "file": "SimpleMediaPlayer/Services/LibraryService.swift",
+        "character": 9
+      }
+    },
+    "text": "private enum MediaInfoInspector {"
   }
 ]

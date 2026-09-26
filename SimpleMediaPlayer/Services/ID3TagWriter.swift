@@ -243,6 +243,7 @@ enum MediaMetadataEditError: LocalizedError, Equatable {
     case invalidAIFFMetadata
     case unsupportedAIFFMetadataLayout
     case invalidArtwork
+    case invalidAudioMetadata
 
     nonisolated var errorDescription: String? {
         switch self {
@@ -266,6 +267,8 @@ enum MediaMetadataEditError: LocalizedError, Equatable {
             L10n.string("This AIFF metadata layout is not supported for editing.")
         case .invalidArtwork:
             L10n.string("The selected file is not a valid image.")
+        case .invalidAudioMetadata:
+            L10n.string("The embedded audio metadata is invalid or uses an unsupported layout.")
         }
     }
 }
@@ -293,6 +296,39 @@ enum ID3TagWriter {
         let data = try readTagData(from: source, at: 0, count: fileSize)
         guard let tag = try existingTag(in: data) else { return nil }
         return embeddedValues(in: tag)
+    }
+
+    nonisolated static func readEmbeddedTag(_ data: Data) throws -> AudioTagReadResult? {
+        guard let tag = try existingTag(in: data) else { return nil }
+        var result = AudioTagReadResult()
+        result.values = embeddedValues(in: tag)
+        for frame in tag.frames {
+            let payload = frame.payload
+            if (frame.id == "APIC" || frame.id == "PIC"), result.artworkData == nil, payload.count >= 5 {
+                let encoding = payload[payload.startIndex]
+                var cursor = payload.index(after: payload.startIndex)
+                if frame.id == "PIC" {
+                    cursor = payload.index(cursor, offsetBy: 3, limitedBy: payload.endIndex) ?? payload.endIndex
+                } else if let terminator = payload[cursor...].firstIndex(of: 0) {
+                    cursor = payload.index(after: terminator)
+                } else { continue }
+                guard cursor < payload.endIndex else { continue }
+                cursor = payload.index(after: cursor) // picture type
+                guard cursor < payload.endIndex,
+                      let terminator = encodedStringTerminator(in: payload[cursor...], encodingByte: encoding)
+                else { continue }
+                let end = payload.index(terminator, offsetBy: encoding == 1 || encoding == 2 ? 2 : 1)
+                if end < payload.endIndex { result.artworkData = Data(payload[end...]) }
+            } else if (frame.id == "USLT" || frame.id == "ULT"), result.lyrics == nil, payload.count >= 5 {
+                let encoding = payload[payload.startIndex]
+                let body = payload.dropFirst(4)
+                if let terminator = encodedStringTerminator(in: body, encodingByte: encoding) {
+                    let start = body.index(terminator, offsetBy: encoding == 1 || encoding == 2 ? 2 : 1)
+                    result.lyrics = decodeText(body[start...], encodingByte: encoding)
+                }
+            }
+        }
+        return result
     }
 
     nonisolated static func write(_ draft: MediaMetadataEditDraft, to url: URL) throws {

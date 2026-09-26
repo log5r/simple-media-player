@@ -60,6 +60,8 @@ final class TransformedTrackExporter {
 
         var draft = MediaMetadataEditDraft(item: item)
         draft.title = trimmedTitle
+        draft.editsArtwork = true
+        draft.editsLyrics = true
         let pitchCents = Float(pitchSemitones * 100)
         let renderRate = Float(rate)
         let renderer = renderer

@@ -11,6 +11,8 @@ It supports importing audio and video files, browsing a local library, playlist 
 - Apple platform SDKs supported by the Xcode project
 - Music analysis using [Music Understanding](https://developer.apple.com/documentation/musicunderstanding) requires macOS 27+, iOS 27+, or iPadOS 27+. Music analysis is unavailable on earlier OS versions.
 
+The [embedded audio metadata support matrix](docs/embedded-audio-metadata.md) ([日本語](docs/embedded-audio-metadata.ja.md)) describes supported fields and formats.
+
 ## Localization
 
 The app supports English and Japanese and follows the system's language preference.
@@ -99,4 +101,3 @@ The bundled fonts are licensed under the SIL Open Font License (OFL), not MIT:
 - DSEG7 Classic Mini — [OFL-DSEG.txt](SimpleMediaPlayer/Resources/Fonts/OFL-DSEG.txt)
 - DotGothic16 — [OFL-DotGothic16.txt](SimpleMediaPlayer/Resources/Fonts/OFL-DotGothic16.txt)
 - Dotrice — [OFL-Dotrice.txt](SimpleMediaPlayer/Resources/Fonts/OFL-Dotrice.txt)
-

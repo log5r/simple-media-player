@@ -181,6 +181,7 @@ final class LibraryService {
         return ID3TagWriter.canWriteMetadata(to: url)
             || MP4MetadataWriter.canWriteMetadata(to: url)
             || AIFFMetadataWriter.canWriteMetadata(to: url)
+            || AdditionalAudioMetadata.canWrite(to: url)
     }
 
     func saveLyrics(_ lyrics: String, for item: MediaItem, embedInFile: Bool, in context: ModelContext) async throws {
@@ -195,6 +196,7 @@ final class LibraryService {
             let canWriteMetadata = ID3TagWriter.canWriteMetadata(to: url)
                 || MP4MetadataWriter.canWriteMetadata(to: url)
                 || AIFFMetadataWriter.canWriteMetadata(to: url)
+                || AdditionalAudioMetadata.canWrite(to: url)
             guard canWriteMetadata else {
                 throw MediaMetadataEditError.unsupportedFileFormat
             }
@@ -215,8 +217,10 @@ final class LibraryService {
                     try ID3TagWriter.write(draft, to: url)
                 } else if MP4MetadataWriter.canWriteMetadata(to: url) {
                     try MP4MetadataWriter.write(draft, to: url)
-                } else {
+                } else if AIFFMetadataWriter.canWriteMetadata(to: url) {
                     try AIFFMetadataWriter.write(draft, to: url)
+                } else {
+                    try AdditionalAudioMetadata.write(draft, to: url)
                 }
             }.value
         }
@@ -274,6 +278,15 @@ final class LibraryService {
             draft = draft.applying(values)
         }
 
+        if AdditionalAudioMetadata.canWrite(to: url),
+           let embedded = try? await Task.detached(priority: .utility, operation: {
+               try AdditionalAudioMetadata.read(from: url)
+           }).value {
+            draft = draft.applying(embedded.values)
+            if let artwork = embedded.artworkData { draft.artworkData = artwork }
+            if let lyrics = embedded.lyrics { draft.lyrics = lyrics }
+        }
+
         return draft
     }
 
@@ -302,6 +315,7 @@ final class LibraryService {
         let canWriteMetadata = ID3TagWriter.canWriteMetadata(to: url)
             || MP4MetadataWriter.canWriteMetadata(to: url)
             || AIFFMetadataWriter.canWriteMetadata(to: url)
+            || AdditionalAudioMetadata.canWrite(to: url)
         guard canWriteMetadata || draft.editsArtwork else {
             throw MediaMetadataEditError.unsupportedFileFormat
         }
@@ -317,8 +331,10 @@ final class LibraryService {
                     try ID3TagWriter.write(draft, to: url)
                 } else if MP4MetadataWriter.canWriteMetadata(to: url) {
                     try MP4MetadataWriter.write(draft, to: url)
-                } else {
+                } else if AIFFMetadataWriter.canWriteMetadata(to: url) {
                     try AIFFMetadataWriter.write(draft, to: url)
+                } else {
+                    try AdditionalAudioMetadata.write(draft, to: url)
                 }
             }.value
         }
@@ -339,6 +355,9 @@ final class LibraryService {
         }
         if draft.editsArtwork {
             item.artworkData = draft.artworkData
+        }
+        if draft.editsLyrics {
+            item.lyricsRaw = draft.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft.lyrics
         }
         try context.save()
     }
@@ -492,6 +511,14 @@ final class LibraryService {
                 try ID3TagWriter.readMetadata(from: sourceURL)
             }).value
         }
+        let additionalMetadata: AudioTagReadResult?
+        if AdditionalAudioMetadata.canWrite(to: sourceURL) {
+            additionalMetadata = try await Task.detached(priority: .utility) {
+                try AdditionalAudioMetadata.read(from: sourceURL)
+            }.value
+        } else {
+            additionalMetadata = nil
+        }
         let metadataTitle = await metadata.stringValue(for: .commonIdentifierTitle)
         let metadataArtist = await metadata.stringValue(for: .commonIdentifierArtist)
         let metadataAlbum = await metadata.stringValue(for: .commonIdentifierAlbumName)
@@ -512,52 +539,55 @@ final class LibraryService {
         )
         let metadataIsCompilation = await metadata.firstBool(whereKeyContains: Self.compilationKeyNeedles)
 
-        let title = id3Values?.title
+        let title = additionalMetadata?.values.title
+            ?? id3Values?.title
             ?? musicLibraryMetadata?.title
             ?? mp4Metadata?.values.title
             ?? metadataTitle
             ?? sourceURL.deletingPathExtension().lastPathComponent
-        let artist = id3Values?.artist
+        let artist = additionalMetadata?.values.artist
+            ?? id3Values?.artist
             ?? musicLibraryMetadata?.artist
             ?? mp4Metadata?.values.artist
             ?? metadataArtist
             ?? "Unknown Artist"
-        let album = id3Values?.album
+        let album = additionalMetadata?.values.album
+            ?? id3Values?.album
             ?? musicLibraryMetadata?.album
             ?? mp4Metadata?.values.album
             ?? metadataAlbum
             ?? "Unknown Album"
-        let genre = id3Values?.genre ?? musicLibraryMetadata?.genre ?? mp4Metadata?.values.genre ?? metadataGenre
-        let year = id3Values?.year ?? musicLibraryMetadata?.year ?? mp4Metadata?.values.year ?? metadataYear
-        let trackNumber = id3Values?.trackNumber
+        let genre = additionalMetadata?.values.genre ?? id3Values?.genre ?? musicLibraryMetadata?.genre ?? mp4Metadata?.values.genre ?? metadataGenre
+        let year = additionalMetadata?.values.year ?? id3Values?.year ?? musicLibraryMetadata?.year ?? mp4Metadata?.values.year ?? metadataYear
+        let trackNumber = additionalMetadata?.values.trackNumber ?? id3Values?.trackNumber
             ?? musicLibraryMetadata?.trackNumber
             ?? mp4Metadata?.values.trackNumber
             ?? metadataTrackNumber
-        let comment = id3Values?.comment
+        let comment = additionalMetadata?.values.comment ?? id3Values?.comment
             ?? musicLibraryMetadata?.comment
             ?? mp4Metadata?.values.comment
             ?? metadataComment
-        let albumArtist = id3Values?.albumArtist
+        let albumArtist = additionalMetadata?.values.albumArtist ?? id3Values?.albumArtist
             ?? musicLibraryMetadata?.albumArtist
             ?? mp4Metadata?.values.albumArtist
             ?? metadataAlbumArtist
-        let composer = id3Values?.composer
+        let composer = additionalMetadata?.values.composer ?? id3Values?.composer
             ?? musicLibraryMetadata?.composer
             ?? mp4Metadata?.values.composer
             ?? metadataComposer
-        let discNumber = id3Values?.discNumber
+        let discNumber = additionalMetadata?.values.discNumber ?? id3Values?.discNumber
             ?? musicLibraryMetadata?.discNumber
             ?? mp4Metadata?.values.discNumber
             ?? metadataDiscNumber
-        let isCompilation = id3Values?.isCompilation
+        let isCompilation = additionalMetadata?.values.isCompilation ?? id3Values?.isCompilation
             ?? musicLibraryMetadata?.isCompilation
             ?? mp4Metadata?.values.isCompilation
             ?? metadataIsCompilation
             ?? false
         let metadataLyrics = await metadata.firstString(whereKeyContains: Self.lyricsKeyNeedles)
-        let lyricsRaw = isVideo ? nil : mp4Metadata?.lyrics ?? metadataLyrics
+        let lyricsRaw = isVideo ? nil : additionalMetadata?.lyrics ?? mp4Metadata?.lyrics ?? metadataLyrics
         let metadataArtwork = await metadata.dataValue(for: .commonIdentifierArtwork)
-        let embeddedArtwork = mp4Metadata?.artworkData ?? metadataArtwork
+        let embeddedArtwork = additionalMetadata?.artworkData ?? mp4Metadata?.artworkData ?? metadataArtwork
         var artwork: Data?
         if let embeddedArtwork {
             artwork = await artworkProcessor.thumbnail(from: embeddedArtwork)
