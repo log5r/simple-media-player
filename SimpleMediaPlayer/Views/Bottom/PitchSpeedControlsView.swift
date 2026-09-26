@@ -284,7 +284,7 @@ enum PitchSpeedTextFormatter {
     static func adjustedTitle(baseTitle: String, pitchSemitones: Int, rate: Double) -> String {
         var parts: [String] = []
         if pitchSemitones != 0 {
-            parts.append("Key\(pitchSemitones > 0 ? "+" : "")\(pitchSemitones)")
+            parts.append(L10n.format("Key%+d", pitchSemitones))
         }
         if abs(rate - 1.0) > 0.001 {
             parts.append(Self.rate(rate))

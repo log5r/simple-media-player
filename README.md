@@ -1,5 +1,7 @@
 # SimpleMediaPlayer
 
+**English** | [日本語](README.ja.md)
+
 A media player packed with my personal interests.
 It supports importing audio and video files, browsing a local library, playlist management, playback controls, lyrics display, and audio visualization.
 
@@ -7,6 +9,16 @@ It supports importing audio and video files, browsing a local library, playlist 
 
 - Xcode 26+ (with Swift 6+)
 - Apple platform SDKs supported by the Xcode project
+
+## Localization
+
+The app supports English and Japanese and follows the system's language preference.
+UI text is maintained in `SimpleMediaPlayer/Localizable.xcstrings`; the Music
+permission explanation is maintained in `SimpleMediaPlayer/InfoPlist.xcstrings`.
+Keep LED faceplate legends (`EQ`, `KEY`, `SPEED`, `VOLUME`, `ON`/`OFF`), `BPM`,
+and numeric displays unchanged in both languages. Localize accessibility
+descriptions separately. Language-independent catalog entries use
+`shouldTranslate: false`.
 
 ## Build and Test
 

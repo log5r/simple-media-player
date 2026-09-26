@@ -1913,7 +1913,7 @@ struct BulkMetadataEditView: View {
                 ArtworkView(data: draft.artworkData, isVideo: false, size: 88)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Button(draft.artworkData == nil ? "Add Image…" : "Replace Image…") {
+                    Button(L10n.string(draft.artworkData == nil ? "Add Image…" : "Replace Image…")) {
                         isArtworkImporterPresented = true
                     }
 
@@ -2324,7 +2324,7 @@ struct MediaInfoView: View {
                 ArtworkView(data: metadataDraft.artworkData, isVideo: item.isVideo, size: 120)
 
                 HStack(spacing: 8) {
-                    Button(metadataDraft.artworkData == nil ? "Add Image…" : "Replace Image…") {
+                    Button(L10n.string(metadataDraft.artworkData == nil ? "Add Image…" : "Replace Image…")) {
                         isArtworkImporterPresented = true
                     }
                     if metadataDraft.artworkData != nil {

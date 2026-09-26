@@ -307,7 +307,7 @@
         "file": "SimpleMediaPlayer/Services/LibraryService.swift",
         "line": 24
       },
-      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 667 lines",
+      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 670 lines",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleIdentifier": "type_body_length",
       "ruleName": "Type Body Length",
@@ -425,9 +425,9 @@
       "location": {
         "character": 1,
         "file": "SimpleMediaPlayer/Services/LibraryService.swift",
-        "line": 1367
+        "line": 1370
       },
-      "reason": "File should contain 1000 lines or less: currently contains 1367",
+      "reason": "File should contain 1000 lines or less: currently contains 1370",
       "ruleDescription": "Files should not span too many lines.",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",
@@ -1477,7 +1477,7 @@
         "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
         "line": 1918
       },
-      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 303 lines",
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 304 lines",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleIdentifier": "type_body_length",
       "ruleName": "Type Body Length",
@@ -1505,9 +1505,9 @@
       "location": {
         "character": 1,
         "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
-        "line": 2902
+        "line": 2903
       },
-      "reason": "File should contain 1000 lines or less: currently contains 2902",
+      "reason": "File should contain 1000 lines or less: currently contains 2903",
       "ruleDescription": "Files should not span too many lines.",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",

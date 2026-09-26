@@ -716,7 +716,10 @@ final class LibraryService {
         case let .failed(message):
             if didReportMusicLibraryAccessFailure == false {
                 lastImportErrors.append(
-                    "Music library metadata could not be read; embedded metadata was used instead: \(message)"
+                    L10n.format(
+                        "Music library metadata could not be read; embedded metadata was used instead: %@",
+                        message
+                    )
                 )
                 didReportMusicLibraryAccessFailure = true
             }

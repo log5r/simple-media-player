@@ -1973,7 +1973,7 @@ struct PlayerViewModelTests {
 
         fixture.player.play(item: item, in: [item])
 
-        #expect(fixture.player.errorMessage == "ファイルを開けません: Missing")
+        #expect(fixture.player.errorMessage == L10n.format("Could not open file: %@", "Missing"))
         #expect(fixture.player.isPlaying == false)
         #expect(fixture.audio.loadedURLs.isEmpty)
         #expect(fixture.audio.playCallCount == 0)
@@ -2175,13 +2175,14 @@ struct PlayerViewModelTests {
     @Test func adjustedCopyTitleIncludesOnlyChangedValues() {
         #expect(
             PitchSpeedTextFormatter.adjustedTitle(baseTitle: "Song", pitchSemitones: 2, rate: 1.25)
-                == "Song (Key+2 ×1.25)"
+                == "Song (\(L10n.format("Key%+d", 2)) ×1.25)"
         )
         #expect(
             PitchSpeedTextFormatter.adjustedTitle(baseTitle: "Song", pitchSemitones: 0, rate: 0.85) == "Song (×0.85)"
         )
         #expect(
-            PitchSpeedTextFormatter.adjustedTitle(baseTitle: "Song", pitchSemitones: -3, rate: 1.0) == "Song (Key-3)"
+            PitchSpeedTextFormatter.adjustedTitle(baseTitle: "Song", pitchSemitones: -3, rate: 1.0)
+                == "Song (\(L10n.format("Key%+d", -3)))"
         )
     }
 

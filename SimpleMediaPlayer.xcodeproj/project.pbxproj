@@ -427,8 +427,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Musicライブラリから曲情報を読み取るために使用します。";
-				"INFOPLIST_KEY_NSAppleEventsUsageDescription[sdk=macosx*]" = "Musicライブラリから曲情報を読み取るために使用します。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Used to read song information from your Music library.";
+				"INFOPLIST_KEY_NSAppleEventsUsageDescription[sdk=macosx*]" = "Used to read song information from your Music library.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -466,8 +466,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Musicライブラリから曲情報を読み取るために使用します。";
-				"INFOPLIST_KEY_NSAppleEventsUsageDescription[sdk=macosx*]" = "Musicライブラリから曲情報を読み取るために使用します。";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Used to read song information from your Music library.";
+				"INFOPLIST_KEY_NSAppleEventsUsageDescription[sdk=macosx*]" = "Used to read song information from your Music library.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

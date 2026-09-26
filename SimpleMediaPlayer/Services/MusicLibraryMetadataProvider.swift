@@ -90,14 +90,14 @@ enum MusicLibraryMetadataProvider {
         hints: MusicLibraryMatchHints
     ) -> MusicLibraryMetadataLookupResult {
         guard let script = NSAppleScript(source: appleScriptSource(url: url, hints: hints)) else {
-            return .failed("Could not prepare Music library access.")
+            return .failed(L10n.string("Could not prepare Music library access."))
         }
 
         var errorInfo: NSDictionary?
         let result = script.executeAndReturnError(&errorInfo)
         if let errorInfo {
             let message = (errorInfo[NSAppleScript.errorMessage] as? String)
-                ?? "Music library access failed."
+                ?? L10n.string("Music library access failed.")
             return .failed(message)
         }
         guard result.numberOfItems >= 13 else {
