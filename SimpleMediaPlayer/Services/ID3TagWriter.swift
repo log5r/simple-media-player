@@ -119,18 +119,23 @@ struct MediaMetadataEditDraft: Equatable, Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    nonisolated private func nonblank(_ value: String?) -> String? {
+        guard let value, value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else { return nil }
+        return value
+    }
+
     nonisolated func applying(_ values: MediaMetadataEmbeddedValues) -> MediaMetadataEditDraft {
         MediaMetadataEditDraft(
-            title: values.title ?? title,
-            artist: values.artist ?? artist,
-            album: values.album ?? album,
-            genre: values.genre ?? genre,
-            year: values.year ?? year,
-            trackNumber: values.trackNumber ?? trackNumber,
-            comment: values.comment ?? comment,
-            albumArtist: values.albumArtist ?? albumArtist,
-            composer: values.composer ?? composer,
-            discNumber: values.discNumber ?? discNumber,
+            title: nonblank(values.title) ?? title,
+            artist: nonblank(values.artist) ?? artist,
+            album: nonblank(values.album) ?? album,
+            genre: nonblank(values.genre) ?? genre,
+            year: nonblank(values.year) ?? year,
+            trackNumber: nonblank(values.trackNumber) ?? trackNumber,
+            comment: nonblank(values.comment) ?? comment,
+            albumArtist: nonblank(values.albumArtist) ?? albumArtist,
+            composer: nonblank(values.composer) ?? composer,
+            discNumber: nonblank(values.discNumber) ?? discNumber,
             isCompilation: values.isCompilation ?? isCompilation,
             artworkData: artworkData,
             lyrics: lyrics,
@@ -243,6 +248,7 @@ enum MediaMetadataEditError: LocalizedError, Equatable {
     case invalidAIFFMetadata
     case unsupportedAIFFMetadataLayout
     case invalidArtwork
+    case invalidAudioMetadata
 
     nonisolated var errorDescription: String? {
         switch self {
@@ -266,6 +272,8 @@ enum MediaMetadataEditError: LocalizedError, Equatable {
             L10n.string("This AIFF metadata layout is not supported for editing.")
         case .invalidArtwork:
             L10n.string("The selected file is not a valid image.")
+        case .invalidAudioMetadata:
+            L10n.string("The embedded audio metadata is invalid or uses an unsupported layout.")
         }
     }
 }
@@ -275,7 +283,6 @@ enum ID3TagWriter {
         "TIT2", "TPE1", "TALB", "TCON", "TDRC", "TYER", "TRCK", "COMM", "TPE2", "TCOM", "TPOS", "TCMP",
         "TT2", "TP1", "TAL", "TCO", "TYE", "TRK", "COM", "TP2", "TCM", "TPA", "TCP"
     ]
-    nonisolated private static let artworkFrameIDs: Set<String> = ["APIC", "PIC"]
     nonisolated private static let lyricsFrameIDs: Set<String> = ["USLT", "ULT"]
 
     nonisolated static func canWriteMetadata(to url: URL) -> Bool {
@@ -293,6 +300,46 @@ enum ID3TagWriter {
         let data = try readTagData(from: source, at: 0, count: fileSize)
         guard let tag = try existingTag(in: data) else { return nil }
         return embeddedValues(in: tag)
+    }
+
+    nonisolated static func readEmbeddedTag(_ data: Data) throws -> AudioTagReadResult? {
+        guard let tag = try existingTag(in: data) else { return nil }
+        var result = AudioTagReadResult()
+        var otherArtwork: Data?
+        result.values = embeddedValues(in: tag)
+        for frame in tag.frames {
+            let payload = frame.payload
+            if (frame.id == "APIC" || frame.id == "PIC"), result.artworkData == nil, payload.count >= 5 {
+                let encoding = payload[payload.startIndex]
+                var cursor = payload.index(after: payload.startIndex)
+                if frame.id == "PIC" {
+                    cursor = payload.index(cursor, offsetBy: 3, limitedBy: payload.endIndex) ?? payload.endIndex
+                } else if let terminator = payload[cursor...].firstIndex(of: 0) {
+                    cursor = payload.index(after: terminator)
+                } else { continue }
+                guard cursor < payload.endIndex else { continue }
+                let pictureType = payload[cursor]
+                cursor = payload.index(after: cursor) // picture type
+                guard cursor < payload.endIndex,
+                      let terminator = encodedStringTerminator(in: payload[cursor...], encodingByte: encoding)
+                else { continue }
+                let end = payload.index(terminator, offsetBy: encoding == 1 || encoding == 2 ? 2 : 1)
+                if end < payload.endIndex {
+                    let artwork = Data(payload[end...])
+                    if pictureType == 3 { result.artworkData = artwork }
+                    else if otherArtwork == nil { otherArtwork = artwork }
+                }
+            } else if (frame.id == "USLT" || frame.id == "ULT"), result.lyrics == nil, payload.count >= 5 {
+                let encoding = payload[payload.startIndex]
+                let body = payload.dropFirst(4)
+                if let terminator = encodedStringTerminator(in: body, encodingByte: encoding) {
+                    let start = body.index(terminator, offsetBy: encoding == 1 || encoding == 2 ? 2 : 1)
+                    result.lyrics = decodeText(body[start...], encodingByte: encoding)
+                }
+            }
+        }
+        result.artworkData = result.artworkData ?? otherArtwork
+        return result
     }
 
     nonisolated static func write(_ draft: MediaMetadataEditDraft, to url: URL) throws {
@@ -342,13 +389,12 @@ enum ID3TagWriter {
         if draft.editsTextMetadata {
             removedFrameIDs.formUnion(editableFrameIDs)
         }
-        if draft.editsArtwork {
-            removedFrameIDs.formUnion(artworkFrameIDs)
-        }
         if draft.editsLyrics {
             removedFrameIDs.formUnion(lyricsFrameIDs)
         }
-        var frames = existingTag?.preservedFrames(removing: removedFrameIDs) ?? []
+        var frames = existingTag?.preservedFrames(
+            removing: removedFrameIDs, removeFrontArtwork: draft.editsArtwork
+        ) ?? []
         if draft.editsTextMetadata {
             for frame in textFrames(for: version) {
                 if let value = draft.writableFrameValues[frame.canonicalID] {
@@ -794,9 +840,11 @@ private struct ID3Tag {
     let totalRange: Range<Int>
     let frames: [ID3Frame]
 
-    nonisolated func preservedFrames(removing frameIDs: Set<String>) -> [Data] {
+    nonisolated func preservedFrames(removing frameIDs: Set<String>, removeFrontArtwork: Bool) -> [Data] {
         frames
-            .filter { frameIDs.contains($0.id) == false }
+            .filter { frame in
+                frameIDs.contains(frame.id) == false && (removeFrontArtwork == false || frame.pictureType != 3)
+            }
             .map(\.rawData)
     }
 }
@@ -807,6 +855,15 @@ private struct ID3Frame {
 
     nonisolated var payload: Data.SubSequence {
         rawData.dropFirst(id.count == 3 ? 6 : 10)
+    }
+
+    nonisolated var pictureType: UInt8? {
+        let data = payload
+        guard data.count >= 5 else { return nil }
+        if id == "PIC" { return data[data.startIndex + 4] }
+        guard id == "APIC", let terminator = data[data.startIndex...].dropFirst().firstIndex(of: 0),
+              terminator + 1 < data.endIndex else { return nil }
+        return data[terminator + 1]
     }
 
     nonisolated var canonicalID: String {

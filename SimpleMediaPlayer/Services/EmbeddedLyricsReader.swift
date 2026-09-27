@@ -36,10 +36,23 @@ nonisolated struct EmbeddedLyricsReader: Sendable {
                 if let lyrics = Self.nonempty(lyrics) { return lyrics }
             }
 
+            let hasCustomReader = AdditionalAudioMetadata.canWrite(to: url)
+            if hasCustomReader {
+                let lyrics = try Self.customLyrics(from: url)
+                try Task.checkCancellation()
+                if let lyrics = Self.nonempty(lyrics) { return lyrics }
+            }
+
             try Task.checkCancellation()
-            let lyrics = try await readAsset(url)
-            try Task.checkCancellation()
-            return Self.nonempty(lyrics)
+            do {
+                let lyrics = try await readAsset(url)
+                try Task.checkCancellation()
+                return Self.nonempty(lyrics)
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError || hasCustomReader == false { throw error }
+                return nil
+            }
         }
         return try await withTaskCancellationHandler {
             let lyrics = try await task.value
@@ -47,6 +60,16 @@ nonisolated struct EmbeddedLyricsReader: Sendable {
             return lyrics
         } onCancel: {
             task.cancel()
+        }
+    }
+
+    private static func customLyrics(from url: URL) throws -> String? {
+        do {
+            return try AdditionalAudioMetadata.read(from: url).lyrics
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
         }
     }
 

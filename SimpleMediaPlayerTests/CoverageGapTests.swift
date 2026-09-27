@@ -135,7 +135,7 @@ struct TransformedExportFormatTests {
     @Test func formatsExposeExpectedExtensionsAndCapabilities() {
         #expect(TransformedExportFormat.allCases.map(\.fileExtension) == ["mp3", "m4a", "m4a", "flac", "wav", "aiff"])
         #expect(TransformedExportFormat.allCases.map(\.isLossless) == [false, false, true, true, true, true])
-        #expect(TransformedExportFormat.allCases.map(\.supportsEmbeddedTags) == [true, true, true, false, false, true])
+        #expect(TransformedExportFormat.allCases.map(\.supportsEmbeddedTags) == [true, true, true, true, true, true])
         #expect(TransformedExportFormat.mp3.maxSampleRate == 48_000)
         #expect(TransformedExportFormat.aac.maxSampleRate == nil)
         #expect(TransformedExportFormat.allCases.allSatisfy { $0.displayName.isEmpty == false })
@@ -167,8 +167,8 @@ struct TransformedExportFormatTests {
         #expect(aiff[AVLinearPCMBitDepthKey] as? Int == 16)
     }
 
-    @Test func formatsWithoutEmbeddedTagSupportLeaveFilesUntouched() throws {
-        let missingURL = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID().uuidString).audio")
+    @Test func metadataWriterDoesNotCreateMissingOutput() throws {
+        let missingBase = URL(fileURLWithPath: "/tmp/does-not-exist-\(UUID().uuidString)")
         let draft = MediaMetadataEditDraft(
             title: "Title",
             artist: "Artist",
@@ -180,9 +180,11 @@ struct TransformedExportFormatTests {
             artworkData: nil
         )
 
-        try TransformedExportFormat.flac.writeMetadata(draft, to: missingURL)
-        try TransformedExportFormat.wav.writeMetadata(draft, to: missingURL)
-        #expect(FileManager.default.fileExists(atPath: missingURL.path) == false)
+        for format in [TransformedExportFormat.flac, .wav] {
+            let missingURL = missingBase.appendingPathExtension(format.fileExtension)
+            #expect(throws: (any Error).self) { try format.writeMetadata(draft, to: missingURL) }
+            #expect(FileManager.default.fileExists(atPath: missingURL.path) == false)
+        }
     }
 
     @Test func exportErrorsPreserveSpecificMessages() {

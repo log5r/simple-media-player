@@ -55,9 +55,7 @@ nonisolated enum TransformedExportFormat: String, CaseIterable, Identifiable, Se
 
     var supportsEmbeddedTags: Bool {
         switch self {
-        case .flac, .wav:
-            false
-        case .mp3, .aac, .appleLossless, .aiff:
+        case .mp3, .aac, .appleLossless, .aiff, .flac, .wav:
             true
         }
     }
@@ -120,7 +118,7 @@ nonisolated enum TransformedExportFormat: String, CaseIterable, Identifiable, Se
         case .aiff:
             try AIFFMetadataWriter.write(draft, to: url)
         case .flac, .wav:
-            break
+            try AdditionalAudioMetadata.write(draft, to: url)
         }
     }
 }
