@@ -76,6 +76,65 @@ static int SMPOpen(NSURL *url, AVFormatContext **format, AVCodecContext **codec,
     return avcodec_open2(*codec, decoder, NULL);
 }
 
+static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t maxBytes,
+                                 AVAudioFile * __strong *output, AVAudioFormat * __strong *outputFormat,
+                                 SwrContext **resampler, int64_t *writtenFrames, NSError **failure) {
+    if (!*output) {
+        int channels = frame->ch_layout.nb_channels;
+        if (channels < 1 || channels > 8 || frame->sample_rate <= 0) {
+            *failure = SMPError(EINVAL, @"Unsupported audio channel layout or sample rate.");
+            return NO;
+        }
+        *outputFormat = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
+                                                         sampleRate:frame->sample_rate
+                                                           channels:channels
+                                                        interleaved:NO];
+        if (!*outputFormat) {
+            *failure = SMPError(EINVAL, @"Could not create an audio output format.");
+            return NO;
+        }
+        *output = [[AVAudioFile alloc] initForWriting:destinationURL
+                                            settings:(*outputFormat).settings
+                                        commonFormat:AVAudioPCMFormatFloat32
+                                         interleaved:NO
+                                               error:failure];
+        if (!*output) return NO;
+        AVChannelLayout outputLayout;
+        av_channel_layout_default(&outputLayout, channels);
+        int result = swr_alloc_set_opts2(resampler, &outputLayout, AV_SAMPLE_FMT_FLTP,
+                                         frame->sample_rate, &frame->ch_layout,
+                                         frame->format, frame->sample_rate, 0, NULL);
+        av_channel_layout_uninit(&outputLayout);
+        if (result < 0 || !*resampler) {
+            *failure = result < 0 ? SMPAVError(result) : SMPError(ENOMEM, @"Could not create an audio resampler.");
+            return NO;
+        }
+        result = swr_init(*resampler);
+        if (result < 0) { *failure = SMPAVError(result); return NO; }
+    }
+
+    int capacity = swr_get_out_samples(*resampler, frame->nb_samples);
+    if (capacity <= 0 || capacity > UINT32_MAX) {
+        *failure = SMPError(EINVAL, @"Invalid decoded audio frame size.");
+        return NO;
+    }
+    AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:*outputFormat
+                                                            frameCapacity:(AVAudioFrameCount)capacity];
+    if (!buffer) { *failure = SMPError(ENOMEM, @"Could not allocate an audio output buffer."); return NO; }
+    int converted = swr_convert(*resampler, (uint8_t **)buffer.floatChannelData,
+                                capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
+    if (converted < 0) { *failure = SMPAVError(converted); return NO; }
+    buffer.frameLength = (AVAudioFrameCount)converted;
+    *writtenFrames += converted;
+    if (*writtenFrames * (*outputFormat).channelCount * sizeof(float) > maxBytes) {
+        *failure = SMPError(EFBIG, @"The decoded audio exceeds the cache size limit.");
+        return NO;
+    }
+    if (![*output writeFromBuffer:buffer error:failure]) return NO;
+    av_frame_unref(frame);
+    return YES;
+}
+
 @implementation SMPFFmpegAudio
 
 + (SMPFFmpegAudioInfo *)probeURL:(NSURL *)url error:(NSError **)error {
@@ -157,48 +216,8 @@ static int SMPOpen(NSURL *url, AVFormatContext **format, AVCodecContext **codec,
         if (result < 0) { failure = SMPAVError(result); goto cleanup; }
 
         while ((result = avcodec_receive_frame(codec, frame)) >= 0) {
-            if (!output) {
-                int channels = frame->ch_layout.nb_channels;
-                if (channels < 1 || channels > 8 || frame->sample_rate <= 0) {
-                    failure = SMPError(EINVAL, @"Unsupported audio channel layout or sample rate.");
-                    goto cleanup;
-                }
-                outputFormat = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
-                                                                sampleRate:frame->sample_rate
-                                                                  channels:channels
-                                                               interleaved:NO];
-                output = [[AVAudioFile alloc] initForWriting:destinationURL
-                                                    settings:outputFormat.settings
-                                                commonFormat:AVAudioPCMFormatFloat32
-                                                 interleaved:NO
-                                                       error:&failure];
-                if (!output) goto cleanup;
-                AVChannelLayout outputLayout;
-                av_channel_layout_default(&outputLayout, channels);
-                result = swr_alloc_set_opts2(&resampler, &outputLayout, AV_SAMPLE_FMT_FLTP,
-                                             frame->sample_rate, &frame->ch_layout,
-                                             frame->format, frame->sample_rate, 0, NULL);
-                av_channel_layout_uninit(&outputLayout);
-                if (result < 0 || !resampler || (result = swr_init(resampler)) < 0) {
-                    failure = SMPAVError(result); goto cleanup;
-                }
-            }
-            int capacity = swr_get_out_samples(resampler, frame->nb_samples);
-            if (capacity <= 0 || capacity > UINT32_MAX) {
-                failure = SMPError(EINVAL, @"Invalid decoded audio frame size."); goto cleanup;
-            }
-            AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:outputFormat
-                                                                    frameCapacity:(AVAudioFrameCount)capacity];
-            int converted = swr_convert(resampler, (uint8_t **)buffer.floatChannelData,
-                                        capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
-            if (converted < 0) { failure = SMPAVError(converted); goto cleanup; }
-            buffer.frameLength = (AVAudioFrameCount)converted;
-            writtenFrames += converted;
-            if (writtenFrames * outputFormat.channelCount * sizeof(float) > maxBytes) {
-                failure = SMPError(EFBIG, @"The decoded audio exceeds the cache size limit."); goto cleanup;
-            }
-            if (![output writeFromBuffer:buffer error:&failure]) goto cleanup;
-            av_frame_unref(frame);
+            if (!SMPWriteDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
+                                      &resampler, &writtenFrames, &failure)) goto cleanup;
         }
         if (result != AVERROR(EAGAIN) && result != AVERROR_EOF) {
             failure = SMPAVError(result); goto cleanup;
@@ -209,19 +228,8 @@ static int SMPOpen(NSURL *url, AVFormatContext **format, AVCodecContext **codec,
     result = avcodec_send_packet(codec, NULL);
     if (result < 0) { failure = SMPAVError(result); goto cleanup; }
     while ((result = avcodec_receive_frame(codec, frame)) >= 0) {
-        int capacity = swr_get_out_samples(resampler, frame->nb_samples);
-        AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:outputFormat
-                                                                frameCapacity:(AVAudioFrameCount)capacity];
-        int converted = swr_convert(resampler, (uint8_t **)buffer.floatChannelData,
-                                    capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
-        if (converted < 0) { failure = SMPAVError(converted); goto cleanup; }
-        buffer.frameLength = (AVAudioFrameCount)converted;
-        writtenFrames += converted;
-        if (writtenFrames * outputFormat.channelCount * sizeof(float) > maxBytes) {
-            failure = SMPError(EFBIG, @"The decoded audio exceeds the cache size limit."); goto cleanup;
-        }
-        if (![output writeFromBuffer:buffer error:&failure]) goto cleanup;
-        av_frame_unref(frame);
+        if (!SMPWriteDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
+                                  &resampler, &writtenFrames, &failure)) goto cleanup;
     }
     if (result != AVERROR_EOF) { failure = SMPAVError(result); goto cleanup; }
     if (!output || writtenFrames == 0) {

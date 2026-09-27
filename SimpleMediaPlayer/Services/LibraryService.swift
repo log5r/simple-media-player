@@ -249,8 +249,7 @@ final class LibraryService {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
 
-        if let kind = try? ExtendedAudioSource.kind(for: url),
-           let info = try? ExtendedAudioSource.info(for: url, kind: kind) {
+        if let info = try? await extendedInfo(for: url) {
             draft.title = info.title ?? draft.title
             draft.artist = info.artist ?? draft.artist
             draft.album = info.album ?? draft.album
@@ -568,8 +567,7 @@ extension LibraryService {
     }
 
     private func readImportSources(from url: URL) async throws -> ImportSources {
-        let extendedKind = try ExtendedAudioSource.kind(for: url)
-        let extended = try extendedKind.map { try ExtendedAudioSource.info(for: url, kind: $0) }
+        let extended = try await extendedInfo(for: url)
         let asset = AVURLAsset(url: url)
         let duration: TimeInterval
         if let extended {
@@ -617,6 +615,19 @@ extension LibraryService {
             duration: duration, isVideo: isVideo, extended: extended,
             metadata: metadata, mp4: mp4, music: music, id3: id3, additional: additional
         )
+    }
+
+    private func extendedInfo(for url: URL) async throws -> ExtendedAudioSource.Info? {
+        let probeTask = Task.detached(priority: .utility) { () throws -> ExtendedAudioSource.Info? in
+            try Task.checkCancellation()
+            guard let kind = try ExtendedAudioSource.kind(for: url) else { return nil }
+            let info = try ExtendedAudioSource.info(for: url, kind: kind)
+            try Task.checkCancellation()
+            return info
+        }
+        return try await withTaskCancellationHandler {
+            try await probeTask.value
+        } onCancel: { probeTask.cancel() }
     }
 
     private func mergeImportSources(_ sources: ImportSources, fileURL: URL) async -> ImportValues {

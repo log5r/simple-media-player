@@ -55,6 +55,14 @@ struct ExtendedAudioSourceTests {
         try? FileManager.default.removeItem(at: cacheURL)
     }
 
+    @Test func decodesShortWMA() throws {
+        let source = fixture("wma", baseName: "short-wma")
+        defer { ExtendedAudioSource.removeCache(for: source) }
+        #expect(try ExtendedAudioSource.kind(for: source) == .wma)
+        let cacheURL = try ExtendedAudioSource.readableURL(for: source)
+        #expect(try AVAudioFile(forReading: cacheURL).length > 0)
+    }
+
     @Test func refusesMismatchedHeaderAndCleansCancelledWork() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
