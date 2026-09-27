@@ -1,7 +1,8 @@
 import Foundation
 import Testing
 @testable import SimpleMediaPlayer
-
+// Limit blocking measurement stubs to one test at a time, including parameterized cases.
+@Suite(.serialized)
 struct AudioLoudnessNormalizationTests {
     @Test func measurementDoesNotBlockPlaybackControlQueue() async throws {
         let measurement = ControlledLoudnessMeasurement(gain: 4)
@@ -320,7 +321,6 @@ struct AudioLoudnessNormalizationTests {
 
     private static let firstURL = URL(fileURLWithPath: "/loudness-tests/first.wav")
     private static let secondURL = URL(fileURLWithPath: "/loudness-tests/second.wav")
-
     private func waitFor(_ condition: @escaping @Sendable () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while condition() == false {
