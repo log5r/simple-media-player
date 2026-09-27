@@ -80,6 +80,19 @@ nonisolated enum ExtendedAudioSource {
         return detected
     }
 
+    static func probeInfo(for url: URL) async throws -> Info? {
+        let probeTask = Task.detached(priority: .utility) { () throws -> Info? in
+            try Task.checkCancellation()
+            guard let kind = try kind(for: url) else { return nil }
+            let info = try info(for: url, kind: kind)
+            try Task.checkCancellation()
+            return info
+        }
+        return try await withTaskCancellationHandler {
+            try await probeTask.value
+        } onCancel: { probeTask.cancel() }
+    }
+
     static func info(for url: URL, kind: Kind) throws -> Info {
         switch kind {
         case .wma:

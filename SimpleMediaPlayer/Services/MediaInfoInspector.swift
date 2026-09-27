@@ -22,8 +22,7 @@ enum MediaInfoInspector {
         }
 
         let fileRows = fileRows(for: item, url: url)
-        if let kind = try? ExtendedAudioSource.kind(for: url),
-           let info = try? ExtendedAudioSource.info(for: url, kind: kind) {
+        if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
             var rows = [MediaInfoRow(id: "codec", label: L10n.string("Codec"), value: info.codec)]
             if let sampleRate = info.sampleRate {
                 rows.append(MediaInfoRow(

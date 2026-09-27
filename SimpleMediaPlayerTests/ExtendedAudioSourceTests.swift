@@ -165,6 +165,20 @@ struct ExtendedAudioSourceTests {
     }
 
     @MainActor
+    @Test(arguments: ["wma", "wv"])
+    func loadsMediaInfoForExtendedAudio(ext: String) async throws {
+        let source = fixture(ext)
+        let item = MediaItem(
+            title: "Audio", duration: 1, isVideo: false,
+            bookmarkData: Data(), fileName: source.lastPathComponent
+        )
+        let details = await MediaInfoInspector.loadDetails(for: MediaInfoItemSnapshot(item: item), url: source)
+        #expect(details.errorMessage == nil)
+        let rows = try #require(details.sections.first?.rows)
+        #expect(rows.contains { $0.id == "codec" && $0.value.isEmpty == false })
+    }
+
+    @MainActor
     @Test func editedExtendedArtworkUsesLibraryValue() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
