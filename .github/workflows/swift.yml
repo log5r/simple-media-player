@@ -36,7 +36,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build
 
       - name: Run macOS unit tests
+        id: unit_tests
         run: |
+          mkdir -p "${RUNNER_TEMP}/TestResults"
           xcodebuild \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
@@ -46,7 +48,69 @@ jobs:
             -skipPackagePluginValidation \
             -only-testing:SimpleMediaPlayerTests \
             -parallel-testing-enabled NO \
+            -resultBundlePath "${RUNNER_TEMP}/TestResults/AllUnitTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO test
+
+      # Diagnostic runs retain the original failure and isolate each suite from the others.
+      - name: Diagnose lazy lyrics tests in isolation
+        id: lyrics_tests
+        if: ${{ failure() && steps.unit_tests.outcome == 'failure' }}
+        timeout-minutes: 10
+        run: |
+          xcodebuild \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination 'platform=macOS' \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            -only-testing:SimpleMediaPlayerTests/LazyLyricsLoadingTests \
+            -resultBundlePath "${RUNNER_TEMP}/TestResults/LazyLyricsLoadingTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO test
+
+      - name: Diagnose loudness normalization tests in isolation
+        id: loudness_tests
+        if: ${{ failure() && steps.unit_tests.outcome == 'failure' }}
+        timeout-minutes: 10
+        run: |
+          xcodebuild \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination 'platform=macOS' \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            -only-testing:SimpleMediaPlayerTests/AudioLoudnessNormalizationTests \
+            -resultBundlePath "${RUNNER_TEMP}/TestResults/AudioLoudnessNormalizationTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO test
+
+      - name: Summarize macOS test outcomes
+        if: ${{ always() && steps.unit_tests.outcome != 'skipped' }}
+        env:
+          ALL_TESTS_OUTCOME: ${{ steps.unit_tests.outcome }}
+          LYRICS_TESTS_OUTCOME: ${{ steps.lyrics_tests.outcome }}
+          LOUDNESS_TESTS_OUTCOME: ${{ steps.loudness_tests.outcome }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          | macOS unit tests | Outcome |
+          | --- | --- |
+          | All suites | ${ALL_TESTS_OUTCOME} |
+          | LazyLyricsLoadingTests in isolation | ${LYRICS_TESTS_OUTCOME} |
+          | AudioLoudnessNormalizationTests in isolation | ${LOUDNESS_TESTS_OUTCOME} |
+
+          Isolated runs execute only after the full test run fails. They do not clear its failure.
+          Each isolated run preserves parallel execution within the suite.
+          Download macOS-test-results and open the .xcresult bundles in Xcode to inspect failures.
+          EOF
+
+      - name: Upload macOS test results
+        if: ${{ always() && steps.unit_tests.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: macOS-test-results
+          path: ${{ runner.temp }}/TestResults/*.xcresult
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: SwiftLint
         run: ./scripts/lint.sh
