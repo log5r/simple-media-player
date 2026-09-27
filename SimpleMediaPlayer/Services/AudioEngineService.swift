@@ -1,6 +1,12 @@
 import AVFoundation
 import Foundation
 
+private struct PendingSeek {
+    let time: TimeInterval
+    let autoPlay: Bool
+    let loadID: UUID
+}
+
 // AVAudio 系の操作(stop / scheduleSegment など)は内部で下位 QoS スレッドとの
 // 同期待ちを伴うため、すべて専用の直列キュー(controlQueue)上で実行し、
 // メインスレッドをブロックさせない。UI へ公開する currentTime / duration は
@@ -39,7 +45,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var displayIsPlaying = false
     private var displayRate: Double = 1.0
     private var cachedDuration: TimeInterval = 0
-    private var pendingSeek: (time: TimeInterval, autoPlay: Bool)?
+    private var pendingSeek: PendingSeek?
     private var activeLoadID = UUID()
 
     var onFinished: (@MainActor () -> Void)?
@@ -159,7 +165,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
                     try Task.checkCancellation()
                     let file = try AVAudioFile(forReading: readableURL)
                     self.controlQueue.async {
-                        guard generation == self.loadGeneration else { return }
+                        guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
                         self.preparationTask = nil
                         self.currentAudioURL = readableURL
                         self.audioFile = file
@@ -176,7 +182,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
                             guard self.isActiveLoad(requestID) else { return }
                             self.onFormatLoaded?(duration, formatInfo)
                         }
-                        self.performPendingSeek()
+                        self.performPendingSeek(for: requestID)
                         if self.playWhenReady {
                             self.playWhenReady = false
                             self.performPlay()
@@ -186,7 +192,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
                     return
                 } catch {
                     self.controlQueue.async {
-                        guard generation == self.loadGeneration else { return }
+                        guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
                         self.preparationTask = nil
                         self.loudnessNormalization.load(nil)
                         self.setCachedDuration(0)
@@ -302,10 +308,11 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     // 最新要求のみを実行する(先行のキュー項目が消費済みなら何もしない)
     func seek(to time: TimeInterval, autoPlay: Bool) {
         stateLock.lock()
-        pendingSeek = (time, autoPlay)
+        let requestID = activeLoadID
+        pendingSeek = PendingSeek(time: time, autoPlay: autoPlay, loadID: requestID)
         stateLock.unlock()
         controlQueue.async {
-            self.performPendingSeek()
+            self.performPendingSeek(for: requestID)
         }
     }
 
@@ -455,12 +462,17 @@ nonisolated extension AudioEngineService {
         playerNode.volume = original
     }
 
-    private func performPendingSeek() {
+    private func performPendingSeek(for requestID: UUID) {
         stateLock.lock()
-        let request = pendingSeek
+        guard activeLoadID == requestID,
+              let request = pendingSeek,
+              request.loadID == requestID else {
+            stateLock.unlock()
+            return
+        }
         if audioFile != nil { pendingSeek = nil }
         stateLock.unlock()
-        guard let request, let audioFile else { return }
+        guard let audioFile else { return }
         let target = max(0, min(audioFile.length, AVAudioFramePosition(request.time * sampleRate)))
         seekFrame = target
         setDisplayClock(playing: false)
