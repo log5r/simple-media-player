@@ -152,6 +152,8 @@ struct ExtendedAudioSourceTests {
         #expect(item.duration > 0.8 && item.duration < 1.2)
         if ext == "wma" { #expect(item.lyricsRaw == "Fixture lyrics") }
         let plan = await service.makeExportPlan(for: [item])
+        #expect(plan.files.first?.embeddedTitle == title)
+        if ext == "wma" { #expect(plan.files.first?.albumName == "Fixture Album") }
         let exportDirectory = directory.appendingPathComponent("Export")
         let exported = await service.export(files: plan.resolvedFiles(nameOverrides: [:]), to: exportDirectory)
         #expect(exported.exportedCount == 1)
