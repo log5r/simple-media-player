@@ -5,6 +5,7 @@ private struct PendingSeek {
     let time: TimeInterval
     let autoPlay: Bool
     let loadID: UUID
+    let seekID: UUID
 }
 
 // AVAudio 系の操作(stop / scheduleSegment など)は内部で下位 QoS スレッドとの
@@ -214,6 +215,16 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     }
 
     func pause() {
+        stateLock.lock()
+        if let request = pendingSeek {
+            pendingSeek = PendingSeek(
+                time: request.time,
+                autoPlay: false,
+                loadID: request.loadID,
+                seekID: request.seekID
+            )
+        }
+        stateLock.unlock()
         controlQueue.async {
             self.playWhenReady = false
             self.loudnessNormalization.cancel()
@@ -227,6 +238,9 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     }
 
     func stop(reset: Bool) {
+        stateLock.lock()
+        pendingSeek = nil
+        stateLock.unlock()
         controlQueue.async {
             self.playWhenReady = false
             self.performStop(reset: reset)
@@ -307,12 +321,13 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     // シーク連打に備えて要求は最新値だけ保持し、キュー上で順番が来た時点の
     // 最新要求のみを実行する(先行のキュー項目が消費済みなら何もしない)
     func seek(to time: TimeInterval, autoPlay: Bool) {
+        let seekID = UUID()
         stateLock.lock()
         let requestID = activeLoadID
-        pendingSeek = PendingSeek(time: time, autoPlay: autoPlay, loadID: requestID)
+        pendingSeek = PendingSeek(time: time, autoPlay: autoPlay, loadID: requestID, seekID: seekID)
         stateLock.unlock()
         controlQueue.async {
-            self.performPendingSeek(for: requestID)
+            self.performPendingSeek(for: requestID, seekID: seekID)
         }
     }
 
@@ -462,11 +477,12 @@ nonisolated extension AudioEngineService {
         playerNode.volume = original
     }
 
-    private func performPendingSeek(for requestID: UUID) {
+    private func performPendingSeek(for requestID: UUID, seekID: UUID? = nil) {
         stateLock.lock()
         guard activeLoadID == requestID,
               let request = pendingSeek,
-              request.loadID == requestID else {
+              request.loadID == requestID,
+              seekID == nil || request.seekID == seekID else {
             stateLock.unlock()
             return
         }
