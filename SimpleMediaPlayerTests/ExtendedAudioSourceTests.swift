@@ -156,6 +156,42 @@ struct ExtendedAudioSourceTests {
         #expect(try Data(contentsOf: exportedFile) == Data(contentsOf: source))
     }
 
+    @MainActor
+    @Test func editedExtendedArtworkUsesLibraryValue() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("artwork.wv")
+        try FileManager.default.copyItem(at: fixture("wv"), to: source)
+        let embeddedArtwork = try #require(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9TewAAAABJRU5ErkJggg=="))
+        let audioFile = try AudioFile(readingPropertiesAndMetadataFrom: source)
+        audioFile.metadata.attachPicture(AttachedPicture(imageData: embeddedArtwork, type: .frontCover))
+        try audioFile.writeMetadata()
+        #expect(try ExtendedAudioSource.info(for: source, kind: .wavPack).artworkData == embeddedArtwork)
+
+        let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let service = LibraryService(mediaDirectoryURL: directory)
+        let item = MediaItem(
+            title: "Fixture WavPack", duration: 1, isVideo: false,
+            bookmarkData: Data([0xFF]), artworkData: embeddedArtwork, fileName: source.lastPathComponent
+        )
+        container.mainContext.insert(item)
+
+        let replacement = Data([1, 2, 3])
+        var draft = await service.editableMetadataDraft(for: item)
+        draft.artworkData = replacement
+        draft.editsArtwork = true
+        try await service.updateEmbeddedMetadata(for: item, draft: draft, in: container.mainContext)
+        #expect((await service.editableMetadataDraft(for: item)).artworkData == replacement)
+
+        draft.artworkData = nil
+        try await service.updateEmbeddedMetadata(for: item, draft: draft, in: container.mainContext)
+        #expect((await service.editableMetadataDraft(for: item)).artworkData == nil)
+    }
+
     @Test(arguments: ["wma", "wv"])
     func transformedExportUsesDecodedAudio(ext: String) throws {
         let source = fixture(ext)

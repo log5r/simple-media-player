@@ -263,9 +263,7 @@ final class LibraryService {
             draft.discNumber = info.discNumber ?? draft.discNumber
             draft.isCompilation = info.isCompilation
             draft.lyrics = info.lyrics ?? draft.lyrics
-            if let artwork = info.artworkData {
-                draft.artworkData = await artworkProcessor.thumbnail(from: artwork)
-            }
+            // Artwork edits for extended formats live in the library item, not the source file.
             return draft
         }
 
