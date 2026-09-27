@@ -12,6 +12,7 @@ It supports importing audio and video files, browsing a local library, playlist 
 - Music analysis using [Music Understanding](https://developer.apple.com/documentation/musicunderstanding) requires macOS 27+, iOS 27+, or iPadOS 27+. Music analysis is unavailable on earlier OS versions.
 
 The [embedded audio metadata support matrix](docs/embedded-audio-metadata.md) ([日本語](docs/embedded-audio-metadata.ja.md)) describes supported fields and formats.
+See [extended audio formats](docs/extended-audio-formats.md) ([日本語](docs/extended-audio-formats.ja.md)) for WMA, WavPack, Monkey's Audio, and Musepack playback, caching, and limitations.
 
 ## Localization
 

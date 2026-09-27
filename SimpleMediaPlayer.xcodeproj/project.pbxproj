@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C6F140000000000000000001 /* SFBAudioEngine in Frameworks */ = {isa = PBXBuildFile; productRef = C6F140000000000000000005 /* SFBAudioEngine */; };
+		C6F140000000000000000002 /* AetherFFmpegBuild in Frameworks */ = {isa = PBXBuildFile; productRef = C6F140000000000000000006 /* AetherFFmpegBuild */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C6381F4A2FF810DA00377C67 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -54,6 +59,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C6F140000000000000000001 /* SFBAudioEngine in Frameworks */,
+				C6F140000000000000000002 /* AetherFFmpegBuild in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -117,6 +124,8 @@
 			);
 			name = SimpleMediaPlayer;
 			packageProductDependencies = (
+				C6F140000000000000000005 /* SFBAudioEngine */,
+				C6F140000000000000000006 /* AetherFFmpegBuild */,
 			);
 			productName = SimpleMediaPlayer;
 			productReference = C6381F3A2FF810D800377C67 /* SimpleMediaPlayer.app */;
@@ -205,6 +214,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C6F110000000000000000001 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */,
+				C6F140000000000000000003 /* XCRemoteSwiftPackageReference "SFBAudioEngine" */,
+				C6F140000000000000000004 /* XCRemoteSwiftPackageReference "FFmpegBuild" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C6381F3B2FF810D800377C67 /* Products */;
@@ -444,6 +455,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_OBJC_BRIDGING_HEADER = SimpleMediaPlayer/Services/FFmpegAudioBridge.h;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
@@ -483,6 +495,7 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_OBJC_BRIDGING_HEADER = SimpleMediaPlayer/Services/FFmpegAudioBridge.h;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
@@ -612,6 +625,16 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		C6F140000000000000000003 /* XCRemoteSwiftPackageReference "SFBAudioEngine" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sbooth/SFBAudioEngine";
+			requirement = { kind = exactVersion; version = 0.14.0; };
+		};
+		C6F140000000000000000004 /* XCRemoteSwiftPackageReference "FFmpegBuild" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/superuser404notfound/FFmpegBuild";
+			requirement = { kind = exactVersion; version = 3.6.0; };
+		};
 		C6F110000000000000000001 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/SimplyDanny/SwiftLintPlugins";
@@ -623,6 +646,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		C6F140000000000000000005 /* SFBAudioEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C6F140000000000000000003 /* XCRemoteSwiftPackageReference "SFBAudioEngine" */;
+			productName = SFBAudioEngine;
+		};
+		C6F140000000000000000006 /* AetherFFmpegBuild */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C6F140000000000000000004 /* XCRemoteSwiftPackageReference "FFmpegBuild" */;
+			productName = AetherFFmpegBuild;
+		};
 		C6F110000000000000000005 /* SwiftLintBuildToolPlugin */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C6F110000000000000000001 /* XCRemoteSwiftPackageReference "SwiftLintPlugins" */;

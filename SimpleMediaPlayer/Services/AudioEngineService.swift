@@ -20,6 +20,10 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var loudnessNormalizationStorage: AudioLoudnessNormalization?
     private var audioFile: AVAudioFile?
     private var currentURL: URL?
+    private var currentAudioURL: URL?
+    private var preparationTask: Task<Void, Never>?
+    private var loadGeneration = 0
+    private var playWhenReady = false
     private var startFrame: AVAudioFramePosition = 0
     private var seekFrame: AVAudioFramePosition = 0
     private var sampleRate: Double = 44_100
@@ -133,40 +137,69 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
 
     func load(url: URL) {
         controlQueue.async {
+            self.preparationTask?.cancel()
+            self.loadGeneration += 1
+            let generation = self.loadGeneration
             self.performStop(reset: true)
             self.currentURL = url
-            do {
-                let file = try AVAudioFile(forReading: url)
-                self.audioFile = file
-                self.sampleRate = file.fileFormat.sampleRate
-                self.loudnessNormalization.load(url)
-                let duration = Double(file.length) / file.fileFormat.sampleRate
-                self.setCachedDuration(duration)
-                if duration > 0 {
-                    let bitrateKbps = Self.estimatedBitrateKbps(url: url, duration: duration)
-                    let formatInfo = MediaFormatInfo(
-                        sampleRateHz: file.fileFormat.sampleRate,
-                        bitrateKbps: bitrateKbps > 0 ? bitrateKbps : nil
-                    )
-                    Task { @MainActor in self.onFormatLoaded?(duration, formatInfo) }
+            self.currentAudioURL = nil
+            self.audioFile = nil
+            self.playWhenReady = false
+            self.setCachedDuration(0)
+            self.preparationTask = Task.detached(priority: .userInitiated) {
+                do {
+                    let readableURL = try ExtendedAudioSource.readableURL(for: url)
+                    try Task.checkCancellation()
+                    let file = try AVAudioFile(forReading: readableURL)
+                    self.controlQueue.async {
+                        guard generation == self.loadGeneration else { return }
+                        self.preparationTask = nil
+                        self.currentAudioURL = readableURL
+                        self.audioFile = file
+                        self.sampleRate = file.fileFormat.sampleRate
+                        self.loudnessNormalization.load(url)
+                        let duration = Double(file.length) / file.fileFormat.sampleRate
+                        self.setCachedDuration(duration)
+                        let bitrateKbps = Self.estimatedBitrateKbps(url: url, duration: duration)
+                        let formatInfo = MediaFormatInfo(
+                            sampleRateHz: file.fileFormat.sampleRate,
+                            bitrateKbps: bitrateKbps > 0 ? bitrateKbps : nil
+                        )
+                        Task { @MainActor in self.onFormatLoaded?(duration, formatInfo) }
+                        self.performPendingSeek()
+                        if self.playWhenReady {
+                            self.playWhenReady = false
+                            self.performPlay()
+                        }
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    self.controlQueue.async {
+                        guard generation == self.loadGeneration else { return }
+                        self.preparationTask = nil
+                        self.loudnessNormalization.load(nil)
+                        self.setCachedDuration(0)
+                        self.reportError(error)
+                    }
                 }
-            } catch {
-                self.loudnessNormalization.load(nil)
-                self.audioFile = nil
-                self.setCachedDuration(0)
-                self.reportError(error)
             }
         }
     }
 
     func play() {
         controlQueue.async {
-            self.performPlay()
+            if self.audioFile == nil, self.preparationTask != nil {
+                self.playWhenReady = true
+            } else {
+                self.performPlay()
+            }
         }
     }
 
     func pause() {
         controlQueue.async {
+            self.playWhenReady = false
             self.loudnessNormalization.cancel()
             self.seekFrame = self.frame(for: self.preciseCurrentTime())
             self.setDisplayClock(playing: false)
@@ -179,6 +212,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
 
     func stop(reset: Bool) {
         controlQueue.async {
+            self.playWhenReady = false
             self.performStop(reset: reset)
         }
     }
@@ -187,6 +221,9 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     // 音声再生へ戻るときは performPlay で再始動する。
     func suspend() {
         controlQueue.async {
+            self.preparationTask?.cancel()
+            self.preparationTask = nil
+            self.playWhenReady = false
             self.performStop(reset: true)
             self.idleSuspension.cancel()
             self.engine.stop()
@@ -235,7 +272,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         applyLoudnessGain(loudnessNormalization.gainForPlayback)
 
         // ファイルの読み取り状態も含めて作り直す(失敗時は既存のファイルを使い続ける)
-        if let url = currentURL, let freshFile = try? AVAudioFile(forReading: url) {
+        if let url = currentAudioURL, let freshFile = try? AVAudioFile(forReading: url) {
             audioFile = freshFile
         }
         seekFrame = frame(for: resumeTime)
@@ -312,6 +349,9 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         }
     }
 
+}
+
+nonisolated extension AudioEngineService {
     private func finishPlayback(at finalFrame: AVAudioFramePosition) {
         loudnessNormalization.cancel()
         setDisplayClock(playing: false)
@@ -402,7 +442,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private func performPendingSeek() {
         stateLock.lock()
         let request = pendingSeek
-        pendingSeek = nil
+        if audioFile != nil { pendingSeek = nil }
         stateLock.unlock()
         guard let request, let audioFile else { return }
         let target = max(0, min(audioFile.length, AVAudioFramePosition(request.time * sampleRate)))

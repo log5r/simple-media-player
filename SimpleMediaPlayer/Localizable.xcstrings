@@ -686,6 +686,16 @@
         }
       }
     },
+    "Bitrate" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビットレート"
+          }
+        }
+      }
+    },
     "Black" : {
       "localizations" : {
         "ja" : {
@@ -842,6 +852,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保存せずにこのまま閉じる"
+          }
+        }
+      }
+    },
+    "Codec" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コーデック"
           }
         }
       }
@@ -3540,6 +3560,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "毎秒4クリックのテストを実行"
+          }
+        }
+      }
+    },
+    "Sample Rate" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サンプルレート"
           }
         }
       }
