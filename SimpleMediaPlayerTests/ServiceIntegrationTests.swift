@@ -181,6 +181,32 @@ struct LibraryServicePersistenceTests {
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
     }
 
+    @Test func deleteRemovesExtendedAudioCacheInBackground() async throws {
+        let sandbox = try TemporaryDirectory()
+        defer { sandbox.remove() }
+        let mediaDirectory = try sandbox.createDirectory(named: "Media")
+        let fixture = try makePersistenceFixture(mediaDirectory: mediaDirectory)
+        let fileURL = mediaDirectory.appendingPathComponent("delete-me.wv")
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/extended-test.wv")
+        try FileManager.default.copyItem(at: source, to: fileURL)
+        let cacheURL = try ExtendedAudioSource.readableURL(for: fileURL)
+        defer { try? FileManager.default.removeItem(at: cacheURL) }
+        let item = makeItem(bookmarkData: Data([0xFF]), fileName: fileURL.lastPathComponent)
+        fixture.context.insert(item)
+        try fixture.context.save()
+
+        fixture.service.delete(item, from: fixture.context)
+
+        #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while FileManager.default.fileExists(atPath: cacheURL.path) && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(FileManager.default.fileExists(atPath: cacheURL.path) == false)
+    }
+
     @Test func transformedCopyIsCopiedAndPersistsInheritedMetadata() async throws {
         let sandbox = try TemporaryDirectory()
         defer { sandbox.remove() }

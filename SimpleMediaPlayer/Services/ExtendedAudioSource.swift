@@ -178,10 +178,23 @@ nonisolated enum ExtendedAudioSource {
     }
 
     static func removeCache(for url: URL) {
-        guard let key = try? cacheKey(for: url), let directory = try? cacheDirectory() else { return }
+        guard let cacheURL = cacheURL(for: url) else { return }
+        removeCache(at: cacheURL)
+    }
+
+    static func cacheURL(for url: URL) -> URL? {
+        guard let key = try? cacheKey(for: url), let directory = try? cacheDirectory() else { return nil }
+        return directory.appendingPathComponent(key).appendingPathExtension("caf")
+    }
+
+    static func removeCacheInBackground(at cacheURL: URL) {
+        _ = Task.detached(priority: .utility) { removeCache(at: cacheURL) }
+    }
+
+    private static func removeCache(at cacheURL: URL) {
         cacheLock.lock()
         defer { cacheLock.unlock() }
-        try? FileManager.default.removeItem(at: directory.appendingPathComponent(key).appendingPathExtension("caf"))
+        try? FileManager.default.removeItem(at: cacheURL)
     }
 
     private static func cacheKey(for url: URL) throws -> String {

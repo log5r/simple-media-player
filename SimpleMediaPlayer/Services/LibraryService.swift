@@ -411,7 +411,6 @@ final class LibraryService {
 
         return BulkMetadataEditResult(updatedCount: updatedCount, failures: failures)
     }
-
 }
 
 extension LibraryService {
@@ -421,8 +420,9 @@ extension LibraryService {
 
     func delete(_ item: MediaItem, from context: ModelContext) {
         if let url = resolvedURL(for: item) {
-            ExtendedAudioSource.removeCache(for: url)
+            let cacheURL = ExtendedAudioSource.cacheURL(for: url)
             try? FileManager.default.removeItem(at: url)
+            if let cacheURL { ExtendedAudioSource.removeCacheInBackground(at: cacheURL) }
         }
         context.delete(item)
         try? context.save()
