@@ -1,22 +1,51 @@
-# This workflow will build a Swift project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
-
 name: Swift
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
 
 jobs:
-  build:
-
-    runs-on: macos-latest
+  build-and-test:
+    runs-on: xcode-27
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: swift build -v
-    - name: Run tests
-      run: swift test -v
+      - uses: actions/checkout@v4
+
+      - name: Build for macOS
+        run: |
+          xcodebuild \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Run macOS unit tests
+        run: |
+          xcodebuild \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination 'platform=macOS' \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            -only-testing:SimpleMediaPlayerTests \
+            CODE_SIGNING_ALLOWED=NO test
+
+      - name: SwiftLint
+        run: ./scripts/lint.sh
