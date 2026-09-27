@@ -24,7 +24,10 @@ struct MusicAnalysisStripView: View {
         case .analyzing: return L10n.string("Analyzing music…")
         case .ready: return ""
         case .unavailable: return L10n.string("Music analysis requires OS 27")
-        case .failed: return L10n.string("Music analysis unavailable")
+        case .failed:
+            let heading = L10n.string("Music analysis unavailable")
+            guard let reason = player.musicAnalysis.failureReason else { return heading }
+            return "\(heading): \(reason)"
         }
     }
 

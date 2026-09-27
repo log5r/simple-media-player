@@ -17,6 +17,7 @@ final class MusicAnalysisController {
     private(set) var paceLevels: [Double?] = []
     private(set) var tempoByBeat: [Double?] = []
     private(set) var status: Status = .idle
+    private(set) var failureReason: String?
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private let analyze: @Sendable (
@@ -45,6 +46,7 @@ final class MusicAnalysisController {
         paceLevels = []
         tempoByBeat = []
         status = .idle
+        failureReason = nil
     }
 
     @discardableResult
@@ -65,6 +67,7 @@ final class MusicAnalysisController {
                 await self?.accept(result, generation: generation, status: .ready)
             } catch {
                 guard !Task.isCancelled, let self, self.generation == generation else { return }
+                self.failureReason = error.localizedDescription
                 self.status = .failed
             }
         }
@@ -116,7 +119,8 @@ actor MusicAnalysisService {
 
         logger.info("Cache miss")
         let wholeSongStarted = ContinuousClock.now
-        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let analysisURL = try ExtendedAudioSource.readableURL(for: url)
+        let asset = AVURLAsset(url: analysisURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else { throw MusicUnderstandingError.invalidAsset }
         let session = try await MusicUnderstandingSession(asset: asset)

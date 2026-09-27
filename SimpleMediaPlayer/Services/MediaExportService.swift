@@ -168,6 +168,9 @@ extension LibraryService {
     }
 
     private func exportMetadata(for url: URL) async -> (title: String?, album: String?) {
+        if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
+            return (info.title, info.album)
+        }
         let asset = AVURLAsset(url: url)
         var metadataItems: [AVMetadataItem] = []
 

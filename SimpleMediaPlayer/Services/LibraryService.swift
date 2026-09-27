@@ -249,6 +249,23 @@ final class LibraryService {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
 
+        if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
+            draft.title = info.title ?? draft.title
+            draft.artist = info.artist ?? draft.artist
+            draft.album = info.album ?? draft.album
+            draft.genre = info.genre ?? draft.genre
+            draft.year = info.year ?? draft.year
+            draft.trackNumber = info.trackNumber ?? draft.trackNumber
+            draft.comment = info.comment ?? draft.comment
+            draft.albumArtist = info.albumArtist ?? draft.albumArtist
+            draft.composer = info.composer ?? draft.composer
+            draft.discNumber = info.discNumber ?? draft.discNumber
+            draft.isCompilation = info.isCompilation
+            draft.lyrics = info.lyrics ?? draft.lyrics
+            // Artwork edits for extended formats live in the library item, not the source file.
+            return draft
+        }
+
         let metadata = await allMetadata(for: AVURLAsset(url: url))
         let metadataValues = await metadata.embeddedValues(compilationKeyNeedles: Self.compilationKeyNeedles)
         draft = draft.applying(metadataValues)
@@ -391,14 +408,18 @@ final class LibraryService {
 
         return BulkMetadataEditResult(updatedCount: updatedCount, failures: failures)
     }
+}
 
+extension LibraryService {
     nonisolated func fallbackMediaURL(forFileName fileName: String) -> URL {
         mediaDirectoryURL().appendingPathComponent(fileName)
     }
 
     func delete(_ item: MediaItem, from context: ModelContext) {
         if let url = resolvedURL(for: item) {
+            let cacheURL = ExtendedAudioSource.cacheURL(for: url)
             try? FileManager.default.removeItem(at: url)
+            if let cacheURL { ExtendedAudioSource.removeCacheInBackground(at: cacheURL) }
         }
         context.delete(item)
         try? context.save()
@@ -494,133 +515,23 @@ final class LibraryService {
 
     private func makeMediaItem(from sourceURL: URL, importFingerprint: String) async throws -> MediaItem {
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
-        defer {
-            if didAccess { sourceURL.stopAccessingSecurityScopedResource() }
-        }
-
-        let asset = AVURLAsset(url: sourceURL)
-        let duration = try await asset.load(.duration).seconds
-        let metadata = await allMetadata(for: asset)
-        let isVideo = isVideoFile(sourceURL)
-        let mp4Metadata = await mp4Metadata(for: sourceURL)
-        let musicLibraryMetadata = await musicLibraryMetadata(
-            for: sourceURL,
-            mp4Metadata: mp4Metadata,
-            duration: duration,
-            isVideo: isVideo
-        )
-        var id3Values: MediaMetadataEmbeddedValues?
-        if ID3TagWriter.canWriteMetadata(to: sourceURL) {
-            id3Values = try? await Task.detached(priority: .utility, operation: {
-                try ID3TagWriter.readMetadata(from: sourceURL)
-            }).value
-        }
-        let additionalMetadata: AudioTagReadResult?
-        if AdditionalAudioMetadata.canWrite(to: sourceURL) {
-            do {
-                additionalMetadata = try await Task.detached(priority: .utility) {
-                    try AdditionalAudioMetadata.read(from: sourceURL)
-                }.value
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                try Task.checkCancellation()
-                additionalMetadata = nil
-            }
-        } else {
-            additionalMetadata = nil
-        }
-        let metadataTitle = await metadata.stringValue(for: .commonIdentifierTitle)
-        let metadataArtist = await metadata.stringValue(for: .commonIdentifierArtist)
-        let metadataAlbum = await metadata.stringValue(for: .commonIdentifierAlbumName)
-        let metadataGenre = await metadata.firstString(whereKeyContains: ["genre", "gnre", "tco"])
-        let metadataYear = await metadata.firstDisplayString(
-            whereKeyContains: ["year", "date", "tdrc", "tyer", "tye", "©day"]
-        )
-        let metadataTrackNumber = await metadata.firstDisplayString(
-            whereKeyContains: ["track number", "tracknumber", "trck", "trk", "trkn"]
-        )
-        let metadataComment = await metadata.firstDisplayString(whereKeyContains: ["comment", "comm", "©cmt"])
-        let metadataAlbumArtist = await metadata.firstDisplayString(
-            whereKeyContains: ["album artist", "albumartist", "tpe2", "tp2", "aART"]
-        )
-        let metadataComposer = await metadata.firstDisplayString(whereKeyContains: ["composer", "tcom", "tcm", "©wrt"])
-        let metadataDiscNumber = await metadata.firstDisplayString(
-            whereKeyContains: ["disc number", "discnumber", "disk", "tpos", "tpa"]
-        )
-        let metadataIsCompilation = await metadata.firstBool(whereKeyContains: Self.compilationKeyNeedles)
-
-        let title = Self.firstNonblank(
-            additionalMetadata?.values.title,
-            id3Values?.title,
-            musicLibraryMetadata?.title,
-            mp4Metadata?.values.title,
-            metadataTitle
-        )
-            ?? sourceURL.deletingPathExtension().lastPathComponent
-        let artist = Self.firstNonblank(
-            additionalMetadata?.values.artist,
-            id3Values?.artist,
-            musicLibraryMetadata?.artist,
-            mp4Metadata?.values.artist,
-            metadataArtist
-        )
-            ?? "Unknown Artist"
-        let album = Self.firstNonblank(
-            additionalMetadata?.values.album,
-            id3Values?.album,
-            musicLibraryMetadata?.album,
-            mp4Metadata?.values.album,
-            metadataAlbum
-        )
-            ?? "Unknown Album"
-        let genre = Self.firstNonblank(
-            additionalMetadata?.values.genre, id3Values?.genre, musicLibraryMetadata?.genre,
-            mp4Metadata?.values.genre, metadataGenre
-        )
-        let year = Self.firstNonblank(
-            additionalMetadata?.values.year, id3Values?.year, musicLibraryMetadata?.year,
-            mp4Metadata?.values.year, metadataYear
-        )
-        let trackNumber = Self.firstNonblank(
-            additionalMetadata?.values.trackNumber, id3Values?.trackNumber, musicLibraryMetadata?.trackNumber,
-            mp4Metadata?.values.trackNumber, metadataTrackNumber
-        )
-        let comment = Self.firstNonblank(
-            additionalMetadata?.values.comment, id3Values?.comment, musicLibraryMetadata?.comment,
-            mp4Metadata?.values.comment, metadataComment
-        )
-        let albumArtist = Self.firstNonblank(
-            additionalMetadata?.values.albumArtist, id3Values?.albumArtist, musicLibraryMetadata?.albumArtist,
-            mp4Metadata?.values.albumArtist, metadataAlbumArtist
-        )
-        let composer = Self.firstNonblank(
-            additionalMetadata?.values.composer, id3Values?.composer, musicLibraryMetadata?.composer,
-            mp4Metadata?.values.composer, metadataComposer
-        )
-        let discNumber = Self.firstNonblank(
-            additionalMetadata?.values.discNumber, id3Values?.discNumber, musicLibraryMetadata?.discNumber,
-            mp4Metadata?.values.discNumber, metadataDiscNumber
-        )
-        let isCompilation = additionalMetadata?.values.isCompilation ?? id3Values?.isCompilation
-            ?? musicLibraryMetadata?.isCompilation
-            ?? mp4Metadata?.values.isCompilation
-            ?? metadataIsCompilation
-            ?? false
-        let metadataLyrics = await metadata.firstString(whereKeyContains: Self.lyricsKeyNeedles)
-        let lyricsRaw = isVideo ? nil : additionalMetadata?.lyrics ?? mp4Metadata?.lyrics ?? metadataLyrics
-        let metadataArtwork = await metadata.dataValue(for: .commonIdentifierArtwork)
-        let embeddedArtwork = additionalMetadata?.artworkData ?? mp4Metadata?.artworkData ?? metadataArtwork
-        var artwork: Data?
-        if let embeddedArtwork {
-            artwork = await artworkProcessor.thumbnail(from: embeddedArtwork)
-        }
-
+        defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
+        let sources = try await readImportSources(from: sourceURL)
+        let importValues = await mergeImportSources(sources, fileURL: sourceURL)
+        let values = importValues.values
         let id = UUID()
         let copiedURL = try await copyIntoMediaDirectory(sourceURL, id: id)
         var didCreateItem = false
-        defer {
-            if didCreateItem == false { try? FileManager.default.removeItem(at: copiedURL) }
+        defer { if didCreateItem == false { try? FileManager.default.removeItem(at: copiedURL) } }
+        if sources.extended != nil {
+            let prepareTask = Task.detached(priority: .utility) {
+                try ExtendedAudioSource.readableURL(for: copiedURL)
+            }
+            _ = try await withTaskCancellationHandler {
+                try await prepareTask.value
+            } onCancel: {
+                prepareTask.cancel()
+            }
         }
         #if os(macOS)
         let bookmarkOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
@@ -628,29 +539,26 @@ final class LibraryService {
         let bookmarkOptions: URL.BookmarkCreationOptions = []
         #endif
         let bookmark = try copiedURL.bookmarkData(
-            options: bookmarkOptions,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
+            options: bookmarkOptions, includingResourceValuesForKeys: nil, relativeTo: nil
         )
-
         let item = MediaItem(
             id: id,
-            title: title,
-            artist: artist,
-            album: album,
-            genre: genre,
-            year: year,
-            trackNumber: trackNumber,
-            comment: comment,
-            albumArtist: albumArtist,
-            composer: composer,
-            discNumber: discNumber,
-            isCompilation: isCompilation,
-            duration: duration.isFinite ? duration : 0,
-            isVideo: isVideo,
-            lyricsRaw: lyricsRaw,
+            title: values.title ?? sourceURL.deletingPathExtension().lastPathComponent,
+            artist: values.artist ?? "Unknown Artist",
+            album: values.album ?? "Unknown Album",
+            genre: values.genre,
+            year: values.year,
+            trackNumber: values.trackNumber,
+            comment: values.comment,
+            albumArtist: values.albumArtist,
+            composer: values.composer,
+            discNumber: values.discNumber,
+            isCompilation: values.isCompilation ?? false,
+            duration: sources.duration.isFinite ? sources.duration : 0,
+            isVideo: sources.isVideo,
+            lyricsRaw: importValues.lyrics,
             bookmarkData: bookmark,
-            artworkData: artwork,
+            artworkData: importValues.artwork,
             fileName: copiedURL.lastPathComponent,
             importFingerprint: importFingerprint
         )
@@ -658,6 +566,131 @@ final class LibraryService {
         return item
     }
 
+    private func readImportSources(from url: URL) async throws -> ImportSources {
+        let extended = try await ExtendedAudioSource.probeInfo(for: url)
+        let asset = AVURLAsset(url: url)
+        let duration: TimeInterval
+        if let extended {
+            duration = extended.duration
+        } else {
+            duration = try await asset.load(.duration).seconds
+        }
+        let metadata = extended == nil ? await allMetadata(for: asset) : []
+        let isVideo = isVideoFile(url)
+        if extended == nil {
+            let tracks = try await asset.load(.tracks)
+            guard tracks.contains(where: { $0.mediaType == .audio || $0.mediaType == .video }) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if isVideo == false { _ = try AVAudioFile(forReading: url) }
+        }
+        let mp4 = extended == nil ? await mp4Metadata(for: url) : nil
+        let music = extended == nil ? await musicLibraryMetadata(
+            for: url, mp4Metadata: mp4, duration: duration, isVideo: isVideo
+        ) : nil
+        let id3: MediaMetadataEmbeddedValues?
+        if ID3TagWriter.canWriteMetadata(to: url) {
+            id3 = try? await Task.detached(priority: .utility) {
+                try ID3TagWriter.readMetadata(from: url)
+            }.value
+        } else {
+            id3 = nil
+        }
+        let additional: AudioTagReadResult?
+        if AdditionalAudioMetadata.canWrite(to: url) {
+            do {
+                additional = try await Task.detached(priority: .utility) {
+                    try AdditionalAudioMetadata.read(from: url)
+                }.value
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+                additional = nil
+            }
+        } else {
+            additional = nil
+        }
+        return ImportSources(
+            duration: duration, isVideo: isVideo, extended: extended,
+            metadata: metadata, mp4: mp4, music: music, id3: id3, additional: additional
+        )
+    }
+
+    private func mergeImportSources(_ sources: ImportSources, fileURL: URL) async -> ImportValues {
+        let raw = await assetImportValues(sources.metadata)
+        let extended = sources.extended
+        let additional = sources.additional
+        let id3 = sources.id3
+        let music = sources.music
+        let mp4 = sources.mp4
+        let values = MediaMetadataEmbeddedValues(
+            title: Self.firstNonblank(additional?.values.title, id3?.title, extended?.title,
+                                      music?.title, mp4?.values.title, raw.title)
+                ?? fileURL.deletingPathExtension().lastPathComponent,
+            artist: Self.firstNonblank(additional?.values.artist, id3?.artist, extended?.artist,
+                                       music?.artist, mp4?.values.artist, raw.artist) ?? "Unknown Artist",
+            album: Self.firstNonblank(additional?.values.album, id3?.album, extended?.album,
+                                      music?.album, mp4?.values.album, raw.album) ?? "Unknown Album",
+            genre: Self.firstNonblank(additional?.values.genre, id3?.genre, extended?.genre,
+                                      music?.genre, mp4?.values.genre, raw.genre),
+            year: Self.firstNonblank(additional?.values.year, id3?.year, extended?.year,
+                                     music?.year, mp4?.values.year, raw.year),
+            trackNumber: Self.firstNonblank(additional?.values.trackNumber, id3?.trackNumber,
+                                            extended?.trackNumber, music?.trackNumber,
+                                            mp4?.values.trackNumber, raw.trackNumber),
+            comment: Self.firstNonblank(additional?.values.comment, id3?.comment, extended?.comment,
+                                        music?.comment, mp4?.values.comment, raw.comment),
+            albumArtist: Self.firstNonblank(additional?.values.albumArtist, id3?.albumArtist,
+                                            extended?.albumArtist, music?.albumArtist,
+                                            mp4?.values.albumArtist, raw.albumArtist),
+            composer: Self.firstNonblank(additional?.values.composer, id3?.composer, extended?.composer,
+                                         music?.composer, mp4?.values.composer, raw.composer),
+            discNumber: Self.firstNonblank(additional?.values.discNumber, id3?.discNumber,
+                                           extended?.discNumber, music?.discNumber,
+                                           mp4?.values.discNumber, raw.discNumber),
+            isCompilation: additional?.values.isCompilation ?? id3?.isCompilation
+                ?? extended?.isCompilation ?? music?.isCompilation
+                ?? mp4?.values.isCompilation ?? raw.isCompilation ?? false
+        )
+        let rawLyrics = await sources.metadata.firstString(whereKeyContains: Self.lyricsKeyNeedles)
+        let lyrics = sources.isVideo ? nil : additional?.lyrics ?? extended?.lyrics ?? mp4?.lyrics ?? rawLyrics
+        let rawArtwork = await sources.metadata.dataValue(for: .commonIdentifierArtwork)
+        let embeddedArtwork = additional?.artworkData ?? extended?.artworkData ?? mp4?.artworkData ?? rawArtwork
+        let artwork: Data?
+        if let embeddedArtwork {
+            artwork = await artworkProcessor.thumbnail(from: embeddedArtwork)
+        } else {
+            artwork = nil
+        }
+        return ImportValues(values: values, lyrics: lyrics, artwork: artwork)
+    }
+
+    private func assetImportValues(_ metadata: [AVMetadataItem]) async -> MediaMetadataEmbeddedValues {
+        MediaMetadataEmbeddedValues(
+            title: await metadata.stringValue(for: .commonIdentifierTitle),
+            artist: await metadata.stringValue(for: .commonIdentifierArtist),
+            album: await metadata.stringValue(for: .commonIdentifierAlbumName),
+            genre: await metadata.firstString(whereKeyContains: ["genre", "gnre", "tco"]),
+            year: await metadata.firstDisplayString(
+                whereKeyContains: ["year", "date", "tdrc", "tyer", "tye", "©day"]
+            ),
+            trackNumber: await metadata.firstDisplayString(
+                whereKeyContains: ["track number", "tracknumber", "trck", "trk", "trkn"]
+            ),
+            comment: await metadata.firstDisplayString(whereKeyContains: ["comment", "comm", "©cmt"]),
+            albumArtist: await metadata.firstDisplayString(
+                whereKeyContains: ["album artist", "albumartist", "tpe2", "tp2", "aART"]
+            ),
+            composer: await metadata.firstDisplayString(whereKeyContains: ["composer", "tcom", "tcm", "©wrt"]),
+            discNumber: await metadata.firstDisplayString(whereKeyContains: ["disc number", "discnumber", "disk", "tpos", "tpa"]),
+            isCompilation: await metadata.firstBool(whereKeyContains: Self.compilationKeyNeedles)
+        )
+    }
+
+}
+
+extension LibraryService {
     private func importFingerprint(for url: URL) async throws -> String {
         try await Task.detached(priority: .utility) {
             try MediaImportFingerprint.read(from: url)
@@ -809,6 +842,23 @@ final class LibraryService {
     }
 }
 
+private struct ImportSources {
+    let duration: TimeInterval
+    let isVideo: Bool
+    let extended: ExtendedAudioSource.Info?
+    let metadata: [AVMetadataItem]
+    let mp4: MP4MetadataReadResult?
+    let music: MediaMetadataEmbeddedValues?
+    let id3: MediaMetadataEmbeddedValues?
+    let additional: AudioTagReadResult?
+}
+
+private struct ImportValues {
+    let values: MediaMetadataEmbeddedValues
+    let lyrics: String?
+    let artwork: Data?
+}
+
 extension LibraryService: MediaURLResolving {}
 
 private extension Array where Element == AVMetadataItem {
@@ -932,492 +982,5 @@ private extension AVMetadataItem {
         return haystacks.contains { value in
             needles.contains { value.contains($0.lowercased()) }
         }
-    }
-}
-
-private enum MediaInfoInspector {
-    static func missingFileDetails(for item: MediaInfoItemSnapshot) -> MediaInfoDetails {
-        MediaInfoDetails(
-            fileRows: [
-                MediaInfoRow(id: "fileName", label: L10n.string("File"), value: item.fileName)
-            ],
-            summaryRows: summaryRows(for: item),
-            sections: [],
-            errorMessage: L10n.string("Could not resolve the media file.")
-        )
-    }
-
-    static func loadDetails(for item: MediaInfoItemSnapshot, url: URL) async -> MediaInfoDetails {
-        let didAccess = url.startAccessingSecurityScopedResource()
-        defer {
-            if didAccess { url.stopAccessingSecurityScopedResource() }
-        }
-
-        let fileRows = fileRows(for: item, url: url)
-        let asset = AVURLAsset(url: url)
-
-        do {
-            async let summaryRows = assetSummaryRows(for: item, asset: asset)
-            async let metadataSections = metadataSections(for: asset)
-            async let trackSections = trackSections(for: asset)
-
-            return MediaInfoDetails(
-                fileRows: fileRows,
-                summaryRows: await summaryRows,
-                sections: try await metadataSections + trackSections,
-                errorMessage: nil
-            )
-        } catch {
-            return MediaInfoDetails(
-                fileRows: fileRows,
-                summaryRows: summaryRows(for: item),
-                sections: [],
-                errorMessage: L10n.format("Could not read media info: %@", error.localizedDescription)
-            )
-        }
-    }
-
-    private static func fileRows(for item: MediaInfoItemSnapshot, url: URL) -> [MediaInfoRow] {
-        let keys: Set<URLResourceKey> = [
-            .fileSizeKey,
-            .totalFileSizeKey,
-            .contentTypeKey,
-            .creationDateKey,
-            .contentModificationDateKey
-        ]
-        let values = try? url.resourceValues(forKeys: keys)
-        let byteCount = values?.totalFileSize ?? values?.fileSize
-
-        var rows = [
-            MediaInfoRow(id: "fileName", label: L10n.string("File"), value: item.fileName),
-            MediaInfoRow(id: "filePath", label: L10n.string("File Path"), value: url.path)
-        ]
-
-        if let byteCount, byteCount >= 0 {
-            rows.append(MediaInfoRow(
-                id: "fileSize",
-                label: L10n.string("File Size"),
-                value: "\(MediaInfoTextFormatter.fileSize(bytes: Int64(byteCount))) (\(byteCount) bytes)"
-            ))
-        }
-        if let type = values?.contentType {
-            rows.append(MediaInfoRow(id: "contentType", label: L10n.string("Content Type"), value: type.identifier))
-        }
-        if let creationDate = values?.creationDate {
-            rows.append(MediaInfoRow(
-                id: "created",
-                label: L10n.string("Created"),
-                value: creationDate.formatted(date: .numeric, time: .shortened)
-            ))
-        }
-        if let modifiedDate = values?.contentModificationDate {
-            rows.append(MediaInfoRow(
-                id: "modified",
-                label: L10n.string("Modified"),
-                value: modifiedDate.formatted(date: .numeric, time: .shortened)
-            ))
-        }
-
-        return rows
-    }
-
-    private static func summaryRows(for item: MediaInfoItemSnapshot) -> [MediaInfoRow] {
-        var rows = [
-            MediaInfoRow(id: "title", label: L10n.string("Title"), value: item.title),
-            MediaInfoRow(id: "artist", label: L10n.string("Artist"), value: item.displayArtist),
-            MediaInfoRow(id: "album", label: L10n.string("Album"), value: item.displayAlbum),
-            MediaInfoRow(id: "genre", label: L10n.string("Genre"), value: item.displayGenre),
-            MediaInfoRow(id: "duration", label: L10n.string("Time"), value: item.duration.mediaTime),
-            MediaInfoRow(
-                id: "kind",
-                label: L10n.string("Kind"),
-                value: item.isVideo ? L10n.string("Video") : L10n.string("Audio")
-            ),
-            MediaInfoRow(
-                id: "added",
-                label: L10n.string("Date Added"),
-                value: item.addedAt.formatted(date: .numeric, time: .shortened)
-            )
-        ]
-        appendOptionalRow(id: "year", label: L10n.string("Year"), value: item.year, to: &rows)
-        appendOptionalRow(id: "trackNumber", label: L10n.string("Track"), value: item.trackNumber, to: &rows)
-        appendOptionalRow(id: "albumArtist", label: L10n.string("Album Artist"), value: item.albumArtist, to: &rows)
-        appendOptionalRow(id: "composer", label: L10n.string("Composer"), value: item.composer, to: &rows)
-        appendOptionalRow(id: "discNumber", label: L10n.string("Disc Number"), value: item.discNumber, to: &rows)
-        if item.isCompilation {
-            rows.append(MediaInfoRow(id: "compilation", label: L10n.string("Compilation"), value: yesNo(true)))
-        }
-        appendOptionalRow(id: "comment", label: L10n.string("Comment"), value: item.comment, to: &rows)
-        return rows
-    }
-
-    private static func appendOptionalRow(id: String, label: String, value: String?, to rows: inout [MediaInfoRow]) {
-        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), value.isEmpty == false else { return }
-        rows.append(MediaInfoRow(id: id, label: label, value: value))
-    }
-
-    private static func assetSummaryRows(for item: MediaInfoItemSnapshot, asset: AVURLAsset) async -> [MediaInfoRow] {
-        var rows = summaryRows(for: item)
-
-        if let duration = try? await asset.load(.duration).seconds, duration.isFinite, duration > 0 {
-            rows.append(MediaInfoRow(
-                id: "assetDuration",
-                label: L10n.string("Asset Duration"),
-                value: duration.mediaTime
-            ))
-        }
-        if let isPlayable = try? await asset.load(.isPlayable) {
-            rows.append(MediaInfoRow(id: "isPlayable", label: L10n.string("Playable"), value: yesNo(isPlayable)))
-        }
-        if let isReadable = try? await asset.load(.isReadable) {
-            rows.append(MediaInfoRow(id: "isReadable", label: L10n.string("Readable"), value: yesNo(isReadable)))
-        }
-        if let isExportable = try? await asset.load(.isExportable) {
-            rows.append(MediaInfoRow(id: "isExportable", label: L10n.string("Exportable"), value: yesNo(isExportable)))
-        }
-        if let isComposable = try? await asset.load(.isComposable) {
-            rows.append(MediaInfoRow(id: "isComposable", label: L10n.string("Composable"), value: yesNo(isComposable)))
-        }
-        if let hasProtectedContent = try? await asset.load(.hasProtectedContent) {
-            rows.append(MediaInfoRow(
-                id: "protected",
-                label: L10n.string("Protected Content"),
-                value: yesNo(hasProtectedContent)
-            ))
-        }
-        if let containsFragments = try? await asset.load(.containsFragments) {
-            rows.append(MediaInfoRow(
-                id: "fragments",
-                label: L10n.string("Contains Fragments"),
-                value: yesNo(containsFragments)
-            ))
-        }
-        if let preciseTiming = try? await asset.load(.providesPreciseDurationAndTiming) {
-            rows.append(MediaInfoRow(
-                id: "preciseTiming",
-                label: L10n.string("Precise Timing"),
-                value: yesNo(preciseTiming)
-            ))
-        }
-        if let preferredRate = try? await asset.load(.preferredRate), preferredRate > 0 {
-            rows.append(MediaInfoRow(
-                id: "preferredRate",
-                label: L10n.string("Preferred Rate"),
-                value: MediaInfoTextFormatter.compactDecimal(Double(preferredRate))
-            ))
-        }
-        if let preferredVolume = try? await asset.load(.preferredVolume), preferredVolume >= 0 {
-            rows.append(MediaInfoRow(
-                id: "preferredVolume",
-                label: L10n.string("Preferred Volume"),
-                value: MediaInfoTextFormatter.compactDecimal(Double(preferredVolume))
-            ))
-        }
-
-        return rows
-    }
-
-    private static func metadataSections(for asset: AVURLAsset) async throws -> [MediaInfoSection] {
-        var sections: [MediaInfoSection] = []
-        let commonMetadata = try await asset.load(.metadata)
-        if commonMetadata.isEmpty == false {
-            sections.append(MediaInfoSection(
-                id: "metadata-common",
-                title: L10n.string("Common Metadata"),
-                rows: await metadataRows(for: commonMetadata, idPrefix: "common")
-            ))
-        }
-
-        let formats = try await asset.load(.availableMetadataFormats)
-        for format in formats {
-            let items = try await asset.loadMetadata(for: format)
-            guard items.isEmpty == false else { continue }
-            sections.append(MediaInfoSection(
-                id: "metadata-\(format.rawValue)",
-                title: metadataFormatTitle(format),
-                rows: await metadataRows(for: items, idPrefix: format.rawValue)
-            ))
-        }
-
-        if sections.isEmpty {
-            sections.append(MediaInfoSection(
-                id: "metadata-empty",
-                title: L10n.string("Embedded Metadata"),
-                rows: [MediaInfoRow(
-                    id: "metadata-empty-row",
-                    label: L10n.string("Metadata"),
-                    value: L10n.string("No embedded metadata")
-                )]
-            ))
-        }
-
-        return sections
-    }
-
-    private static func metadataRows(for items: [AVMetadataItem], idPrefix: String) async -> [MediaInfoRow] {
-        var rows: [MediaInfoRow] = []
-
-        for (index, item) in items.enumerated() {
-            let label = metadataLabel(for: item, fallback: "\(L10n.string("Item")) \(index + 1)")
-            var details: [String] = []
-
-            details.append(await metadataValue(for: item))
-            appendDetail(L10n.string("Identifier"), item.identifier?.rawValue, to: &details)
-            appendDetail(L10n.string("Common Key"), item.commonKey?.rawValue, to: &details)
-            appendDetail(L10n.string("Key Space"), item.keySpace?.rawValue, to: &details)
-            appendDetail(L10n.string("Key"), displayValue(item.key), to: &details)
-            appendDetail(L10n.string("Data Type"), item.dataType, to: &details)
-            appendDetail(L10n.string("Language"), item.extendedLanguageTag ?? item.locale?.identifier, to: &details)
-
-            if item.time.isValid && item.time.seconds.isFinite {
-                appendDetail(L10n.string("Time"), item.time.seconds.mediaTime, to: &details)
-            }
-            if item.duration.isValid && item.duration.seconds.isFinite && item.duration.seconds > 0 {
-                appendDetail(L10n.string("Duration"), item.duration.seconds.mediaTime, to: &details)
-            }
-            if let extraAttributes = try? await item.load(.extraAttributes), extraAttributes.isEmpty == false {
-                appendDetail(L10n.string("Extra Attributes"), displayValue(extraAttributes), to: &details)
-            }
-
-            rows.append(MediaInfoRow(
-                id: "\(idPrefix)-\(index)",
-                label: label,
-                value: details.filter { $0.isEmpty == false }.joined(separator: "\n")
-            ))
-        }
-
-        return rows
-    }
-
-    private static func trackSections(for asset: AVURLAsset) async throws -> [MediaInfoSection] {
-        let tracks = try await asset.load(.tracks)
-
-        return await tracks.enumerated().asyncMap { index, track in
-            var rows: [MediaInfoRow] = [
-                MediaInfoRow(id: "mediaType", label: L10n.string("Media Type"), value: track.mediaType.rawValue)
-            ]
-
-            if let naturalSize = try? await track.load(.naturalSize), naturalSize.width > 0 || naturalSize.height > 0 {
-                rows.append(MediaInfoRow(
-                    id: "naturalSize",
-                    label: L10n.string("Dimensions"),
-                    value: "\(Int(naturalSize.width.rounded())) x \(Int(naturalSize.height.rounded()))"
-                ))
-            }
-            if let frameRate = try? await track.load(.nominalFrameRate), frameRate > 0 {
-                rows.append(MediaInfoRow(
-                    id: "frameRate",
-                    label: L10n.string("Frame Rate"),
-                    value: "\(MediaInfoTextFormatter.compactDecimal(Double(frameRate))) fps"
-                ))
-            }
-            if let dataRate = try? await track.load(.estimatedDataRate), dataRate > 0 {
-                rows.append(MediaInfoRow(
-                    id: "dataRate",
-                    label: L10n.string("Estimated Data Rate"),
-                    value: "\(Int((dataRate / 1000).rounded())) kbps"
-                ))
-            }
-            if let languageCode = try? await track.load(.languageCode), languageCode != "und" {
-                rows.append(MediaInfoRow(id: "language", label: L10n.string("Language"), value: languageCode))
-            }
-            if let extendedLanguageTag = try? await track.load(.extendedLanguageTag) {
-                rows.append(MediaInfoRow(
-                    id: "extendedLanguage",
-                    label: L10n.string("Extended Language"),
-                    value: extendedLanguageTag
-                ))
-            }
-            if let formatDescriptions = try? await track.load(.formatDescriptions) {
-                rows.append(contentsOf: formatDescriptionRows(formatDescriptions))
-            }
-
-            let title = L10n.format("Track %d - %@", index + 1, track.mediaType.rawValue)
-            return MediaInfoSection(id: "track-\(index)", title: title, rows: rows)
-        }
-    }
-
-    private static func formatDescriptionRows(_ descriptions: [CMFormatDescription]) -> [MediaInfoRow] {
-        descriptions.enumerated().flatMap { index, description in
-            var rows: [MediaInfoRow] = [
-                MediaInfoRow(
-                    id: "format-\(index)-mediaType",
-                    label: L10n.format("Format %d Media Type", index + 1),
-                    value: fourCharacterCode(CMFormatDescriptionGetMediaType(description))
-                ),
-                MediaInfoRow(
-                    id: "format-\(index)-subtype",
-                    label: L10n.format("Format %d Codec", index + 1),
-                    value: fourCharacterCode(CMFormatDescriptionGetMediaSubType(description))
-                )
-            ]
-
-            let dimensions = CMVideoFormatDescriptionGetDimensions(description)
-            if dimensions.width > 0 || dimensions.height > 0 {
-                rows.append(MediaInfoRow(
-                    id: "format-\(index)-dimensions",
-                    label: L10n.format("Format %d Dimensions", index + 1),
-                    value: "\(dimensions.width) x \(dimensions.height)"
-                ))
-            }
-
-            if let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee {
-                rows.append(MediaInfoRow(
-                    id: "format-\(index)-sampleRate",
-                    label: L10n.format("Format %d Sample Rate", index + 1),
-                    value: "\(MediaInfoTextFormatter.compactDecimal(streamDescription.mSampleRate)) Hz"
-                ))
-                rows.append(MediaInfoRow(
-                    id: "format-\(index)-channels",
-                    label: L10n.format("Format %d Channels", index + 1),
-                    value: String(streamDescription.mChannelsPerFrame)
-                ))
-                if streamDescription.mBitsPerChannel > 0 {
-                    rows.append(MediaInfoRow(
-                        id: "format-\(index)-bits",
-                        label: L10n.format("Format %d Bits per Channel", index + 1),
-                        value: String(streamDescription.mBitsPerChannel)
-                    ))
-                }
-            }
-
-            if let extensions = CMFormatDescriptionGetExtensions(description) as? [String: Any],
-               extensions.isEmpty == false,
-               let formattedExtensions = displayValue(extensions) {
-                rows.append(MediaInfoRow(
-                    id: "format-\(index)-extensions",
-                    label: L10n.format("Format %d Extensions", index + 1),
-                    value: formattedExtensions
-                ))
-            }
-
-            return rows
-        }
-    }
-
-    private static func metadataLabel(for item: AVMetadataItem, fallback: String) -> String {
-        if let commonKey = item.commonKey?.rawValue {
-            return commonKey
-        }
-        if let identifier = item.identifier?.rawValue {
-            return identifier
-        }
-        if let key = displayValue(item.key) {
-            return key
-        }
-        return fallback
-    }
-
-    private static func metadataValue(for item: AVMetadataItem) async -> String {
-        if let string = try? await item.load(.stringValue), string.isEmpty == false {
-            return string
-        }
-        if let number = try? await item.load(.numberValue) {
-            return number.stringValue
-        }
-        if let date = try? await item.load(.dateValue) {
-            return date.formatted(date: .numeric, time: .shortened)
-        }
-        if let data = try? await item.load(.dataValue) {
-            if let text = String(data: data, encoding: .utf8),
-               text.trimmingCharacters(in: .controlCharacters).isEmpty == false {
-                return text
-            }
-            return L10n.format("Binary data (%@)", MediaInfoTextFormatter.fileSize(bytes: Int64(data.count)))
-        }
-        if let value = try? await item.load(.value) {
-            return displayValue(value) ?? String(describing: value)
-        }
-        return L10n.string("No readable value")
-    }
-
-    private static func metadataFormatTitle(_ format: AVMetadataFormat) -> String {
-        switch format {
-        case .id3Metadata:
-            return L10n.string("ID3 Metadata")
-        case .iTunesMetadata:
-            return L10n.string("iTunes Metadata")
-        case .quickTimeMetadata:
-            return L10n.string("QuickTime Metadata")
-        case .quickTimeUserData:
-            return L10n.string("QuickTime User Data")
-        case .isoUserData:
-            return L10n.string("ISO User Data")
-        default:
-            return format.rawValue
-        }
-    }
-
-    private static func appendDetail(_ label: String, _ value: String?, to details: inout [String]) {
-        guard let value, value.isEmpty == false else { return }
-        details.append("\(label): \(value)")
-    }
-
-    private static func displayValue(_ value: Any?) -> String? {
-        guard let value else { return nil }
-
-        switch value {
-        case let string as String:
-            return string
-        case let string as NSString:
-            return string as String
-        case let number as NSNumber:
-            return number.stringValue
-        case let date as Date:
-            return date.formatted(date: .numeric, time: .shortened)
-        case let data as Data:
-            return L10n.format("Binary data (%@)", MediaInfoTextFormatter.fileSize(bytes: Int64(data.count)))
-        case let array as [Any]:
-            return array.compactMap(displayValue).joined(separator: ", ")
-        case let dictionary as [String: Any]:
-            return dictionary.keys.sorted().compactMap { key in
-                guard let value = displayValue(dictionary[key]) else { return nil }
-                return "\(key): \(value)"
-            }.joined(separator: "\n")
-        case let dictionary as NSDictionary:
-            return dictionary.allKeys
-                .map { String(describing: $0) }
-                .sorted()
-                .compactMap { key in
-                    guard let value = displayValue(dictionary[key]) else { return nil }
-                    return "\(key): \(value)"
-                }
-                .joined(separator: "\n")
-        default:
-            return String(describing: value)
-        }
-    }
-
-    private static func fourCharacterCode(_ code: FourCharCode) -> String {
-        let scalars = [
-            UnicodeScalar((code >> 24) & 0xFF),
-            UnicodeScalar((code >> 16) & 0xFF),
-            UnicodeScalar((code >> 8) & 0xFF),
-            UnicodeScalar(code & 0xFF)
-        ]
-
-        let string = scalars.compactMap { scalar -> Character? in
-            guard let scalar, scalar.isASCII, scalar.value >= 32 else { return nil }
-            return Character(scalar)
-        }
-
-        if string.count == 4 {
-            return String(string)
-        }
-        return "0x\(String(code, radix: 16, uppercase: true))"
-    }
-
-    private static func yesNo(_ value: Bool) -> String {
-        value ? L10n.string("Yes") : L10n.string("No")
-    }
-}
-
-private extension Sequence {
-    func asyncMap<T>(_ transform: (Element) async -> T) async -> [T] {
-        var values: [T] = []
-        for element in self {
-            values.append(await transform(element))
-        }
-        return values
     }
 }

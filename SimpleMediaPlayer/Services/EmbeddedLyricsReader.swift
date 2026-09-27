@@ -23,6 +23,10 @@ nonisolated struct EmbeddedLyricsReader: Sendable {
                 if didAccess { url.stopAccessingSecurityScopedResource() }
             }
 
+            if let kind = try ExtendedAudioSource.kind(for: url) {
+                return Self.nonempty(try ExtendedAudioSource.info(for: url, kind: kind).lyrics)
+            }
+
             if MP4MetadataWriter.canWriteMetadata(to: url) {
                 let lyrics: String?
                 do {

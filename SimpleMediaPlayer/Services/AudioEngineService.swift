@@ -1,6 +1,13 @@
 import AVFoundation
 import Foundation
 
+private struct PendingSeek {
+    let time: TimeInterval
+    let autoPlay: Bool
+    let loadID: UUID
+    let seekID: UUID
+}
+
 // AVAudio 系の操作(stop / scheduleSegment など)は内部で下位 QoS スレッドとの
 // 同期待ちを伴うため、すべて専用の直列キュー(controlQueue)上で実行し、
 // メインスレッドをブロックさせない。UI へ公開する currentTime / duration は
@@ -20,6 +27,10 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var loudnessNormalizationStorage: AudioLoudnessNormalization?
     private var audioFile: AVAudioFile?
     private var currentURL: URL?
+    private var currentAudioURL: URL?
+    private var preparationTask: Task<Void, Never>?
+    private var loadGeneration = 0
+    private var playWhenReady = false
     private var startFrame: AVAudioFramePosition = 0
     private var seekFrame: AVAudioFramePosition = 0
     private var sampleRate: Double = 44_100
@@ -35,7 +46,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var displayIsPlaying = false
     private var displayRate: Double = 1.0
     private var cachedDuration: TimeInterval = 0
-    private var pendingSeek: (time: TimeInterval, autoPlay: Bool)?
+    private var pendingSeek: PendingSeek?
+    private var activeLoadID = UUID()
 
     var onFinished: (@MainActor () -> Void)?
     var onError: (@MainActor (String) -> Void)?
@@ -132,41 +144,89 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     }
 
     func load(url: URL) {
+        let requestID = UUID()
+        // キュー投入前に旧曲のシークを消し、このload後に要求されたシークは残す。
+        stateLock.lock()
+        pendingSeek = nil
+        activeLoadID = requestID
+        stateLock.unlock()
         controlQueue.async {
+            self.preparationTask?.cancel()
+            self.loadGeneration += 1
+            let generation = self.loadGeneration
             self.performStop(reset: true)
             self.currentURL = url
-            do {
-                let file = try AVAudioFile(forReading: url)
-                self.audioFile = file
-                self.sampleRate = file.fileFormat.sampleRate
-                self.loudnessNormalization.load(url)
-                let duration = Double(file.length) / file.fileFormat.sampleRate
-                self.setCachedDuration(duration)
-                if duration > 0 {
-                    let bitrateKbps = Self.estimatedBitrateKbps(url: url, duration: duration)
-                    let formatInfo = MediaFormatInfo(
-                        sampleRateHz: file.fileFormat.sampleRate,
-                        bitrateKbps: bitrateKbps > 0 ? bitrateKbps : nil
-                    )
-                    Task { @MainActor in self.onFormatLoaded?(duration, formatInfo) }
+            self.currentAudioURL = nil
+            self.audioFile = nil
+            self.playWhenReady = false
+            self.setCachedDuration(0)
+            self.preparationTask = Task.detached(priority: .userInitiated) {
+                do {
+                    let readableURL = try ExtendedAudioSource.readableURL(for: url)
+                    try Task.checkCancellation()
+                    let file = try AVAudioFile(forReading: readableURL)
+                    self.controlQueue.async {
+                        guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
+                        self.preparationTask = nil
+                        self.currentAudioURL = readableURL
+                        self.audioFile = file
+                        self.sampleRate = file.fileFormat.sampleRate
+                        self.loudnessNormalization.load(url)
+                        let duration = Double(file.length) / file.fileFormat.sampleRate
+                        self.setCachedDuration(duration)
+                        let bitrateKbps = Self.estimatedBitrateKbps(url: url, duration: duration)
+                        let formatInfo = MediaFormatInfo(
+                            sampleRateHz: file.fileFormat.sampleRate,
+                            bitrateKbps: bitrateKbps > 0 ? bitrateKbps : nil
+                        )
+                        Task { @MainActor in
+                            guard self.isActiveLoad(requestID) else { return }
+                            self.onFormatLoaded?(duration, formatInfo)
+                        }
+                        self.performPendingSeek(for: requestID)
+                        if self.playWhenReady {
+                            self.playWhenReady = false
+                            self.performPlay()
+                        }
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    self.controlQueue.async {
+                        guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
+                        self.preparationTask = nil
+                        self.loudnessNormalization.load(nil)
+                        self.setCachedDuration(0)
+                        self.reportError(error, for: requestID)
+                    }
                 }
-            } catch {
-                self.loudnessNormalization.load(nil)
-                self.audioFile = nil
-                self.setCachedDuration(0)
-                self.reportError(error)
             }
         }
     }
 
     func play() {
         controlQueue.async {
-            self.performPlay()
+            if self.audioFile == nil, self.preparationTask != nil {
+                self.playWhenReady = true
+            } else {
+                self.performPlay()
+            }
         }
     }
 
     func pause() {
+        stateLock.lock()
+        if let request = pendingSeek {
+            pendingSeek = PendingSeek(
+                time: request.time,
+                autoPlay: false,
+                loadID: request.loadID,
+                seekID: request.seekID
+            )
+        }
+        stateLock.unlock()
         controlQueue.async {
+            self.playWhenReady = false
             self.loudnessNormalization.cancel()
             self.seekFrame = self.frame(for: self.preciseCurrentTime())
             self.setDisplayClock(playing: false)
@@ -178,7 +238,11 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     }
 
     func stop(reset: Bool) {
+        stateLock.lock()
+        pendingSeek = nil
+        stateLock.unlock()
         controlQueue.async {
+            self.playWhenReady = false
             self.performStop(reset: reset)
         }
     }
@@ -186,7 +250,16 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     // 動画への切り替えでは旧音声の残響を待たずにエンジンを停止する。
     // 音声再生へ戻るときは performPlay で再始動する。
     func suspend() {
+        stateLock.lock()
+        pendingSeek = nil
+        activeLoadID = UUID()
+        stateLock.unlock()
         controlQueue.async {
+            // キャンセル後に完了した準備タスクの結果を受け付けない。
+            self.loadGeneration += 1
+            self.preparationTask?.cancel()
+            self.preparationTask = nil
+            self.playWhenReady = false
             self.performStop(reset: true)
             self.idleSuspension.cancel()
             self.engine.stop()
@@ -235,7 +308,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         applyLoudnessGain(loudnessNormalization.gainForPlayback)
 
         // ファイルの読み取り状態も含めて作り直す(失敗時は既存のファイルを使い続ける)
-        if let url = currentURL, let freshFile = try? AVAudioFile(forReading: url) {
+        if let url = currentAudioURL, let freshFile = try? AVAudioFile(forReading: url) {
             audioFile = freshFile
         }
         seekFrame = frame(for: resumeTime)
@@ -248,11 +321,13 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     // シーク連打に備えて要求は最新値だけ保持し、キュー上で順番が来た時点の
     // 最新要求のみを実行する(先行のキュー項目が消費済みなら何もしない)
     func seek(to time: TimeInterval, autoPlay: Bool) {
+        let seekID = UUID()
         stateLock.lock()
-        pendingSeek = (time, autoPlay)
+        let requestID = activeLoadID
+        pendingSeek = PendingSeek(time: time, autoPlay: autoPlay, loadID: requestID, seekID: seekID)
         stateLock.unlock()
         controlQueue.async {
-            self.performPendingSeek()
+            self.performPendingSeek(for: requestID, seekID: seekID)
         }
     }
 
@@ -312,6 +387,9 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         }
     }
 
+}
+
+nonisolated extension AudioEngineService {
     private func finishPlayback(at finalFrame: AVAudioFramePosition) {
         loudnessNormalization.cancel()
         setDisplayClock(playing: false)
@@ -399,12 +477,18 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         playerNode.volume = original
     }
 
-    private func performPendingSeek() {
+    private func performPendingSeek(for requestID: UUID, seekID: UUID? = nil) {
         stateLock.lock()
-        let request = pendingSeek
-        pendingSeek = nil
+        guard activeLoadID == requestID,
+              let request = pendingSeek,
+              request.loadID == requestID,
+              seekID == nil || request.seekID == seekID else {
+            stateLock.unlock()
+            return
+        }
+        if audioFile != nil { pendingSeek = nil }
         stateLock.unlock()
-        guard let request, let audioFile else { return }
+        guard let audioFile else { return }
         let target = max(0, min(audioFile.length, AVAudioFramePosition(request.time * sampleRate)))
         seekFrame = target
         setDisplayClock(playing: false)
@@ -476,9 +560,18 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         return Int((Double(fileSize) * 8 / duration / 1000).rounded())
     }
 
-    private func reportError(_ error: Error) {
+    private func reportError(_ error: Error, for requestID: UUID? = nil) {
         let message = error.localizedDescription
-        Task { @MainActor in self.onError?(message) }
+        Task { @MainActor in
+            if let requestID, self.isActiveLoad(requestID) == false { return }
+            self.onError?(message)
+        }
+    }
+
+    private func isActiveLoad(_ requestID: UUID) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return activeLoadID == requestID
     }
 
     private func installTap() {

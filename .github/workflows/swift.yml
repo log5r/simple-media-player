@@ -47,6 +47,7 @@ jobs:
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
             -only-testing:SimpleMediaPlayerTests \
+            -parallel-testing-enabled NO \
             -resultBundlePath "${RUNNER_TEMP}/TestResults/AllUnitTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO test
 

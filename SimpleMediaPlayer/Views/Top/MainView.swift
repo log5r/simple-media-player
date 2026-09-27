@@ -375,7 +375,7 @@ struct MainView: View {
             )
         }
         .fileImporter(
-            isPresented: $isImporterPresented, allowedContentTypes: [.audio, .movie], allowsMultipleSelection: true
+            isPresented: $isImporterPresented, allowedContentTypes: [.movie, .data], allowsMultipleSelection: true
         ) { result in
             switch result {
             case let .success(urls):

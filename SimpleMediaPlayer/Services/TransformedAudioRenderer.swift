@@ -26,7 +26,7 @@ nonisolated final class TransformedAudioRenderer: TransformedAudioRendering, @un
         progress: @escaping @Sendable (Double) -> Void
     ) throws -> Result {
         try Task.checkCancellation()
-        let sourceFile = try AVAudioFile(forReading: sourceURL)
+        let sourceFile = try AVAudioFile(forReading: ExtendedAudioSource.readableURL(for: sourceURL))
         let sourceFormat = sourceFile.processingFormat
         let renderSampleRate = min(sourceFormat.sampleRate, maxSampleRate ?? sourceFormat.sampleRate)
         let renderChannels = min(max(sourceFormat.channelCount, 1), 2)
