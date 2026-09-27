@@ -206,9 +206,8 @@ static int SMPOpen(NSURL *url, AVFormatContext **format, AVCodecContext **codec,
     }
     if (result != AVERROR_EOF) { failure = SMPAVError(result); goto cleanup; }
     if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
-    if (avcodec_send_packet(codec, NULL) < 0) {
-        failure = SMPError(EINVAL, @"Could not finish audio decoding."); goto cleanup;
-    }
+    result = avcodec_send_packet(codec, NULL);
+    if (result < 0) { failure = SMPAVError(result); goto cleanup; }
     while ((result = avcodec_receive_frame(codec, frame)) >= 0) {
         int capacity = swr_get_out_samples(resampler, frame->nb_samples);
         AVAudioPCMBuffer *buffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:outputFormat
@@ -224,6 +223,7 @@ static int SMPOpen(NSURL *url, AVFormatContext **format, AVCodecContext **codec,
         if (![output writeFromBuffer:buffer error:&failure]) goto cleanup;
         av_frame_unref(frame);
     }
+    if (result != AVERROR_EOF) { failure = SMPAVError(result); goto cleanup; }
     if (!output || writtenFrames == 0) {
         failure = SMPError(EINVAL, @"The file contains no decodable audio."); goto cleanup;
     }

@@ -40,6 +40,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var displayRate: Double = 1.0
     private var cachedDuration: TimeInterval = 0
     private var pendingSeek: (time: TimeInterval, autoPlay: Bool)?
+    private var activeLoadID = UUID()
 
     var onFinished: (@MainActor () -> Void)?
     var onError: (@MainActor (String) -> Void)?
@@ -136,6 +137,12 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     }
 
     func load(url: URL) {
+        let requestID = UUID()
+        // キュー投入前に旧曲のシークを消し、このload後に要求されたシークは残す。
+        stateLock.lock()
+        pendingSeek = nil
+        activeLoadID = requestID
+        stateLock.unlock()
         controlQueue.async {
             self.preparationTask?.cancel()
             self.loadGeneration += 1
@@ -165,7 +172,10 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
                             sampleRateHz: file.fileFormat.sampleRate,
                             bitrateKbps: bitrateKbps > 0 ? bitrateKbps : nil
                         )
-                        Task { @MainActor in self.onFormatLoaded?(duration, formatInfo) }
+                        Task { @MainActor in
+                            guard self.isActiveLoad(requestID) else { return }
+                            self.onFormatLoaded?(duration, formatInfo)
+                        }
                         self.performPendingSeek()
                         if self.playWhenReady {
                             self.playWhenReady = false
@@ -180,7 +190,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
                         self.preparationTask = nil
                         self.loudnessNormalization.load(nil)
                         self.setCachedDuration(0)
-                        self.reportError(error)
+                        self.reportError(error, for: requestID)
                     }
                 }
             }
@@ -220,7 +230,13 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     // 動画への切り替えでは旧音声の残響を待たずにエンジンを停止する。
     // 音声再生へ戻るときは performPlay で再始動する。
     func suspend() {
+        stateLock.lock()
+        pendingSeek = nil
+        activeLoadID = UUID()
+        stateLock.unlock()
         controlQueue.async {
+            // キャンセル後に完了した準備タスクの結果を受け付けない。
+            self.loadGeneration += 1
             self.preparationTask?.cancel()
             self.preparationTask = nil
             self.playWhenReady = false
@@ -516,9 +532,18 @@ nonisolated extension AudioEngineService {
         return Int((Double(fileSize) * 8 / duration / 1000).rounded())
     }
 
-    private func reportError(_ error: Error) {
+    private func reportError(_ error: Error, for requestID: UUID? = nil) {
         let message = error.localizedDescription
-        Task { @MainActor in self.onError?(message) }
+        Task { @MainActor in
+            if let requestID, self.isActiveLoad(requestID) == false { return }
+            self.onError?(message)
+        }
+    }
+
+    private func isActiveLoad(_ requestID: UUID) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return activeLoadID == requestID
     }
 
     private func installTap() {
