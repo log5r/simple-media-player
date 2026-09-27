@@ -45,6 +45,7 @@ jobs:
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
             -only-testing:SimpleMediaPlayerTests \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO test
 
       - name: SwiftLint
