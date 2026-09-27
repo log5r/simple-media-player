@@ -49,7 +49,18 @@ nonisolated enum ExtendedAudioSource {
         guard let claimed = extensions[url.pathExtension.lowercased()] else { return nil }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
-        let header = try handle.read(upToCount: 16) ?? Data()
+        var header = try handle.read(upToCount: 16) ?? Data()
+        if claimed == .monkeysAudio || claimed == .musepack,
+           header.count >= 10,
+           header.starts(with: Data("ID3".utf8)),
+           header[3] < 0xFF, header[4] < 0xFF,
+           header[5] & 0x0F == 0,
+           header[6...9].allSatisfy({ $0 < 0x80 }) {
+            let tagSize = header[6...9].reduce(0) { ($0 << 7) | Int($1) }
+            let footerSize = header[5] & 0x10 == 0 ? 0 : 10
+            try handle.seek(toOffset: UInt64(10 + tagSize + footerSize))
+            header = try handle.read(upToCount: 16) ?? Data()
+        }
         let detected: Kind?
         if header.starts(with: Data([0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11,
                                      0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C])) {
@@ -106,7 +117,8 @@ nonisolated enum ExtendedAudioSource {
                 duration: duration,
                 sampleRate: sampleRate,
                 channelCount: Int(properties.channelCount ?? 2),
-                bitrateKbps: properties.bitrate.map { Int($0 * 8.192) },
+                // TagLib の bitrate() は kb/s。SFBAudioEngine は値を変換せずに公開する。
+                bitrateKbps: properties.bitrate.map { Int($0) },
                 codec: properties.formatName ?? kind.rawValue,
                 title: tags.title, artist: tags.artist, album: tags.albumTitle,
                 albumArtist: tags.albumArtist, genre: tags.genre, year: tags.releaseDate,

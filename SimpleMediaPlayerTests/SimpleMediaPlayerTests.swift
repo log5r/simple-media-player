@@ -2256,7 +2256,7 @@ struct PlayerViewModelTests {
 
         fixture.player.clearCurrentItem()
 
-        #expect(fixture.audio.stopResets == [true])
+        #expect(fixture.audio.stopResets == [true] && fixture.audio.suspendCallCount == 1)
         #expect(fixture.player.currentItem == nil)
         #expect(fixture.player.queue.isEmpty)
         #expect(fixture.player.currentTime == 0)

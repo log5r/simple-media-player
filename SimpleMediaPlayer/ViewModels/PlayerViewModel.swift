@@ -365,10 +365,10 @@ final class PlayerViewModel {
 
     func clearCurrentItem() {
         musicAnalysis.reset()
+        if isVideoMode == false { audioEngine.suspend() }
         stop()
         currentItem = nil
         queue = []
-        currentTime = 0
         duration = 0
         formatInfo = .empty
         isVideoMode = false

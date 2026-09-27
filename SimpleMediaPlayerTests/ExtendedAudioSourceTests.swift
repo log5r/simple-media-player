@@ -25,6 +25,13 @@ struct ExtendedAudioSourceTests {
         #expect(info.title == title)
         #expect(info.duration > 0.8 && info.duration < 1.2)
         #expect(info.sampleRate == 44_100)
+        if kind == .wavPack {
+            let fileSize = try #require(FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int)
+            let estimatedKbps = Double(fileSize) * 8 / info.duration / 1_000
+            let bitrate = try #require(info.bitrateKbps)
+            #expect(Double(bitrate) > estimatedKbps / 2)
+            #expect(Double(bitrate) < estimatedKbps * 2)
+        }
         if kind == .wma {
             #expect(info.artist == "Fixture Artist")
             #expect(info.album == "Fixture Album")
@@ -92,6 +99,30 @@ struct ExtendedAudioSourceTests {
         let cacheURL = try ExtendedAudioSource.readableURL(for: source)
         let audio = try AVAudioFile(forReading: cacheURL)
         #expect(audio.length > 0)
+    }
+
+    @Test func decodesAPEAndMusepackWithLeadingID3v2Tag() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let musepack = directory.appendingPathComponent("original.mpc")
+        try AudioConverter.convert(fixture("wav", baseName: "tag-test"), to: musepack)
+        let sources: [ExtendedAudioSource.Kind: URL] = [
+            .monkeysAudio: fixture("ape"),
+            .musepack: musepack
+        ]
+        let id3v2Tag = Data([0x49, 0x44, 0x33, 0x03, 0, 0, 0, 0, 1, 2])
+            + Data(repeating: 0, count: 130)
+        for (kind, original) in sources {
+            let source = directory.appendingPathComponent("tagged.\(original.pathExtension)")
+            try (id3v2Tag + Data(contentsOf: original)).write(to: source)
+            defer { ExtendedAudioSource.removeCache(for: source) }
+            #expect(try ExtendedAudioSource.kind(for: source) == kind)
+            let info = try ExtendedAudioSource.info(for: source, kind: kind)
+            #expect(info.duration > 0)
+            let cacheURL = try ExtendedAudioSource.readableURL(for: source)
+            #expect(try AVAudioFile(forReading: cacheURL).length > 0)
+        }
     }
 
     @MainActor
