@@ -51,6 +51,8 @@ struct MarqueeText: View {
             }
         }
         .clipped()
+        // Clipping hides overflow but does not exclude it from hit testing.
+        .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(text))
         .onPreferenceChange(MarqueeTextWidthKey.self) { width in
