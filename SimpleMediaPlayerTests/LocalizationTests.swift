@@ -25,11 +25,11 @@ struct LocalizationTests {
             ? ["Now Playing": "再生中", "Up Next": "次に再生", "Display": "表示",
                "Output Device": "出力先", "Playback Adjustments": "再生の調整",
                "Open the playback deck": "再生デッキを開きます", "Select": "選択",
-               "Mute": "ミュート", "Unmute": "ミュート解除"]
+               "Mute": "ミュート", "Unmute": "ミュート解除", "Stopped": "停止中"]
             : ["Now Playing": "Now Playing", "Up Next": "Up Next", "Display": "Display",
                "Output Device": "Output Device", "Playback Adjustments": "Playback Adjustments",
                "Open the playback deck": "Open the playback deck", "Select": "Select",
-               "Mute": "Mute", "Unmute": "Unmute"]
+               "Mute": "Mute", "Unmute": "Unmute", "Stopped": "Stopped"]
         for (key, value) in expected {
             #expect(bundle.localizedString(forKey: key, value: nil, table: nil) == value)
         }

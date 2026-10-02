@@ -29,7 +29,7 @@ struct MainView: View {
     @State var saveCopyTarget: MediaItem?
     @State var exportResultPresented = false
     @State var exportResultMessage = ""
-    @State var aacVersionExporter = TransformedTrackExporter()
+    @State var aacVersionExporter = MainView.makeAACVersionExporter()
     @State var aacVersionSourceTitle: String?
     @State var aacVersionResultPresented = false
     @State var aacVersionResultMessage = ""
@@ -38,6 +38,7 @@ struct MainView: View {
     #if os(iOS)
     @State var phoneExportSheet: IPhoneExportSheet?
     @State var showsExportErrorsAfterSharing = false
+    @State var isPhoneDeckPresented = false
     #endif
 
     var body: some View {
@@ -88,7 +89,7 @@ struct MainView: View {
         } message: {
             Text(exportResultMessage)
         }
-        .alert("Create AAC Version", isPresented: $aacVersionResultPresented) {
+        .alert("Create AAC Version", isPresented: aacResultPresentation) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(aacVersionResultMessage)
@@ -243,6 +244,9 @@ struct MainView: View {
         IPhoneLibraryView(
             items: items, playlists: playlists, player: player, libraryService: libraryService,
             isImporterPresented: $isImporterPresented,
+            showsDeck: $isPhoneDeckPresented,
+            aacResultMessage: $aacVersionResultMessage,
+            showsAACResult: $aacVersionResultPresented,
             canCreateAACVersion: canCreateAACVersion,
             aacVersionExporter: aacVersionExporter,
             actions: IPhoneLibraryActions(
@@ -255,9 +259,6 @@ struct MainView: View {
                 removeItem: remove,
                 moveItems: move,
                 createAACVersion: createAACVersion,
-                createAACVersionWithResult: { item, completion in
-                    exportAACVersion(of: item, completion: completion)
-                },
                 exportItems: startExport,
                 deleteItem: deleteLibraryItem
             )
@@ -265,6 +266,27 @@ struct MainView: View {
     }
     #endif
 
+}
+
+private extension MainView {
+    static func makeAACVersionExporter() -> TransformedTrackExporter {
+        #if DEBUG && os(iOS)
+        PhoneLayoutUITestFixture.makeAACVersionExporter()
+        #else
+        TransformedTrackExporter()
+        #endif
+    }
+
+    var aacResultPresentation: Binding<Bool> {
+        #if os(iOS)
+        Binding(
+            get: { aacVersionResultPresented && !isPhoneDeckPresented },
+            set: { if !$0 && !isPhoneDeckPresented { aacVersionResultPresented = false } }
+        )
+        #else
+        $aacVersionResultPresented
+        #endif
+    }
 }
 
 extension Playlist {
@@ -279,6 +301,31 @@ extension Playlist {
 
     var orderedItems: [MediaItem] {
         orderedEntries.compactMap(\.item)
+    }
+
+    func moveItems(fromOffsets source: IndexSet, toOffset destination: Int) {
+        let existingEntries = orderedEntries
+        // UI offsets exclude entries left behind by deleted media items.
+        var itemEntries = existingEntries.filter { $0.item != nil }
+        guard source.isEmpty == false,
+              source.allSatisfy({ itemEntries.indices.contains($0) }),
+              (0...itemEntries.count).contains(destination) else { return }
+        itemEntries.move(fromOffsets: source, toOffset: destination)
+        let missingEntries = existingEntries.filter { $0.item == nil }
+        for (index, entry) in (itemEntries + missingEntries).enumerated() {
+            entry.sortIndex = index
+        }
+    }
+
+    func moveItem(_ item: MediaItem, by offset: Int) {
+        let items = orderedItems
+        guard offset != 0, let sourceIndex = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let destinationIndex = sourceIndex + offset
+        guard items.indices.contains(destinationIndex) else { return }
+        moveItems(
+            fromOffsets: IndexSet(integer: sourceIndex),
+            toOffset: destinationIndex + (offset > 0 ? 1 : 0)
+        )
     }
 
     func contains(_ item: MediaItem) -> Bool {

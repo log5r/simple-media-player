@@ -98,7 +98,7 @@ struct AuxiliaryLEDColumns: View {
                 PlaySymbolShape()
                     .fill(symbolColor)
                     .frame(width: 7, height: 9)
-            } else if player.currentTime > 0 {
+            } else if player.isPaused {
                 HStack(spacing: 2) {
                     Rectangle().fill(symbolColor).frame(width: 2.5, height: 9)
                     Rectangle().fill(symbolColor).frame(width: 2.5, height: 9)

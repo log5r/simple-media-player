@@ -5,6 +5,13 @@ import SwiftData
 /// Local media keeps the phone navigation tests independent of file-provider dialogs and network access.
 @MainActor
 enum PhoneLayoutUITestFixture {
+    static func makeAACVersionExporter() -> TransformedTrackExporter {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--ui-testing-phone-layout"),
+              arguments.contains("--ui-testing-delayed-aac") else { return TransformedTrackExporter() }
+        return TransformedTrackExporter(renderer: DelayedUITestAudioRenderer())
+    }
+
     static func insert(into context: ModelContext) throws {
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000) else { return }
@@ -31,6 +38,30 @@ enum PhoneLayoutUITestFixture {
             context.insert(entry)
         }
         try context.save()
+    }
+}
+
+/// A slow background renderer makes dismiss-before-completion reproducible without large media files.
+private nonisolated struct DelayedUITestAudioRenderer: TransformedAudioRendering {
+    // The rendering protocol requires this signature.
+    // swiftlint:disable:next function_parameter_count
+    func render(
+        sourceURL: URL,
+        pitchCents: Float,
+        rate: Float,
+        maxSampleRate: Double?,
+        makeEncoder: (AVAudioFormat) throws -> any AudioFileEncoding,
+        progress: @escaping @Sendable (Double) -> Void
+    ) throws -> TransformedAudioRenderer.Result {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return try TransformedAudioRenderer().render(
+            sourceURL: sourceURL, pitchCents: pitchCents, rate: rate, maxSampleRate: maxSampleRate,
+            makeEncoder: makeEncoder, progress: progress
+        )
     }
 }
 #endif

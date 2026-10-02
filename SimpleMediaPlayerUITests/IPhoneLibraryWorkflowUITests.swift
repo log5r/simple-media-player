@@ -79,8 +79,79 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         verifyLyricsEditor(language: "en")
     }
 
+    @MainActor func testAACResultSurvivesClosingDeck() {
+        let app = launch(extraArguments: ["--ui-testing-delayed-aac"])
+        app.buttons["All Songs"].tap()
+        let track = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'"))
+            .containing(.staticText, identifier: "Layout Track 1").firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        track.tap()
+        let dock = app.buttons["phoneLEDDock"]
+        XCTAssertTrue(dock.waitForExistence(timeout: 10))
+        dock.tap()
+        let close = app.buttons["phoneDeckClose"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        app.buttons["phoneDeckMore"].tap()
+        let createAAC = app.buttons["Create AAC Version"]
+        XCTAssertTrue(createAAC.waitForExistence(timeout: 5))
+        XCTAssertTrue(createAAC.isEnabled)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: createAAC)
+        wait(for: [ready], timeout: 5)
+        createAAC.tap()
+        waitForDisappearance(createAAC)
+        XCTAssertTrue(close.isHittable)
+        close.tap()
+        waitForDisappearance(close)
+        XCTAssertTrue(dock.waitForExistence(timeout: 5))
+        let result = app.alerts["Create AAC Version"]
+        XCTAssertTrue(result.waitForExistence(timeout: 30))
+        XCTAssertTrue(result.staticTexts["Created an AAC version of “Layout Track 1”."].exists)
+        result.buttons["OK"].tap()
+        XCTAssertTrue(app.buttons["phoneTrackMore"].waitForExistence(timeout: 5))
+    }
+
     @MainActor func testJapaneseLyricsEditorFitsPhoneScreen() {
         verifyLyricsEditor(language: "ja")
+    }
+
+    @MainActor func testEnglishExportNameControlsFitWithKeyboard() {
+        verifyExportNameControls(language: "en")
+    }
+
+    @MainActor func testJapaneseExportNameControlsFitWithKeyboard() {
+        verifyExportNameControls(language: "ja")
+    }
+
+    @MainActor private func verifyExportNameControls(language: String) {
+        let app = launch(language: language)
+        let isJapanese = language == "ja"
+        app.buttons["phoneLibraryMore"].tap()
+        app.buttons[isJapanese ? "書き出す…" : "Export…"].tap()
+        let fillNames = app.buttons[isJapanese ? "すべての名前をタイムスタンプで埋める" : "Fill All Names with Timestamps"]
+        XCTAssertTrue(fillNames.waitForExistence(timeout: 10))
+        fillNames.tap()
+        app.buttons[isJapanese ? "タイムスタンプで埋める" : "Fill with Timestamps"].tap()
+        let export = app.buttons[isJapanese ? "書き出す" : "Export"]
+        XCTAssertTrue(export.isEnabled, "Timestamp fill should provide all required export names")
+        let field = app.textFields[isJapanese ? "ファイル名" : "File name"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(" edited")
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Export names with keyboard (\(language))"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let cancel = app.buttons[isJapanese ? "キャンセル" : "Cancel"]
+        XCTAssertTrue(export.isEnabled, "Editing a populated name should keep export enabled")
+        for button in [fillNames, cancel, export] {
+            XCTAssertTrue(app.frame.contains(button.frame), "Control extends beyond the screen: \(button.label)")
+            XCTAssertLessThanOrEqual(button.frame.maxY, keyboard.frame.minY, "Keyboard covers \(button.label)")
+            XCTAssertTrue(button.isHittable, "Control is not accessible while editing: \(button.label)")
+        }
+        cancel.tap()
+        waitForDisappearance(field)
     }
 
     @MainActor private func verifyLyricsEditor(language: String) {
@@ -124,12 +195,13 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         wait(for: [disappeared], timeout: 5)
     }
 
-    @MainActor private func launch(language: String = "en") -> XCUIApplication {
+    @MainActor private func launch(language: String = "en", extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "-AppleLanguages", "(\(language))", "-AppleLocale", language,
             "-volumeNormalizationEnabled", "NO"
         ]
+        app.launchArguments += extraArguments
         app.launch()
         XCTAssertTrue(app.buttons["phoneLibraryMore"].waitForExistence(timeout: 10))
         return app

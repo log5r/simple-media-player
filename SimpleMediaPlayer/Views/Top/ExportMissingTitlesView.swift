@@ -66,7 +66,7 @@ struct ExportMissingTitlesView: View {
                 }
                 .padding(22)
             }
-            .frame(minHeight: 280)
+            .frame(minHeight: usesPhoneLayout ? 0 : 280)
 
             Divider()
 
@@ -78,7 +78,9 @@ struct ExportMissingTitlesView: View {
                     timestampFillConfirmationPresented = true
                 }
 
-                Spacer()
+                if usesPhoneLayout == false {
+                    Spacer()
+                }
 
                 Button("Cancel", role: .cancel) {
                     cancel()

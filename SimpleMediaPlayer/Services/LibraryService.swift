@@ -416,6 +416,11 @@ extension LibraryService {
     }
 
     func delete(_ item: MediaItem, from context: ModelContext) {
+        let itemID = item.id
+        let linkedEntries = FetchDescriptor<PlaylistEntry>(predicate: #Predicate { $0.item?.id == itemID })
+        guard let entries = try? context.fetch(linkedEntries) else { return }
+        // The unidirectional item relationship has no inverse to nullify on deletion.
+        for entry in entries { entry.item = nil }
         if let url = resolvedURL(for: item) {
             let cacheURL = ExtendedAudioSource.cacheURL(for: url)
             try? FileManager.default.removeItem(at: url)
@@ -423,94 +428,6 @@ extension LibraryService {
         }
         context.delete(item)
         try? context.save()
-    }
-
-    func registerTransformedCopy(
-        of source: MediaItem,
-        renderedFileURL: URL,
-        title: String,
-        duration: TimeInterval,
-        in context: ModelContext
-    ) async throws -> MediaItem {
-        try Task.checkCancellation()
-        let id = UUID()
-        let copiedURL = try await copyTransformedFileIntoMediaDirectory(renderedFileURL, id: id)
-        var didRegister = false
-        defer {
-            if didRegister == false { try? FileManager.default.removeItem(at: copiedURL) }
-        }
-        try Task.checkCancellation()
-        #if os(macOS)
-        let bookmarkOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
-        #else
-        let bookmarkOptions: URL.BookmarkCreationOptions = []
-        #endif
-        let bookmark = try copiedURL.bookmarkData(
-            options: bookmarkOptions,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        )
-        let item = MediaItem(
-            id: id,
-            title: title,
-            artist: source.artist,
-            album: source.album,
-            genre: source.genre,
-            year: source.year,
-            trackNumber: source.trackNumber,
-            comment: source.comment,
-            albumArtist: source.albumArtist,
-            composer: source.composer,
-            discNumber: source.discNumber,
-            isCompilation: source.isCompilation,
-            duration: duration.isFinite ? duration : 0,
-            isVideo: false,
-            lyricsRaw: source.lyricsRaw,
-            bookmarkData: bookmark,
-            artworkData: source.artworkData,
-            fileName: copiedURL.lastPathComponent
-        )
-        try Task.checkCancellation()
-        context.insert(item)
-        do {
-            try context.save()
-        } catch {
-            context.delete(item)
-            throw error
-        }
-        didRegister = true
-        return item
-    }
-
-    private nonisolated func copyTransformedFileIntoMediaDirectory(_ sourceURL: URL, id: UUID) async throws -> URL {
-        let destination = mediaDirectoryURL(for: sourceURL, id: id)
-        let copyTask = Task.detached(priority: .utility) {
-            try Task.checkCancellation()
-            let manager = FileManager.default
-            try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let source = try FileHandle(forReadingFrom: sourceURL)
-            defer { try? source.close() }
-            let size = try source.seekToEnd()
-            guard manager.createFile(atPath: destination.path, contents: nil) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-            var didCopy = false
-            defer {
-                if didCopy == false { try? manager.removeItem(at: destination) }
-            }
-            let output = try FileHandle(forWritingTo: destination)
-            defer { try? output.close() }
-            try MediaFileRewriter.copy(from: source, range: 0..<size, to: output)
-            try output.close()
-            try Task.checkCancellation()
-            didCopy = true
-            return destination
-        }
-        return try await withTaskCancellationHandler {
-            try await copyTask.value
-        } onCancel: {
-            copyTask.cancel()
-        }
     }
 
     private func makeMediaItem(from sourceURL: URL, importFingerprint: String) async throws -> MediaItem {

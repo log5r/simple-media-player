@@ -74,6 +74,10 @@ final class IPhoneLayoutUITests: XCTestCase {
             .containing(.staticText, identifier: "Layout Track 3").firstMatch
         queuedTrack.tap()
         XCTAssertEqual(queuedTrack.value as? String, language == "ja" ? "再生中" : "Playing")
+        app.buttons["phonePlayPause"].tap()
+        XCTAssertEqual(queuedTrack.value as? String, language == "ja" ? "一時停止中" : "Paused")
+        app.buttons["phoneStop"].tap()
+        XCTAssertEqual(queuedTrack.value as? String, language == "ja" ? "停止中" : "Stopped")
         app.buttons["phoneDeckClose"].tap()
         XCTAssertTrue(dock.waitForExistence(timeout: 5))
     }

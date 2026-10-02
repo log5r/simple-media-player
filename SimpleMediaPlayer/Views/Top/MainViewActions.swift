@@ -22,11 +22,7 @@ extension MainView {
     }
 
     func move(_ source: IndexSet, to destination: Int, in playlist: Playlist) {
-        var entries = playlist.orderedEntries
-        entries.move(fromOffsets: source, toOffset: destination)
-        for (index, entry) in entries.enumerated() {
-            entry.sortIndex = index
-        }
+        playlist.moveItems(fromOffsets: source, toOffset: destination)
         save()
     }
 
@@ -143,35 +139,32 @@ extension MainView {
         exportAACVersion(of: item)
     }
 
-    func exportAACVersion(of item: MediaItem, completion: ((String) -> Void)? = nil) {
+    func exportAACVersion(of item: MediaItem) {
         guard item.isVideo == false, canCreateAACVersion else { return }
 
-        aacVersionSourceTitle = item.title
+        let sourceTitle = item.title
+        aacVersionSourceTitle = sourceTitle
         Task {
             defer { aacVersionSourceTitle = nil }
 
             do {
                 _ = try await aacVersionExporter.export(
                     item: item,
-                    title: item.title,
+                    title: sourceTitle,
                     format: .aac,
                     pitchSemitones: 0,
                     rate: 1,
                     libraryService: libraryService,
                     context: modelContext
                 )
-                aacVersionResultMessage = L10n.format("Created an AAC version of “%@”.", item.title)
+                aacVersionResultMessage = L10n.format("Created an AAC version of “%@”.", sourceTitle)
             } catch is CancellationError {
                 return
             } catch {
                 aacVersionResultMessage = L10n.format("Could not create AAC version: %@", error.localizedDescription)
             }
 
-            if let completion {
-                completion(aacVersionResultMessage)
-            } else {
-                aacVersionResultPresented = true
-            }
+            aacVersionResultPresented = true
         }
     }
 
@@ -297,14 +290,7 @@ extension MainView {
 
     func moveInSelectedPlaylist(_ item: MediaItem, by offset: Int) {
         guard let selectedPlaylist else { return }
-        var entries = selectedPlaylist.orderedEntries
-        guard let sourceIndex = entries.firstIndex(where: { $0.item?.id == item.id }) else { return }
-        let destinationIndex = sourceIndex + offset
-        guard entries.indices.contains(destinationIndex) else { return }
-        entries.swapAt(sourceIndex, destinationIndex)
-        for (index, entry) in entries.enumerated() {
-            entry.sortIndex = index
-        }
+        selectedPlaylist.moveItem(item, by: offset)
         save()
     }
 

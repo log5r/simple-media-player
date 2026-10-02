@@ -77,6 +77,62 @@ struct TransformedExportCancellationTests {
         try fixture.expectOnlyOriginalRemains()
     }
 
+    @Test func deletionDuringRenderingPreventsLateCopyRegistration() async throws {
+        let fixture = try TransformedExportFixture()
+        defer { fixture.remove() }
+        let renderer = ControlledExportRenderer(behavior: .ignoreCancellation)
+        let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
+        let task = Task { _ = try await fixture.export(using: exporter) }
+        defer { task.cancel(); renderer.release() }
+
+        try await renderer.waitUntilStarted()
+        fixture.service.delete(fixture.source, from: fixture.context)
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
+        #expect(FileManager.default.fileExists(atPath: fixture.sourceURL.path) == false)
+
+        // Deleting the library source is independent of cancelling the export task.
+        renderer.release()
+        do {
+            _ = try await task.value
+            Issue.record("A deleted source must not register a copy when rendering finishes")
+        } catch is CancellationError {
+        }
+
+        #expect(renderer.finished)
+        #expect(exporter.isExporting == false)
+        #expect(exporter.progress == 0)
+        #expect(exporter.errorMessage == nil)
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
+        #expect(try fixture.mediaFiles().isEmpty)
+        #expect(try fixture.renderedFiles().isEmpty)
+    }
+
+    @Test func sourceEditsDuringRenderingKeepCopiedAndEmbeddedMetadataConsistent() async throws {
+        let fixture = try TransformedExportFixture()
+        defer { fixture.remove() }
+        let renderer = ControlledExportRenderer(behavior: .ignoreCancellation)
+        let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
+        let task = Task {
+            let copy = try await fixture.export(using: exporter)
+            return (artist: copy.artist, fileName: copy.fileName)
+        }
+        defer { task.cancel(); renderer.release() }
+
+        try await renderer.waitUntilStarted()
+        fixture.source.artist = "Edited Artist"
+        try fixture.context.save()
+        renderer.release()
+        let item = try await task.value
+        let outputURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
+        let embedded = try AdditionalAudioMetadata.read(from: outputURL)
+
+        #expect(item.artist == "Artist")
+        #expect(embedded.values.artist == "Artist")
+        #expect(fixture.source.artist == "Edited Artist")
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 2)
+        #expect(try fixture.renderedFiles().isEmpty)
+    }
+
     @Test func cancelledRegistrationKeepsRenderedSourceAndDoesNotInsertItem() async throws {
         let fixture = try TransformedExportFixture()
         defer { fixture.remove() }

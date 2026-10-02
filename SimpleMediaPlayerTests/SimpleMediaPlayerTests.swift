@@ -2736,7 +2736,7 @@ private struct MP4TestBox {
 }
 
 @MainActor
-private func makePlayerFixture(
+func makePlayerFixture(
     urlsByID: [UUID: URL] = [:],
     equalizer: EqualizerSettings = .flat,
     equalizerDefaults: UserDefaults = .standard,
@@ -2762,7 +2762,7 @@ private func makePlayerFixture(
 }
 
 @MainActor
-private final class FakeMediaURLResolver: MediaURLResolving {
+final class FakeMediaURLResolver: MediaURLResolving {
     var urlsByID: [UUID: URL]
     var resolvedItemIDs: [UUID] = []
 
@@ -2777,7 +2777,7 @@ private final class FakeMediaURLResolver: MediaURLResolving {
 }
 
 @MainActor
-private final class FakeAudioEngine: AudioPlaybackControlling {
+final class FakeAudioEngine: AudioPlaybackControlling {
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0
     var onFinished: (@MainActor () -> Void)?
@@ -2847,7 +2847,7 @@ private final class FakeAudioEngine: AudioPlaybackControlling {
 }
 
 @MainActor
-private final class FakeVideoService: VideoPlaybackControlling {
+final class FakeVideoService: VideoPlaybackControlling {
     let player = AVPlayer()
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0

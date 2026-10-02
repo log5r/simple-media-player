@@ -28,10 +28,6 @@ struct TransportButtonsView: View {
         self.playItem = playItem
     }
 
-    private var isPaused: Bool {
-        player.currentItem != nil && player.isPlaying == false && player.currentTime > 0
-    }
-
     var body: some View {
         HStack(spacing: 0) {
             transportButton(
@@ -60,7 +56,7 @@ struct TransportButtonsView: View {
                 identifier: "pauseButton",
                 label: "Pause",
                 systemName: "pause.fill",
-                active: isPaused,
+                active: player.isPaused,
                 isEnabled: player.currentItem != nil
             ) {
                 player.pause()
@@ -70,7 +66,7 @@ struct TransportButtonsView: View {
                 identifier: "stopButton",
                 label: "Stop",
                 systemName: "stop.fill",
-                active: player.isPlaying == false && player.currentTime == 0,
+                active: player.isPlaying == false && player.isPaused == false,
                 isEnabled: player.canStop
             ) {
                 player.stop()

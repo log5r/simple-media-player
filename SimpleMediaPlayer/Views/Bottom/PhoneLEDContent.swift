@@ -8,7 +8,7 @@ struct PhoneLEDContent: View {
     let visualizerHeight: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: layout == .phoneDeck ? 14 : 3) {
+        VStack(alignment: .leading, spacing: layout == .phoneDeck ? 8 : 3) {
             if layout == .phoneDeck {
                 HStack {
                     Text(trackNumber)
@@ -42,7 +42,7 @@ struct PhoneLEDContent: View {
                 if layout == .phoneDeck {
                     AuxiliaryLEDColumns(player: player, palette: palette, informationScale: 1)
                 } else {
-                    if player.pitchSemitones != 0 {
+                    if player.isVideoMode == false && player.pitchSemitones != 0 {
                         Text("KEY " + PitchSpeedTextFormatter.pitch(player.pitchSemitones))
                             .font(.custom("Dotrice-Regular", size: 9))
                     }

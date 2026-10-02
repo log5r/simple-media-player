@@ -77,7 +77,8 @@ struct LyricsPanelView: View {
     }
 
     private var lyricsContent: some View {
-        VStack(spacing: 0) {
+        let activeIndex = activeLyricIndex
+        return VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     if parsed.lines.isEmpty || item?.isVideo == true {
@@ -90,18 +91,18 @@ struct LyricsPanelView: View {
                             ForEach(Array(parsed.lines.enumerated()), id: \.offset) { index, line in
                                 Text(line.text.isEmpty ? " " : line.text)
                                     .font(usesPhoneLayout ? .title3 : .system(size: 13))
-                                    .fontWeight(activeLyricIndex == index ? .bold : .regular)
-                                    .foregroundStyle(activeLyricIndex == index ? Color.accentColor : Color.primary)
+                                    .fontWeight(activeIndex == index ? .bold : .regular)
+                                    .foregroundStyle(activeIndex == index ? Color.accentColor : Color.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .id(index)
-                                    .accessibilityAddTraits(activeLyricIndex == index ? .isSelected : [])
+                                    .accessibilityAddTraits(activeIndex == index ? .isSelected : [])
                             }
                         }
                         .id(item?.id)
                         .padding(14)
                     }
                 }
-                .onChange(of: activeLyricIndex, initial: true) { _, index in
+                .onChange(of: activeIndex, initial: true) { _, index in
                     guard let index else { return }
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
                         proxy.scrollTo(index, anchor: .center)

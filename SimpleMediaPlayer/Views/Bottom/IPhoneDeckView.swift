@@ -47,8 +47,10 @@ struct IPhoneDeckView: View {
     let libraryService: LibraryService
     let listName: String
     let canCreateAACVersion: Bool
-    let createAACVersion: (MediaItem, @escaping (String) -> Void) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let createAACVersion: (MediaItem) -> Void
+    @Binding var isPresented: Bool
+    @Binding var aacResultMessage: String
+    @Binding var showsAACResult: Bool
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @State private var page = IPhoneDeckPage.display
@@ -57,10 +59,15 @@ struct IPhoneDeckView: View {
     @State private var lyricsItem: MediaItem?
     @State private var saveItem: MediaItem?
     @State private var pendingSaveItem: MediaItem?
-    @State private var aacResultMessage = ""
-    @State private var showsAACResult = false
 
     private var palette: BottomPanelPalette { BottomPanelPalette(colorScheme: colorScheme) }
+
+    private var pitchSpeedAvailable: Bool { player.isVideoMode == false }
+
+    private var queuePlaybackState: String {
+        if player.isPlaying { return L10n.string("Playing") }
+        return player.isPaused ? L10n.string("Paused") : L10n.string("Stopped")
+    }
 
     var body: some View {
         NavigationStack {
@@ -108,11 +115,14 @@ struct IPhoneDeckView: View {
                 onComplete: { _ in saveItem = nil }, onCancel: { saveItem = nil }
             )
         }
-        .alert("Create AAC Version", isPresented: $showsAACResult) {
+        .alert("Create AAC Version", isPresented: Binding(
+            get: { showsAACResult && isPresented },
+            set: { if !$0 && isPresented { showsAACResult = false } }
+        )) {
             Button("OK", role: .cancel) {}
         } message: { Text(aacResultMessage) }
         .onChange(of: player.currentItem?.id) { _, id in
-            if id == nil { dismiss() }
+            if id == nil { isPresented = false }
         }
     }
 
@@ -139,7 +149,7 @@ struct IPhoneDeckView: View {
 
     @ToolbarContentBuilder private var deckToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button("Close", systemImage: "chevron.down") { dismiss() }
+            Button("Close", systemImage: "chevron.down") { isPresented = false }
                 .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("phoneDeckClose")
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -148,19 +158,7 @@ struct IPhoneDeckView: View {
                     .disabled(player.currentItem == nil || player.isVideoMode)
                     .frame(minWidth: 44, minHeight: 44)
             } else {
-                Menu("More", systemImage: "ellipsis") {
-                    Button("Save adjusted copy", systemImage: "square.and.arrow.down") { saveItem = player.currentItem }
-                        .disabled(player.isVideoMode || !player.hasPitchOrRateAdjustment)
-                    Button("Create AAC Version", systemImage: "waveform.badge.plus") {
-                        if let item = player.currentItem {
-                            createAACVersion(item) { message in
-                                aacResultMessage = message
-                                showsAACResult = true
-                            }
-                        }
-                    }.disabled(player.isVideoMode || !canCreateAACVersion)
-                    Button("Edit Information…", systemImage: "pencil") { infoItem = player.currentItem }
-                }.frame(minWidth: 44, minHeight: 44)
+                moreMenu
             }
         }
     }
@@ -198,7 +196,7 @@ struct IPhoneDeckView: View {
                     }.frame(minHeight: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain)
                     .accessibilityIdentifier("phoneQueue.\(item.id)")
-                    .accessibilityValue(item.id == player.currentItem?.id ? L10n.string("Playing") : "")
+                    .accessibilityValue(item.id == player.currentItem?.id ? queuePlaybackState : "")
             }
         case .display: EmptyView()
         }
@@ -207,10 +205,16 @@ struct IPhoneDeckView: View {
     private var indicators: some View {
         HStack(spacing: 12) {
             lamp("EQ", label: "Equalizer", value: player.activeEqualizerPresetName, active: player.equalizer.isEnabled)
-            lamp("KEY", label: "Key", value: PitchSpeedTextFormatter.pitch(player.pitchSemitones),
-                 active: player.pitchSemitones != 0).disabled(player.isVideoMode)
-            lamp("SPEED", label: "Speed", value: PitchSpeedTextFormatter.rate(player.playbackRate),
-                 active: abs(player.playbackRate - 1) > 0.001).disabled(player.isVideoMode)
+            lamp(
+                "KEY", label: "Key",
+                value: PitchSpeedTextFormatter.pitch(pitchSpeedAvailable ? player.pitchSemitones : 0),
+                active: pitchSpeedAvailable && player.pitchSemitones != 0
+            ).disabled(!pitchSpeedAvailable)
+            lamp(
+                "SPEED", label: "Speed",
+                value: PitchSpeedTextFormatter.rate(pitchSpeedAvailable ? player.playbackRate : 1),
+                active: pitchSpeedAvailable && abs(player.playbackRate - 1) > 0.001
+            ).disabled(!pitchSpeedAvailable)
         }
     }
 
@@ -296,5 +300,35 @@ private struct IPhoneRoutePicker: UIViewRepresentable {
         return view
     }
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
+private extension IPhoneDeckView {
+    var moreMenu: some View {
+        Menu {
+            Button { saveItem = player.currentItem } label: {
+                menuLabel("Save adjusted copy", systemImage: "square.and.arrow.down")
+            }.disabled(player.isVideoMode || !player.hasPitchOrRateAdjustment)
+            Button {
+                if let item = player.currentItem { createAACVersion(item) }
+            } label: {
+                menuLabel("Create AAC Version", systemImage: "waveform.badge.plus")
+            }.disabled(player.isVideoMode || !canCreateAACVersion)
+            Button { infoItem = player.currentItem } label: {
+                menuLabel("Edit Information…", systemImage: "pencil")
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis")
+                .labelStyle(.iconOnly)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .accessibilityIdentifier("phoneDeckMore")
+    }
+
+    func menuLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .labelStyle(.titleAndIcon)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+    }
 }
 #endif

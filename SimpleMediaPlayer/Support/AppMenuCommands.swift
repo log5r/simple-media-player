@@ -53,6 +53,14 @@ struct AppMenuCommands: Commands {
 
     @FocusedValue(\.appMenuActions) private var actions
 
+    private var usesPhonePlayback: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
+
     var body: some Commands {
         #if os(macOS)
         CommandGroup(replacing: .appSettings) {
@@ -111,10 +119,14 @@ struct AppMenuCommands: Commands {
 
         CommandMenu("Controls") {
             Button(player.isPlaying ? L10n.string("Pause") : L10n.string("Play")) {
-                actions?.playPause()
+                if let actions {
+                    actions.playPause()
+                } else if usesPhonePlayback {
+                    player.togglePlayPause()
+                }
             }
             .keyboardShortcut(.space, modifiers: [])
-            .disabled(actions?.playPause.isEnabled != true)
+            .disabled(!(actions?.playPause.isEnabled ?? (usesPhonePlayback && player.currentItem != nil)))
 
             Button("Stop") {
                 player.stop()
@@ -125,16 +137,26 @@ struct AppMenuCommands: Commands {
             Divider()
 
             Button("Previous Track") {
-                actions?.previousTrack()
+                if let actions {
+                    actions.previousTrack()
+                } else if usesPhonePlayback {
+                    player.previous()
+                }
             }
             .keyboardShortcut(.leftArrow, modifiers: .command)
-            .disabled(actions?.previousTrack.isEnabled != true)
+            .disabled(!(actions?.previousTrack.isEnabled ?? (
+                usesPhonePlayback && (player.canSkipToPrevious || player.currentTime >= 3)
+            )))
 
             Button("Next Track") {
-                actions?.nextTrack()
+                if let actions {
+                    actions.nextTrack()
+                } else if usesPhonePlayback {
+                    player.next()
+                }
             }
             .keyboardShortcut(.rightArrow, modifiers: .command)
-            .disabled(actions?.nextTrack.isEnabled != true)
+            .disabled(!(actions?.nextTrack.isEnabled ?? (usesPhonePlayback && player.canSkipToNext)))
 
             Button("Skip Back 10 Seconds") {
                 player.seek(to: player.currentTime - 10)

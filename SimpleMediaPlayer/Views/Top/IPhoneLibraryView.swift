@@ -34,7 +34,6 @@ struct IPhoneLibraryActions {
     let removeItem: (MediaItem, Playlist) -> Void
     let moveItems: (IndexSet, Int, Playlist) -> Void
     let createAACVersion: (MediaItem) -> Void
-    let createAACVersionWithResult: (MediaItem, @escaping (String) -> Void) -> Void
     let exportItems: ([MediaItem]) -> Void
     let deleteItem: (MediaItem) -> Void
 }
@@ -45,6 +44,9 @@ struct IPhoneLibraryView: View {
     let player: PlayerViewModel
     let libraryService: LibraryService
     @Binding var isImporterPresented: Bool
+    @Binding var showsDeck: Bool
+    @Binding var aacResultMessage: String
+    @Binding var showsAACResult: Bool
     let canCreateAACVersion: Bool
     let aacVersionExporter: TransformedTrackExporter
     let actions: IPhoneLibraryActions
@@ -54,7 +56,6 @@ struct IPhoneLibraryView: View {
     @State private var searchFilter = LibrarySearchFilter()
     @State private var showsFilters = false
     @State private var showsSettings = false
-    @State private var showsDeck = false
     @State private var playlistToRename: Playlist?
     @State private var playlistToDelete: Playlist?
     @State private var nameDraft = ""
@@ -116,7 +117,8 @@ struct IPhoneLibraryView: View {
         .fullScreenCover(isPresented: $showsDeck) {
             IPhoneDeckView(
                 player: player, libraryService: libraryService, listName: playingListName,
-                canCreateAACVersion: canCreateAACVersion, createAACVersion: actions.createAACVersionWithResult
+                canCreateAACVersion: canCreateAACVersion, createAACVersion: actions.createAACVersion,
+                isPresented: $showsDeck, aacResultMessage: $aacResultMessage, showsAACResult: $showsAACResult
             )
         }
         .sheet(isPresented: $showsSettings) { AppSettingsView(player: player) }
