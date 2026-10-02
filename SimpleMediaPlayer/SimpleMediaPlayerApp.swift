@@ -29,9 +29,14 @@ struct SimpleMediaPlayerApp: App {
             PlaylistEntry.self
         ])
         let isMultipleSelectionUITest = ProcessInfo.processInfo.arguments.contains("--ui-testing-multiple-selection")
+        #if DEBUG && os(iOS)
+        let isPhoneLayoutUITest = ProcessInfo.processInfo.arguments.contains("--ui-testing-phone-layout")
+        #else
+        let isPhoneLayoutUITest = false
+        #endif
         let modelConfiguration = ModelConfiguration(
             schema: schema,
-            isStoredInMemoryOnly: isMultipleSelectionUITest
+            isStoredInMemoryOnly: isMultipleSelectionUITest || isPhoneLayoutUITest
         )
 
         do {
@@ -62,6 +67,9 @@ struct SimpleMediaPlayerApp: App {
                 }
                 try context.save()
             }
+            #if DEBUG && os(iOS)
+            if isPhoneLayoutUITest { try PhoneLayoutUITestFixture.insert(into: container.mainContext) }
+            #endif
             return container
         } catch {
             fatalError("Could not create ModelContainer: \(error)")

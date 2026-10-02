@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
     let player: PlayerViewModel?
 
     init(player: PlayerViewModel? = nil) {
@@ -13,7 +14,7 @@ struct AppSettingsView: View {
             Form {
                 AppearanceSettingsSection()
                 AudioSettingsSection(player: player)
-                MediaListSettingsSection()
+                if !usesPhoneLayout { MediaListSettingsSection() }
                 LEDSettingsSection()
             }
             .formStyle(.grouped)
@@ -36,184 +37,8 @@ struct AppSettingsView: View {
     }
 }
 
-private struct AudioSettingsSection: View {
-    let player: PlayerViewModel?
-    @AppStorage(AppSettingsKey.volumeNormalizationEnabled)
-    private var volumeNormalizationEnabled = AppSettingsDefault.volumeNormalizationEnabled
-
-    var body: some View {
-        Section("Audio") {
-            Toggle("Automatically Adjust Volume", isOn: $volumeNormalizationEnabled)
-                .onChange(of: volumeNormalizationEnabled) { _, enabled in
-                    player?.setVolumeNormalizationEnabled(enabled)
-                }
-
-            Text(
-                """
-                Keeps songs at a similar perceived volume. The first playback of each song may take a moment \
-                while its level is analyzed.
-                """
-            )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-private struct AppearanceSettingsSection: View {
-    @AppStorage(AppSettingsKey.appearanceMode) private var appearanceModeRaw = AppSettingsDefault.appearanceMode
-
-    var body: some View {
-        Section("Display") {
-            Picker("Appearance", selection: $appearanceModeRaw) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Text(mode.label).tag(mode.rawValue)
-                }
-            }
-        }
-    }
-}
-
-private struct MediaListSettingsSection: View {
-    var body: some View {
-        Section("Media List") {
-            NavigationLink {
-                MediaListColumnsEditorView()
-            } label: {
-                Label("Edit Columns", systemImage: "tablecolumns")
-            }
-        }
-    }
-}
-
-private struct MediaListColumnsEditorView: View {
-    @AppStorage(AppSettingsKey.mediaListColumnOrder)
-    private var columnOrderRaw = AppSettingsDefault.mediaListColumnOrder
-    @AppStorage(AppSettingsKey.mediaListVisibleColumns)
-    private var visibleColumnsRaw = AppSettingsDefault.mediaListVisibleColumns
-    #if os(macOS)
-    @AppStorage(AppSettingsKey.mediaListColumnCustomization)
-    private var columnCustomization = TableColumnCustomization<MediaTableRow>()
-    #endif
-
-    private var orderedColumns: [MediaListColumn] {
-        MediaListColumn.orderedColumns(from: columnOrderRaw)
-    }
-
-    private var visibleColumns: Set<MediaListColumn> {
-        MediaListColumn.visibleColumnSet(from: visibleColumnsRaw)
-    }
-
-    private var isDefault: Bool {
-        orderedColumns == Array(MediaListColumn.allCases)
-            && visibleColumns == Set(MediaListColumn.defaultVisibleColumns)
-    }
-
-    var body: some View {
-        List {
-            Section {
-                ForEach(orderedColumns) { column in
-                    columnRow(column)
-                }
-                .onMove(perform: moveColumns)
-            } footer: {
-                Text("Drag rows to change the order shown in the media list.")
-            }
-
-            Section {
-                Button("Reset Columns") {
-                    resetColumns()
-                }
-                .disabled(isDefault)
-            }
-        }
-        .navigationTitle("Columns")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        #if os(iOS)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                EditButton()
-            }
-        }
-        #endif
-    }
-
-    private func columnRow(_ column: MediaListColumn) -> some View {
-        let isVisible = visibleColumns.contains(column)
-        let isRequired = isVisible && visibleColumns.count == 1
-
-        return HStack(spacing: 12) {
-            Image(systemName: isVisible ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(isVisible ? Color.accentColor : Color.secondary)
-                .imageScale(.large)
-
-            Label(column.settingsTitle, systemImage: column.settingsIconName)
-
-            Spacer()
-
-            if isRequired {
-                Text("Required")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.tertiary)
-        }
-        .contentShape(Rectangle())
-        .foregroundStyle(isRequired ? .secondary : .primary)
-        .onTapGesture {
-            toggleColumn(column)
-        }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAddTraits(isVisible ? .isSelected : [])
-        .accessibilityValue(isVisible ? Text("Visible") : Text("Hidden"))
-        .accessibilityAction {
-            toggleColumn(column)
-        }
-    }
-
-    private func toggleColumn(_ column: MediaListColumn) {
-        var columns = visibleColumns
-        if columns.contains(column) {
-            guard columns.count > 1 else { return }
-            columns.remove(column)
-        } else {
-            columns.insert(column)
-        }
-        visibleColumnsRaw = MediaListColumn.encoded(orderedColumns.filter { columns.contains($0) })
-        syncTableColumnCustomization()
-    }
-
-    private func moveColumns(from source: IndexSet, to destination: Int) {
-        var columns = orderedColumns
-        columns.move(fromOffsets: source, toOffset: destination)
-        columnOrderRaw = MediaListColumn.encoded(columns)
-        visibleColumnsRaw = MediaListColumn.encoded(columns.filter { visibleColumns.contains($0) })
-    }
-
-    private func resetColumns() {
-        columnOrderRaw = AppSettingsDefault.mediaListColumnOrder
-        visibleColumnsRaw = AppSettingsDefault.mediaListVisibleColumns
-        #if os(macOS)
-        columnCustomization = TableColumnCustomization<MediaTableRow>()
-        #endif
-        syncTableColumnCustomization()
-    }
-
-    private func syncTableColumnCustomization() {
-        #if os(macOS)
-        let visibleColumns = visibleColumns
-        for column in MediaListColumn.allCases {
-            columnCustomization[visibility: column.rawValue] = visibleColumns.contains(column) ? .visible : .hidden
-        }
-        #endif
-    }
-}
-
 private struct LEDSettingsSection: View {
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
     @AppStorage(AppSettingsKey.bottomPanelLayout)
     private var bottomPanelLayoutRaw = AppSettingsDefault.bottomPanelLayout
     @AppStorage(AppSettingsKey.ledPanelSide) private var ledPanelSideRaw = AppSettingsDefault.ledPanelSide
@@ -306,6 +131,7 @@ private struct LEDSettingsSection: View {
 
     var body: some View {
         Section("LED") {
+            if !usesPhoneLayout {
             Picker("Panel Layout", selection: $bottomPanelLayoutRaw) {
                 ForEach(BottomPanelLayout.allCases) { layout in
                     Text(layout.label).tag(layout.rawValue)
@@ -357,6 +183,7 @@ private struct LEDSettingsSection: View {
                 )
             }
 
+            }
             Picker("Display Style", selection: $ledDisplayStyleRaw) {
                 ForEach(LEDDisplayStyle.allCases) { style in
                     Text(style.label).tag(style.rawValue)
@@ -490,127 +317,4 @@ private struct LEDSettingsSection: View {
         }
     }
 
-}
-
-private struct LEDColorEditor: View {
-    let title: LocalizedStringKey
-    @Binding var selection: String
-    let presets: [LEDColorPreset]
-    @State private var customHexInput: String
-
-    init(title: LocalizedStringKey, selection: Binding<String>, presets: [LEDColorPreset]) {
-        self.title = title
-        _selection = selection
-        self.presets = presets
-        _customHexInput = State(initialValue: selection.wrappedValue)
-    }
-
-    private var normalizedCustomHex: String? {
-        LEDColorValue.normalizedHex(customHexInput)
-    }
-
-    private var normalizedSelection: String? {
-        LEDColorValue.normalizedHex(selection)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-
-            HStack(spacing: 10) {
-                ForEach(presets) { preset in
-                    Button {
-                        applyHex(preset.hex)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(preset.value.color)
-                                .frame(width: 12, height: 12)
-                                .overlay(Circle().strokeBorder(.secondary.opacity(0.35), lineWidth: 1))
-
-                            Text(preset.name)
-
-                            if normalizedSelection == preset.hex {
-                                Image(systemName: "checkmark")
-                                    .font(.caption.weight(.semibold))
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-
-            HStack {
-                Text("Hex")
-                TextField("#RRGGBB", text: $customHexInput)
-                    .font(.system(.body, design: .monospaced))
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(Text(title))
-                    .accessibilityHint(Text("Hex"))
-                    .onSubmit {
-                        applyCustomHex()
-                    }
-                Button("Apply") {
-                    applyCustomHex()
-                }
-                .disabled(normalizedCustomHex == nil)
-                .accessibilityLabel(Text(title))
-                .accessibilityHint(Text("Apply"))
-            }
-
-            if normalizedCustomHex == nil {
-                Text("Enter a value like #FFFFFF or #4DA3FF.")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        }
-        .onAppear {
-            customHexInput = selection
-        }
-        .onChange(of: selection) { _, newValue in
-            customHexInput = newValue
-        }
-    }
-
-    private func applyCustomHex() {
-        guard let normalizedHex = normalizedCustomHex else { return }
-        applyHex(normalizedHex)
-    }
-
-    private func applyHex(_ hex: String) {
-        guard let normalizedHex = LEDColorValue.normalizedHex(hex) else { return }
-        selection = normalizedHex
-        customHexInput = normalizedHex
-    }
-}
-
-private struct IntensitySlider: View {
-    let title: LocalizedStringKey
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let step: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(value.formatted(.percent.precision(.fractionLength(0))))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-
-            Slider(value: $value, in: range, step: step)
-                .accessibilityLabel(Text(title))
-                .accessibilityValue(Text(value.formatted(.percent.precision(.fractionLength(0)))))
-
-            HStack {
-                Text(range.lowerBound, format: .percent.precision(.fractionLength(0)))
-                Spacer()
-                Text(range.upperBound, format: .percent.precision(.fractionLength(0)))
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-    }
 }
