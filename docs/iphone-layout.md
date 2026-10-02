@@ -38,12 +38,19 @@ The top level is a `TabView` with Library, Playlists, and Videos tabs plus a sea
 The Library tab is a `NavigationStack` that goes from a list of categories (All Songs, Albums, Artists, Genres) to each list.
 The current sidebar (`NavigationSplitView`) is not used on iPhone.
 
-### LED Dock (Mockup B-1)
+### Now-playing Dock (Mockup B-1)
 
-While there is a current item, an LED dock appears above the tab bar.
-It is intended to use `tabViewBottomAccessory`, available in iOS 26 and later.
-The dock shows the scrolling title, the seven-segment elapsed time, a small spectrum, a key-change indicator, and a thin playback position line, with Play/Pause and Next Track buttons (at least 44 pt) on the right.
-Tapping the dock opens the deck.
+While there is a current item, a dock appears above the tab bar using `tabViewBottomAccessory`, available in iOS 26 and later.
+The accessory supplies the system's Liquid Glass background.
+The dock shows the title and elapsed time in standard fonts that support Dynamic Type; long titles truncate to fit.
+When the text size prevents both rows from fitting, the dock omits the visible elapsed time and retains the complete title and playback time in its accessibility value.
+Tapping the title and time opens the deck, while separate Play/Pause and Next Track buttons use standard SF Symbols.
+Each button has a hit region of at least 44 × 44 pt, with at least 8 pt between controls.
+The dock has no custom panel background or circular button decoration; the detailed LED display and visualizer remain on the deck's Display page.
+
+The flexible text and familiar playback controls follow Apple's [Layout](https://developer.apple.com/design/human-interface-guidelines/layout) and [Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons) guidance on adaptable layouts, recognizable actions, and sufficient touch targets.
+Apple's [Tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars) guidance shows a now-playing accessory above the tab bar, supporting this placement.
+Following [Adopting Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass), the dock relies on the system accessory background and avoids adding custom backgrounds that can interfere with it.
 
 ### Deck (Mockup B-2)
 
@@ -62,6 +69,7 @@ The More menu holds Save adjusted copy, Create AAC Version, and Edit Information
 ### Lyrics Page (Mockup B-3)
 
 On the Lyrics page, the LED display shrinks to a strip about 90 pt tall, and the lyrics fill the space it frees.
+The strip retains the title, elapsed time, and key-change indicator and omits the visualizer, whose normal layout does not fit the compact area.
 Time-tagged lyrics highlight the current line and scroll it to the center.
 Compact transport controls stay at the bottom, and Edit Lyrics at the top right opens the existing editor.
 The Info page uses the same arrangement and reuses the existing information view (enlarged artwork, Edit Information).
@@ -92,18 +100,18 @@ The following table shows where each existing feature is operated on iPhone.
 | Reordering and removing playlist tracks | Dragging and deleting in edit mode. Move Up and Move Down stay in the long-press menu |
 | Creating, renaming, and deleting playlists | Playlists tab |
 | Adding tracks to a playlist | Add button in the playlist detail's navigation bar |
-| Play, Pause, Previous Track, Next Track | LED dock and deck |
+| Play, Pause, Previous Track, Next Track | Play/Pause and Next Track in the dock; all four in the deck |
 | Stop, seek, volume | Deck |
 | Key, speed, EQ, Save adjusted copy | Adjustment sheet opened from the deck's lamps. Save is also in the deck's More menu |
 | Music analysis (KEY, BPM, song structure) | LED display in the deck |
-| Visualizer | LED dock (small) and deck |
+| Visualizer | Deck Display page; omitted from the dock and compact LED strip |
 | VU meters | Not shown in portrait |
 | Viewing and editing lyrics | Lyrics page of the deck |
 | Details, Edit Information, enlarged artwork | Info page of the deck |
 | Settings | Sheet opened from the Library More menu |
 
 The LED placement settings (Panel Layout, LED Position, LED Corners) and the list column settings do not apply to the iPhone layout and are hidden there.
-The import and export progress panels move to a position that does not overlap the LED dock.
+The import and export progress panels move to a position that does not overlap the dock.
 
 ## Reusing and Changing Existing Views
 
@@ -117,7 +125,8 @@ The following views need changes or iPhone-specific replacements.
 
 ## Light Mode
 
-The bottom panel palette already has light (silver) and dark (gunmetal) variants, and the deck and LED dock frames and buttons follow it.
+The bottom panel palette already has light (silver) and dark (gunmetal) variants, and the deck's frames and buttons follow it.
+The dock uses the system accessory's Liquid Glass background and standard foreground colors, which adapt to the appearance and accessibility settings.
 The LED display colors are independent of the appearance mode and follow the Display Style setting.
 With the default Dark style, the display stays white on black even in light mode; with Backlit, it shows black on a yellow-green backlight.
 The library screens use the standard iOS light and dark colors.
@@ -136,6 +145,7 @@ The library screens use the standard iOS light and dark colors.
 | The compatibility mode is gone | Take a screenshot in the iPhone Simulator and confirm there are no black bars and the app fills the screen |
 | Controls fit on screen | Confirm nothing overflows or is cut off on the narrowest iPhone (iPhone 17e class) and the widest (Pro Max) |
 | Touch targets are at least 44 pt | Check the sizes of the dock, deck, and adjustment sheet buttons with Accessibility Inspector |
+| Long titles and large text do not overlap in the dock | Run UI tests at normal, `.xxxLarge`, and `.accessibility5` sizes, then inspect saved screenshots for clipped text and background gaps |
 | Every operation in the feature table is reachable | Operate each row of the table on iPhone |
 | Layout holds in light and dark with both LED display styles | Check all four combinations of the two appearance modes and the two LED display styles |
 | iPad and macOS layouts are unchanged | Build both and run UI tests limited to the main screen operations |

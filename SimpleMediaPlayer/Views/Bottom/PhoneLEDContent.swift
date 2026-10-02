@@ -46,8 +46,6 @@ struct PhoneLEDContent: View {
                         Text("KEY " + PitchSpeedTextFormatter.pitch(player.pitchSemitones))
                             .font(.custom("Dotrice-Regular", size: 9))
                     }
-                    VisualizerHostView(player: player, palette: palette).frame(width: 44, height: 16)
-                        .accessibilityHidden(true)
                 }
             }
             if layout == .phoneDeck {

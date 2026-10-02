@@ -1,10 +1,19 @@
 #if DEBUG && os(iOS)
 import AVFoundation
 import SwiftData
+import SwiftUI
 
 /// Local media keeps the phone navigation tests independent of file-provider dialogs and network access.
 @MainActor
 enum PhoneLayoutUITestFixture {
+    static var dynamicTypeSizeOverride: DynamicTypeSize? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--ui-testing-phone-layout") else { return nil }
+        if arguments.contains("--ui-testing-phone-large-text") { return .accessibility5 }
+        if arguments.contains("--ui-testing-phone-extra-large-text") { return .xxxLarge }
+        return nil
+    }
+
     static func makeAACVersionExporter() -> TransformedTrackExporter {
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("--ui-testing-phone-layout"),
@@ -26,8 +35,13 @@ enum PhoneLayoutUITestFixture {
             let file = try AVAudioFile(forWriting: url, settings: format.settings)
             for _ in 0..<60 { try file.write(from: buffer) }
             let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            let usesLongTitle = index == 1
+                && ProcessInfo.processInfo.arguments.contains("--ui-testing-phone-long-title")
+            let title = usesLongTitle
+                ? "とても長い曲名の表示確認 — A Very Long Track Name for Checking the Compact Playback Panel"
+                : "Layout Track \(index)"
             let item = MediaItem(
-                title: "Layout Track \(index)", artist: "Layout Artist", album: "Layout Album",
+                title: title, artist: "Layout Artist", album: "Layout Album",
                 duration: 60, isVideo: false,
                 lyricsRaw: "[00:00.00]First lyric\n[00:20.00]Second lyric\n[00:40.00]Third lyric",
                 bookmarkData: bookmark, fileName: url.lastPathComponent

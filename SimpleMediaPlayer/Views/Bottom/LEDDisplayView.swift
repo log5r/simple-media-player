@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum LEDDisplayLayout {
-    case standard, phoneDock, phoneStrip, phoneDeck
+    case standard, phoneStrip, phoneDeck
 }
 
 struct LEDDisplayView: View {

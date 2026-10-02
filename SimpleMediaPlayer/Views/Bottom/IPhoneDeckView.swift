@@ -3,38 +3,6 @@ import AVKit
 import SwiftData
 import SwiftUI
 
-struct IPhoneLEDDock: View {
-    let player: PlayerViewModel
-    let openDeck: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Button(action: openDeck) {
-                LEDDisplayView(player: player, height: 66, layout: .phoneDock)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Now Playing")
-            .accessibilityValue(player.currentItem?.title ?? "")
-            .accessibilityHint("Open the playback deck")
-            .accessibilityIdentifier("phoneLEDDock")
-            IPhoneTransportButton(
-                title: player.isPlaying ? "Pause" : "Play",
-                symbol: player.isPlaying ? "pause.fill" : "play.fill", identifier: "phoneDockPlayPause"
-            ) { player.togglePlayPause() }
-            IPhoneTransportButton(title: "Next Track", symbol: "forward.end.fill", identifier: "phoneDockNext") {
-                player.next()
-            }.disabled(!player.canSkipToNext)
-        }
-        .background(BottomPanelPalette(colorScheme: colorScheme).panelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-    }
-}
-
 private enum IPhoneDeckPage: String, CaseIterable {
     case display = "Display"
     case lyrics = "Lyrics"
