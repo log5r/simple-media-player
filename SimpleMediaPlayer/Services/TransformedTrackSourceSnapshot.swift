@@ -6,7 +6,6 @@ struct TransformedTrackSourceSnapshot: Sendable {
     let registeredID: UUID?
     let metadata: MediaMetadataModelValues
     let lyricsRaw: String?
-    let artworkData: Data?
 
     @MainActor init(item: MediaItem) {
         registeredID = item.modelContext == nil ? nil : item.id
@@ -17,6 +16,5 @@ struct TransformedTrackSourceSnapshot: Sendable {
             isCompilation: item.isCompilation
         )
         lyricsRaw = item.lyricsRaw
-        artworkData = item.artworkData
     }
 }

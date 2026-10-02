@@ -24,6 +24,7 @@ struct BulkMetadataEditResult: Sendable {
 final class LibraryService {
     @ObservationIgnored nonisolated private let mediaDirectoryOverride: URL?
     @ObservationIgnored private let artworkProcessor: ArtworkProcessor
+    @ObservationIgnored let artworkLoader: LibraryArtworkLoader
     @ObservationIgnored private let lyricsReader: EmbeddedLyricsReader
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var editedLyricsItemIDs: Set<UUID> = []
@@ -53,11 +54,13 @@ final class LibraryService {
     init(
         mediaDirectoryURL: URL? = nil,
         artworkProcessor: ArtworkProcessor = ArtworkProcessor(),
-        lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader()
+        lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader(),
+        artworkLoader: LibraryArtworkLoader = .shared
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
+        self.artworkLoader = artworkLoader
     }
 
     func importFiles(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
@@ -136,6 +139,8 @@ final class LibraryService {
                 if isDuplicate == false {
                     let item = try await makeMediaItem(from: url, importFingerprint: fingerprint)
                     context.insert(item)
+                    // Publish the artwork record before a visible row requests it from a worker context.
+                    try context.save()
                     itemsByFingerprint[fingerprint, default: []].append(item)
                 }
             } catch {
@@ -242,6 +247,7 @@ final class LibraryService {
 
     func editableMetadataDraft(for item: MediaItem) async -> MediaMetadataEditDraft {
         var draft = MediaMetadataEditDraft(item: item)
+        draft.artworkData = try? await libraryArtwork(for: item)
         guard let url = resolvedURL(for: item) else { return draft }
 
         let didAccess = url.startAccessingSecurityScopedResource()

@@ -67,7 +67,8 @@ struct MediaMetadataEditDraft: Equatable, Sendable {
         composer = item.composer ?? ""
         discNumber = item.discNumber ?? ""
         isCompilation = item.isCompilation
-        artworkData = item.artworkData
+        // Artwork is loaded explicitly by the asynchronous editor/export paths.
+        artworkData = nil
         lyrics = item.lyricsRaw ?? ""
         editsTextMetadata = true
         editsArtwork = false

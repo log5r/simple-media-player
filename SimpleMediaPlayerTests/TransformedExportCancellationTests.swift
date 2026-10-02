@@ -219,6 +219,57 @@ struct TransformedExportCancellationTests {
         #expect(try Data(contentsOf: fixture.sourceURL) == sourceData)
         #expect(exporter.progress == 1)
     }
+
+    @Test(arguments: [false, true], [false, true])
+    func artworkSnapshotMatchesFileAndLibraryAfterSourceEdit(hadArtwork: Bool, removeArtwork: Bool) async throws {
+        let fixture = try TransformedExportFixture()
+        defer { fixture.remove() }
+        let initialArtwork = hadArtwork ? Data([1, 2, 3]) : nil
+        fixture.source.artworkData = initialArtwork
+        try fixture.context.save()
+        let renderer = ControlledExportRenderer(behavior: .ignoreCancellation)
+        let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
+        let task = Task { try await fixture.export(using: exporter) }
+        defer { task.cancel(); renderer.release() }
+        try await renderer.waitUntilStarted()
+
+        let editedArtwork = removeArtwork ? nil : Data([4, 5, 6])
+        fixture.source.artworkData = editedArtwork
+        try fixture.context.save()
+        renderer.release()
+        let copy = try await task.value
+
+        let outputURL = fixture.mediaDirectory.appendingPathComponent(copy.fileName)
+        #expect(try AdditionalAudioMetadata.read(from: outputURL).artworkData == initialArtwork)
+        #expect(try await fixture.service.libraryArtwork(for: copy) == initialArtwork)
+        #expect(try await fixture.service.libraryArtwork(for: fixture.source) == editedArtwork)
+        #expect(copy.artworkID == nil || copy.artworkID != fixture.source.artworkID)
+        #expect(try fixture.renderedFiles().isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func deletedSourceCannotRegisterRenderedSnapshot(hadArtwork: Bool) async throws {
+        let fixture = try TransformedExportFixture()
+        defer { fixture.remove() }
+        fixture.source.artworkData = hadArtwork ? Data([1, 2, 3]) : nil
+        try fixture.context.save()
+        let renderer = ControlledExportRenderer(behavior: .ignoreCancellation)
+        let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
+        let task = Task { try await fixture.export(using: exporter) }
+        defer { task.cancel(); renderer.release() }
+        try await renderer.waitUntilStarted()
+
+        fixture.service.delete(fixture.source, from: fixture.context)
+        renderer.release()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
+        #expect(try fixture.mediaFiles().isEmpty)
+        #expect(try fixture.renderedFiles().isEmpty)
+        #expect(exporter.isExporting == false)
+        #expect(exporter.progress == 0)
+        #expect(exporter.errorMessage == nil)
+    }
 }
 
 @MainActor

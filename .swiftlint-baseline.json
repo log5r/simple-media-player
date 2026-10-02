@@ -1132,7 +1132,7 @@
         "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
         "line": 1780
       },
-      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 337 lines",
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 348 lines",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleIdentifier": "type_body_length",
       "ruleName": "Type Body Length",
@@ -1147,7 +1147,7 @@
         "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
         "line": 2156
       },
-      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 319 lines",
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 307 lines",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleIdentifier": "type_body_length",
       "ruleName": "Type Body Length",
@@ -1162,7 +1162,7 @@
         "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
         "line": 2607
       },
-      "reason": "File should contain 1000 lines or less: currently contains 2607",
+      "reason": "File should contain 1000 lines or less: currently contains 2660",
       "ruleDescription": "Files should not span too many lines.",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",
@@ -1561,10 +1561,10 @@
   },
   {
     "violation": {
-      "severity": "error",
+      "severity": "warning",
       "ruleDescription": "Files should not span too many lines.",
       "ruleName": "File Length",
-      "reason": "File should contain 1000 lines or less: currently contains 1423",
+      "reason": "File should contain 400 lines or less: currently contains 995",
       "ruleIdentifier": "file_length",
       "location": {
         "line": 1423,
@@ -1591,10 +1591,10 @@
   },
   {
     "violation": {
-      "severity": "error",
+      "severity": "warning",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleName": "Type Body Length",
-      "reason": "Class body should span 350 lines or less excluding comments and whitespace: currently spans 721 lines",
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 350 lines",
       "ruleIdentifier": "type_body_length",
       "location": {
         "line": 24,

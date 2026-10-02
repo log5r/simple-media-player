@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 @Model
-final class MediaItem {
+nonisolated final class MediaItem {
     var id: UUID
     var title: String
     var artist: String
@@ -19,7 +19,12 @@ final class MediaItem {
     var isVideo: Bool
     var lyricsRaw: String?
     var bookmarkData: Data
-    var artworkData: Data?
+    var artworkID: UUID?
+    @Relationship(deleteRule: .cascade)
+    var artwork: MediaArtwork?
+    // Retain the old column until its bytes have been moved to a separate entity.
+    @Attribute(originalName: "artworkData")
+    var legacyArtworkData: Data?
     var addedAt: Date
     var fileName: String
     // Keep the original import identity even when embedded metadata is edited later.
@@ -63,15 +68,50 @@ final class MediaItem {
         self.isVideo = isVideo
         self.lyricsRaw = lyricsRaw
         self.bookmarkData = bookmarkData
-        self.artworkData = artworkData
+        let artwork = artworkData.map { MediaArtwork(data: $0) }
+        self.artwork = artwork
+        self.artworkID = artwork?.id
+        self.legacyArtworkData = nil
         self.addedAt = addedAt
         self.fileName = fileName
         self.importFingerprint = importFingerprint
     }
+
+    var hasArtwork: Bool { artworkID != nil }
+
+    // Read only for compatibility with existing callers; list and playback UI use artworkID.
+    var artworkData: Data? {
+        get { artwork?.data ?? legacyArtworkData }
+        set {
+            let previousArtwork = artwork
+            let replacement = newValue.map { MediaArtwork(data: $0) }
+            if let replacement, let modelContext {
+                modelContext.insert(replacement)
+            }
+            artwork = replacement
+            artworkID = replacement?.id
+            legacyArtworkData = nil
+            if let previousArtwork, let modelContext {
+                modelContext.delete(previousArtwork)
+            }
+        }
+    }
 }
 
 @Model
-final class Playlist {
+nonisolated final class MediaArtwork {
+    var id: UUID
+    @Attribute(.externalStorage)
+    var data: Data
+
+    init(id: UUID = UUID(), data: Data) {
+        self.id = id
+        self.data = data
+    }
+}
+
+@Model
+nonisolated final class Playlist {
     var id: UUID
     var name: String
     var createdAt: Date
@@ -87,7 +127,7 @@ final class Playlist {
 }
 
 @Model
-final class PlaylistEntry {
+nonisolated final class PlaylistEntry {
     var id: UUID
     var sortIndex: Int
     var playlist: Playlist?

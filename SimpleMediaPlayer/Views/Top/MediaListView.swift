@@ -323,7 +323,7 @@ struct MediaListView: View {
                 .monospacedDigit()
                 .frame(maxWidth: .infinity, alignment: .trailing)
         case .artwork:
-            ArtworkView(data: row.item.artworkData, isVideo: row.item.isVideo)
+            LibraryItemArtworkView(item: row.item)
         case .title:
             HStack(spacing: 6) {
                 if differentiateWithoutColor, isBulkEditMode, bulkSelection.contains(row.id) {
@@ -605,7 +605,7 @@ struct MediaListView: View {
                 .monospacedDigit()
                 .frame(width: 34, alignment: .trailing)
 
-            ArtworkView(data: row.item.artworkData, isVideo: row.item.isVideo)
+            LibraryItemArtworkView(item: row.item)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -887,7 +887,7 @@ private struct AlbumBrowserView<ItemMenu: View>: View {
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
-                            AlbumArtworkView(data: album.artworkData)
+                            AlbumArtworkView(artworkID: album.artworkID)
                                 .matchedGeometryEffect(id: album.id, in: artworkTransition)
 
                             Text(album.title)
@@ -965,7 +965,7 @@ private struct AlbumBrowserView<ItemMenu: View>: View {
     }
 
     private func albumArtwork(_ album: LibraryAlbum) -> some View {
-        AlbumArtworkView(data: album.artworkData)
+        AlbumArtworkView(artworkID: album.artworkID)
             .matchedGeometryEffect(id: album.id, in: artworkTransition)
     }
 
@@ -1092,7 +1092,7 @@ private struct LibraryAlbum: Identifiable {
     let id: String
     let title: String
     let artist: String
-    let artworkData: Data?
+    let artworkID: UUID?
     let metadataSummary: String
     let tracks: [MediaItem]
 
@@ -1110,7 +1110,7 @@ private struct LibraryAlbum: Identifiable {
                     id: title,
                     title: title,
                     artist: artist,
-                    artworkData: tracks.lazy.compactMap(\.artworkData).first,
+                    artworkID: tracks.lazy.compactMap(\.artworkID).first,
                     metadataSummary: metadataSummary,
                     tracks: tracks
                 )
@@ -1162,22 +1162,15 @@ private struct LibraryAlbum: Identifiable {
 }
 
 private struct AlbumArtworkView: View {
-    let data: Data?
+    let artworkID: UUID?
 
     var body: some View {
         ZStack {
             Rectangle()
                 .fill(.quaternary)
 
-            if let data, let image = platformImage(data: data) {
-                image
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "music.note")
-                    .font(.system(size: 42, weight: .light))
-                    .foregroundStyle(.secondary)
-            }
+            LibraryArtworkView(artworkID: artworkID)
+                .font(.system(size: 42, weight: .light))
         }
         .aspectRatio(1, contentMode: .fit)
         .clipped()
@@ -1187,16 +1180,6 @@ private struct AlbumArtworkView: View {
                 .stroke(.quaternary, lineWidth: 0.5)
         }
         .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
-    }
-
-    private func platformImage(data: Data) -> Image? {
-        #if os(macOS)
-        guard let image = NSImage(data: data) else { return nil }
-        return Image(nsImage: image)
-        #else
-        guard let image = UIImage(data: data) else { return nil }
-        return Image(uiImage: image)
-        #endif
     }
 }
 
@@ -1726,7 +1709,7 @@ struct MediaTableRow: Identifiable, @unchecked Sendable {
         self.index = index
         self.item = item
         indexSortValue = index
-        artworkSortValue = item.artworkData == nil ? "" : "1"
+        artworkSortValue = item.hasArtwork ? "1" : ""
         titleSortValue = item.title
         artistSortValue = item.displayArtist
         albumSortValue = item.displayAlbum
@@ -1790,6 +1773,7 @@ struct BulkMetadataEditView: View {
     @State private var isDiscardChangesConfirmationPresented = false
     @State private var isArtworkImporterPresented = false
     @State private var artworkLoadError: String?
+    @State private var artworkLoadRequestID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1864,7 +1848,11 @@ struct BulkMetadataEditView: View {
             onCompletion: handleArtworkSelection
         )
         .task(id: items.map(\.id)) {
+            artworkLoadRequestID = nil
             editableItemIDs = Set(items.filter { libraryService.canEditEmbeddedMetadata(for: $0) }.map(\.id))
+        }
+        .onDisappear {
+            artworkLoadRequestID = nil
         }
     }
 
@@ -1918,6 +1906,7 @@ struct BulkMetadataEditView: View {
                     }
 
                     Button("Remove", role: .destructive) {
+                        artworkLoadRequestID = nil
                         draft.artworkData = nil
                         appliedFields.insert(.artwork)
                         artworkLoadError = nil
@@ -2141,12 +2130,17 @@ struct BulkMetadataEditView: View {
         }
 
         artworkLoadError = nil
+        let requestID = UUID()
+        artworkLoadRequestID = requestID
         Task {
             do {
-                draft.artworkData = try await libraryService.loadArtwork(from: url)
+                let artwork = try await libraryService.loadArtwork(from: url)
+                guard Task.isCancelled == false, artworkLoadRequestID == requestID else { return }
+                draft.artworkData = artwork
                 appliedFields.insert(.artwork)
                 clearResult()
             } catch {
+                guard Task.isCancelled == false, artworkLoadRequestID == requestID else { return }
                 artworkLoadError = error.localizedDescription
             }
         }
@@ -2159,6 +2153,8 @@ struct MediaInfoView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var details: MediaInfoDetails?
+    @State private var metadataLoadRequestID: UUID?
+    @State private var metadataDraftItemID: UUID?
     @State private var metadataDraft = MediaMetadataEditDraft(title: "", artist: "", album: "", genre: "")
     @State private var originalMetadataDraft = MediaMetadataEditDraft(title: "", artist: "", album: "", genre: "")
     @State private var canEditEmbeddedMetadata = false
@@ -2168,11 +2164,16 @@ struct MediaInfoView: View {
     @State private var isDiscardChangesConfirmationPresented = false
     @State private var isArtworkImporterPresented = false
     @State private var artworkLoadError: String?
+    @State private var artworkLoadRequestID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                ArtworkView(data: metadataDraft.artworkData, isVideo: item.isVideo, size: 44)
+                ArtworkView(
+                    data: metadataDraftItemID == item.id ? metadataDraft.artworkData : nil,
+                    isVideo: item.isVideo,
+                    size: 44
+                )
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title)
@@ -2247,16 +2248,12 @@ struct MediaInfoView: View {
             allowsMultipleSelection: false,
             onCompletion: handleArtworkSelection
         )
-        .task(id: item.id) {
-            details = nil
-            metadataSaveError = nil
-            didSaveMetadata = false
-            isDiscardChangesConfirmationPresented = false
-            canEditEmbeddedMetadata = libraryService.canEditEmbeddedMetadata(for: item)
-            let loadedDraft = await libraryService.editableMetadataDraft(for: item)
-            metadataDraft = loadedDraft
-            originalMetadataDraft = loadedDraft
-            details = await libraryService.loadMediaInfo(for: item)
+        .task(id: [item.id, item.artworkID]) {
+            await loadMetadata()
+        }
+        .onDisappear {
+            metadataLoadRequestID = nil
+            artworkLoadRequestID = nil
         }
     }
 
@@ -2329,6 +2326,7 @@ struct MediaInfoView: View {
                     }
                     if metadataDraft.artworkData != nil {
                         Button("Remove", role: .destructive) {
+                            artworkLoadRequestID = nil
                             metadataDraft.artworkData = nil
                             metadataDraft.editsArtwork = true
                             markMetadataChanged()
@@ -2356,12 +2354,17 @@ struct MediaInfoView: View {
         }
 
         artworkLoadError = nil
+        let requestID = UUID()
+        artworkLoadRequestID = requestID
         Task {
             do {
-                metadataDraft.artworkData = try await libraryService.loadArtwork(from: url)
+                let artwork = try await libraryService.loadArtwork(from: url)
+                guard Task.isCancelled == false, artworkLoadRequestID == requestID else { return }
+                metadataDraft.artworkData = artwork
                 metadataDraft.editsArtwork = true
                 markMetadataChanged()
             } catch {
+                guard Task.isCancelled == false, artworkLoadRequestID == requestID else { return }
                 artworkLoadError = error.localizedDescription
             }
         }
@@ -2444,6 +2447,7 @@ struct MediaInfoView: View {
 
     private var canSaveMetadata: Bool {
         isSavingMetadata == false
+            && metadataDraftItemID == item.id
             && hasUnsavedMetadataChanges
             && (canEditEmbeddedMetadata || metadataDraft.editsArtwork)
     }
@@ -2457,31 +2461,6 @@ struct MediaInfoView: View {
             isDiscardChangesConfirmationPresented = true
         } else {
             dismiss()
-        }
-    }
-
-    private func saveMetadata(dismissAfterSave: Bool = false) {
-        guard canSaveMetadata else { return }
-
-        isSavingMetadata = true
-        metadataSaveError = nil
-        didSaveMetadata = false
-
-        Task {
-            do {
-                try await libraryService.updateEmbeddedMetadata(for: item, draft: metadataDraft, in: modelContext)
-                let savedDraft = await libraryService.editableMetadataDraft(for: item)
-                metadataDraft = savedDraft
-                originalMetadataDraft = savedDraft
-                details = await libraryService.loadMediaInfo(for: item)
-                didSaveMetadata = true
-                if dismissAfterSave {
-                    dismiss()
-                }
-            } catch {
-                metadataSaveError = error.localizedDescription
-            }
-            isSavingMetadata = false
         }
     }
 
@@ -2507,6 +2486,80 @@ struct MediaInfoView: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private extension MediaInfoView {
+    func loadMetadata() async {
+        // A save refreshes its own draft; an external artwork change must preserve local edits.
+        if metadataDraftItemID == item.id, isSavingMetadata || hasUnsavedMetadataChanges { return }
+        let itemID = item.id
+        let requestID = UUID()
+        metadataLoadRequestID = requestID
+        metadataDraftItemID = nil
+        artworkLoadRequestID = nil
+        details = nil
+        isSavingMetadata = false
+        metadataSaveError = nil
+        didSaveMetadata = false
+        isDiscardChangesConfirmationPresented = false
+        canEditEmbeddedMetadata = libraryService.canEditEmbeddedMetadata(for: item)
+        _ = await reloadMetadata(itemID: itemID, requestID: requestID)
+    }
+
+    func isCurrentMetadataRequest(itemID: UUID, requestID: UUID) -> Bool {
+        Task.isCancelled == false && metadataLoadRequestID == requestID
+            && item.id == itemID && item.isDeleted == false && item.modelContext === modelContext
+    }
+
+    func reloadMetadata(itemID: UUID, requestID: UUID) async -> Bool {
+        while isCurrentMetadataRequest(itemID: itemID, requestID: requestID) {
+            let artworkID = item.artworkID
+            let loadedDraft = await libraryService.editableMetadataDraft(for: item)
+            guard isCurrentMetadataRequest(itemID: itemID, requestID: requestID) else { return false }
+            guard item.artworkID == artworkID else { continue }
+            let loadedDetails = await libraryService.loadMediaInfo(for: item)
+            guard isCurrentMetadataRequest(itemID: itemID, requestID: requestID) else { return false }
+            // A second window may replace the image during either read. Retry that generation
+            // without applying the older draft, including during the refresh after saving.
+            guard item.artworkID == artworkID else { continue }
+            metadataDraft = loadedDraft
+            originalMetadataDraft = loadedDraft
+            metadataDraftItemID = itemID
+            details = loadedDetails
+            return true
+        }
+        return false
+    }
+
+    func saveMetadata(dismissAfterSave: Bool = false) {
+        guard canSaveMetadata else { return }
+
+        let itemID = item.id
+        let requestID = UUID()
+        let draft = metadataDraft
+        metadataLoadRequestID = requestID
+        artworkLoadRequestID = nil
+        isSavingMetadata = true
+        metadataSaveError = nil
+        didSaveMetadata = false
+
+        Task {
+            defer {
+                if metadataLoadRequestID == requestID { isSavingMetadata = false }
+            }
+            do {
+                try await libraryService.updateEmbeddedMetadata(for: item, draft: draft, in: modelContext)
+                guard await reloadMetadata(itemID: itemID, requestID: requestID) else { return }
+                didSaveMetadata = true
+                if dismissAfterSave {
+                    dismiss()
+                }
+            } catch {
+                guard isCurrentMetadataRequest(itemID: itemID, requestID: requestID) else { return }
+                metadataSaveError = error.localizedDescription
+            }
         }
     }
 }
