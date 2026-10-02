@@ -253,8 +253,10 @@ struct IPhoneDeckView: View {
 
     private var volume: some View {
         HStack(spacing: 12) {
-            IPhoneTransportButton(title: "Mute", symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill",
-                                 identifier: "phoneMute") { player.toggleMuted() }
+            IPhoneTransportButton(
+                title: player.isMuted ? "Unmute" : "Mute",
+                symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill", identifier: "phoneMute"
+            ) { player.toggleMuted() }
             VolumeSlotView(value: player.volume, palette: palette, axis: .horizontal) { player.setVolume($0) }
                 .frame(height: 44)
             Text("\(Int(player.volume * 100))").font(.caption.monospacedDigit()).frame(width: 30)

@@ -7,6 +7,7 @@ struct LyricsEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
     @State private var lyrics: String
     @State private var saveLocation = LyricsSaveLocation.applicationOnly
     @State private var isSaving = false
@@ -88,7 +89,12 @@ struct LyricsEditorView: View {
                 }
             }
         }
-        .frame(minWidth: 420, idealWidth: 560, minHeight: 400, idealHeight: 520)
+        .frame(
+            minWidth: usesPhoneLayout ? nil : 420,
+            idealWidth: usesPhoneLayout ? nil : 560,
+            minHeight: usesPhoneLayout ? nil : 400,
+            idealHeight: usesPhoneLayout ? nil : 520
+        )
     }
 
     private var canEmbedLyrics: Bool {

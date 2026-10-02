@@ -52,6 +52,14 @@ final class IPhoneLayoutUITests: XCTestCase {
         for id in ["phonePlayPause", "phonePrevious", "phoneNext", "phoneStop", "phoneLamp.KEY"] {
             assertTouchTarget(app.buttons[id], in: app)
         }
+        let mute = app.buttons["phoneMute"]
+        if !mute.isHittable { app.swipeUp() }
+        assertTouchTarget(mute, in: app)
+        XCTAssertEqual(mute.label, language == "ja" ? "ミュート" : "Mute")
+        mute.tap()
+        XCTAssertEqual(mute.label, language == "ja" ? "ミュート解除" : "Unmute")
+        mute.tap()
+        XCTAssertEqual(mute.label, language == "ja" ? "ミュート" : "Mute")
         app.buttons["phoneLamp.KEY"].tap()
         let close = app.buttons["phoneAdjustmentClose"]
         XCTAssertTrue(close.waitForExistence(timeout: 5))

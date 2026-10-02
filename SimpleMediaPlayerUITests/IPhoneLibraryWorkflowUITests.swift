@@ -75,10 +75,59 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Export…"].isEnabled)
     }
 
-    @MainActor private func launch() -> XCUIApplication {
+    @MainActor func testEnglishLyricsEditorFitsPhoneScreen() {
+        verifyLyricsEditor(language: "en")
+    }
+
+    @MainActor func testJapaneseLyricsEditorFitsPhoneScreen() {
+        verifyLyricsEditor(language: "ja")
+    }
+
+    @MainActor private func verifyLyricsEditor(language: String) {
+        let app = launch(language: language)
+        let isJapanese = language == "ja"
+        app.buttons[isJapanese ? "すべての曲" : "All Songs"].tap()
+        let track = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'")).firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        track.tap()
+        let dock = app.buttons["phoneLEDDock"]
+        XCTAssertTrue(dock.waitForExistence(timeout: 10))
+        dock.tap()
+        app.buttons["phonePage.Lyrics"].tap()
+        let edit = app.navigationBars.buttons[isJapanese ? "歌詞を編集…" : "Edit Lyrics…"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        let editor = app.textViews[isJapanese ? "歌詞" : "Lyrics"]
+        let cancel = app.buttons[isJapanese ? "キャンセル" : "Cancel"]
+        let save = app.buttons[isJapanese ? "保存" : "Save"]
+        for element in [
+            editor, cancel, save,
+            app.buttons[isJapanese ? "アプリ内のみ" : "App Only"],
+            app.buttons[isJapanese ? "タグに埋め込む" : "Embed in File"]
+        ] {
+            XCTAssertTrue(element.waitForExistence(timeout: 5))
+            XCTAssertTrue(app.frame.contains(element.frame), "Control extends beyond the screen: \(element.label)")
+        }
+        XCTAssertTrue(editor.isHittable)
+        XCTAssertTrue(cancel.isHittable)
+        XCTAssertTrue(save.isHittable)
+        cancel.tap()
+        waitForDisappearance(editor)
+        edit.tap()
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+        waitForDisappearance(editor)
+    }
+
+    @MainActor private func waitForDisappearance(_ element: XCUIElement) {
+        let disappeared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        wait(for: [disappeared], timeout: 5)
+    }
+
+    @MainActor private func launch(language: String = "en") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-testing-phone-layout", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+            "--ui-testing-phone-layout", "-AppleLanguages", "(\(language))", "-AppleLocale", language,
             "-volumeNormalizationEnabled", "NO"
         ]
         app.launch()
