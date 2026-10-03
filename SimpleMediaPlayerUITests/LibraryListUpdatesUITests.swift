@@ -46,9 +46,7 @@ final class LibraryListUpdatesUITests: XCTestCase {
         beginMultipleSelection(in: app)
         press(first)
         press(second)
-        let selected = app.buttons["editSelectedMediaButton"]
-        XCTAssertTrue(selected.waitForExistence(timeout: 5))
-        waitForValue("2", of: selected)
+        verifyMultipleSelection(of: [first, second], in: app)
         endMultipleSelection(in: app)
 
         refineSearch(in: app)
@@ -125,6 +123,26 @@ final class LibraryListUpdatesUITests: XCTestCase {
         let multipleEdit = app.buttons["multipleEditButton"]
         XCTAssertTrue(multipleEdit.waitForExistence(timeout: 5))
         press(multipleEdit)
+    }
+
+    @MainActor
+    private func verifyMultipleSelection(of rows: [XCUIElement], in app: XCUIApplication) {
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            // An expanded search field can move the edit button into the tablet toolbar overflow.
+            let selected = rows.map {
+                XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: $0)
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: selected, timeout: 10), .completed)
+            let status = app.staticTexts["bulkSelectionStatus"]
+            XCTAssertTrue(status.waitForExistence(timeout: 5))
+            waitForValue(String(rows.count), of: status)
+            return
+        }
+        #endif
+        let selected = app.buttons["editSelectedMediaButton"]
+        XCTAssertTrue(selected.waitForExistence(timeout: 5))
+        waitForValue(String(rows.count), of: selected)
     }
 
     @MainActor
