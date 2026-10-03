@@ -13,6 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Select Xcode with an iOS 27.1 or newer SDK
+        run: |
+          for app in /Applications/Xcode*.app; do
+            candidate="${app}/Contents/Developer"
+            sdk_version=$(DEVELOPER_DIR="${candidate}" xcrun --sdk iphonesimulator --show-sdk-version 2>/dev/null) || continue
+            if [[ "${sdk_version}" == 27.[1-9]* ]] || (( ${sdk_version%%.*} > 27 )); then
+              printf 'DEVELOPER_DIR=%s\n' "${candidate}" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "::error::Install Xcode 27.1 (Beta is supported) on the xcode-27 runner."
+          exit 1
+
       - name: Build for macOS
         run: |
           xcodebuild \

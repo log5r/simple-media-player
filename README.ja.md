@@ -7,12 +7,16 @@
 
 ## 必要な環境
 
-- Xcode 27以降（Swift 6以降とMusic UnderstandingのSDKを含む）
+- Xcode 27.1以降（Swift 6以降とMusic UnderstandingのSDKを含む。Xcode 27.1 Betaにも対応）
 - Xcodeプロジェクトが対応するAppleプラットフォームのSDK
 - [Music Understanding](https://developer.apple.com/documentation/musicunderstanding)を使った音楽解析には、macOS 27以降、iOS 27以降、またはiPadOS 27以降が必要です。それより前のOSでは音楽解析を利用できません。
 
 埋め込みタグの形式別・項目別の対応範囲は[音声メタデータの対応表](docs/embedded-audio-metadata.ja.md)（[English](docs/embedded-audio-metadata.md)）を参照してください。
 [追加の音声形式](docs/extended-audio-formats.ja.md)（[English](docs/extended-audio-formats.md)）には、WMA・WavPack・Monkey's Audio・Musepackの再生、キャッシュ、制限事項を記載しています。
+
+## iPhone Duo
+
+開いた内側の画面では、サイドバー・メディア一覧・詳細・LED再生パネルを表示します。幅の狭いウィンドウと閉じた外側の画面では、iPhone向けのタブとデッキを使います。レイアウトが変わっても、再生とライブラリの閲覧状態を引き継ぎます。対応する表示とSimulatorでの確認方法は[レイアウトと検証](docs/iphone-duo.ja.md)を参照してください。
 
 ## ローカライズ
 

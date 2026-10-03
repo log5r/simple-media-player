@@ -41,7 +41,8 @@ final class IPhoneLayoutUITests: XCTestCase {
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-testing-phone-layout", "-AppleLanguages", "(\(language))", "-AppleLocale", language,
+            "--ui-testing-phone-layout", "--ui-testing-compact-layout",
+            "-AppleLanguages", "(\(language))", "-AppleLocale", language,
             "-appearanceMode", appearance, "-ledDisplayStyle", style,
             "-volumeNormalizationEnabled", "NO"
         ]

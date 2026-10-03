@@ -42,7 +42,7 @@ struct PitchSpeedControlsView: View {
             }
             .help(L10n.string("Save adjusted copy"))
         }
-        .frame(width: 96, height: 34)
+        .frame(width: BottomPanelMetrics.adjustmentWidth, height: BottomPanelMetrics.controlHeight)
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .overlay(RoundedRectangle(cornerRadius: 3).stroke(palette.controlStroke, lineWidth: 1))
         .shadow(color: palette.buttonShadow, radius: 2, y: 1)
@@ -106,7 +106,8 @@ struct PitchSpeedControlsView: View {
                     .foregroundStyle(iconColor(active: active, isEnabled: isEnabled))
                     .shadow(color: active ? palette.activeIconShadow : .clear, radius: 3)
             }
-            .frame(width: 32, height: 34)
+            .frame(width: BottomPanelMetrics.adjustmentButtonWidth, height: BottomPanelMetrics.controlHeight)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isEnabled == false)
@@ -177,6 +178,9 @@ private struct PitchPopover: View {
             .accessibilityIdentifier("pitchResetButton")
             .disabled(player.pitchSemitones == 0)
             .frame(maxWidth: .infinity)
+            #if os(iOS)
+            .frame(minHeight: 44)
+            #endif
         }
     }
 
@@ -192,11 +196,27 @@ private struct PitchPopover: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .bold))
-                .frame(width: 30, height: 26)
+                .frame(width: popoverButtonWidth, height: popoverButtonHeight)
         }
         .accessibilityLabel(label)
         .accessibilityIdentifier(systemName == "minus" ? "pitchDownButton" : "pitchUpButton")
         .help(label)
+    }
+
+    private var popoverButtonWidth: CGFloat {
+        #if os(iOS)
+        44
+        #else
+        30
+        #endif
+    }
+
+    private var popoverButtonHeight: CGFloat {
+        #if os(iOS)
+        44
+        #else
+        26
+        #endif
     }
 }
 
@@ -237,6 +257,9 @@ private struct SpeedPopover: View {
                 in: PlayerViewModel.playbackRateRange,
                 step: PlayerViewModel.playbackRateStep
             )
+            #if os(iOS)
+            .frame(minHeight: 44)
+            #endif
             .accessibilityLabel(L10n.string("Speed"))
             .accessibilityValue(PitchSpeedTextFormatter.rate(player.playbackRate))
             HStack {
@@ -255,6 +278,9 @@ private struct SpeedPopover: View {
             .accessibilityIdentifier("speedResetButton")
             .disabled(abs(player.playbackRate - 1.0) <= 0.001)
             .frame(maxWidth: .infinity)
+            #if os(iOS)
+            .frame(minHeight: 44)
+            #endif
         }
     }
 
@@ -262,11 +288,27 @@ private struct SpeedPopover: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .bold))
-                .frame(width: 30, height: 26)
+                .frame(width: popoverButtonWidth, height: popoverButtonHeight)
         }
         .accessibilityLabel(label)
         .accessibilityIdentifier(systemName == "minus" ? "slowerButton" : "fasterButton")
         .help(label)
+    }
+
+    private var popoverButtonWidth: CGFloat {
+        #if os(iOS)
+        44
+        #else
+        30
+        #endif
+    }
+
+    private var popoverButtonHeight: CGFloat {
+        #if os(iOS)
+        44
+        #else
+        26
+        #endif
     }
 }
 

@@ -198,7 +198,8 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
     @MainActor private func launch(language: String = "en", extraArguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-testing-phone-layout", "-AppleLanguages", "(\(language))", "-AppleLocale", language,
+            "--ui-testing-phone-layout", "--ui-testing-compact-layout",
+            "-AppleLanguages", "(\(language))", "-AppleLocale", language,
             "-volumeNormalizationEnabled", "NO"
         ]
         app.launchArguments += extraArguments

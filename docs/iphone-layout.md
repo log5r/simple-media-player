@@ -3,8 +3,9 @@
 **English** | [日本語](iphone-layout.ja.md)
 
 This document defines the screen layout used on iPhone.
-It covers the portrait, compact-width layout on iPhone and does not cover iPhone Duo.
-The iPad and macOS layouts stay as they are.
+It covers the portrait, compact-width layout on iPhone.
+[iPhone Duo](iphone-duo.md) uses this layout on its compact outer display and a shared desktop-style layout on its regular-width inner display.
+The macOS layout stays as it is; iPad uses the shared expanded layout with touch controls.
 Mockups are on the [design canvas](https://claude.ai/artifact/TVYKLHj5PkKKAhv8iCYpNL) (viewing it requires sharing access).
 
 ## Current Problems

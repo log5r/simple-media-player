@@ -19,7 +19,7 @@ final class IPhoneInformationAccessibilityUITests: XCTestCase {
     @MainActor private func verifyInformation(language: String) {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-testing-phone-layout", "--ui-testing-phone-large-text",
+            "--ui-testing-phone-layout", "--ui-testing-compact-layout", "--ui-testing-phone-large-text",
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
             "-AppleLanguages", "(\(language))", "-AppleLocale", language,
             "-volumeNormalizationEnabled", "NO"
