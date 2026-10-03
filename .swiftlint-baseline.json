@@ -1099,8 +1099,8 @@
     "violation": {
       "location": {
         "character": 13,
-        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
-        "line": 1007
+        "file": "SimpleMediaPlayer/Views/Top/AlbumBrowserView.swift",
+        "line": 178
       },
       "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 63 lines",
       "ruleDescription": "Function bodies should not span too many lines",
@@ -1114,8 +1114,8 @@
     "violation": {
       "location": {
         "character": 5,
-        "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
-        "line": 1750
+        "file": "SimpleMediaPlayer/Views/Top/MediaListTableSupport.swift",
+        "line": 285
       },
       "reason": "Function should have complexity 10 or less; currently complexity is 16",
       "ruleDescription": "Complexity of function bodies should be limited.",

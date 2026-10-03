@@ -854,6 +854,16 @@
         }
       }
     },
+    "Checking metadata editability…" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メタデータを編集できるか確認中…"
+          }
+        }
+      }
+    },
     "Close" : {
       "localizations" : {
         "ja" : {

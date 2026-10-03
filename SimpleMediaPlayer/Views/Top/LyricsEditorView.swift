@@ -13,6 +13,9 @@ struct LyricsEditorView: View {
     @State private var saveLocation = LyricsSaveLocation.applicationOnly
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var canEmbedLyrics = false
+    @State private var isCheckingEditability = true
+    @State private var editabilityRequestID: UUID?
 
     init(item: MediaItem, libraryService: LibraryService) {
         self.item = item
@@ -70,6 +73,12 @@ struct LyricsEditorView: View {
             minHeight: usesPhoneLayout ? nil : 400,
             idealHeight: usesPhoneLayout ? nil : 520
         )
+        .task(id: item.id) {
+            await loadEditability()
+        }
+        .onDisappear {
+            editabilityRequestID = nil
+        }
     }
 
     private var saveOptions: some View {
@@ -92,7 +101,10 @@ struct LyricsEditorView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if canEmbedLyrics == false {
+            if isCheckingEditability {
+                ProgressView("Checking metadata editability…")
+                    .font(.caption)
+            } else if canEmbedLyrics == false {
                 Label("This file format does not support embedded lyrics editing.", systemImage: "lock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -109,8 +121,18 @@ struct LyricsEditorView: View {
         .background(.bar)
     }
 
-    private var canEmbedLyrics: Bool {
-        libraryService.canEditEmbeddedMetadata(for: item)
+    private func loadEditability() async {
+        let itemID = item.id
+        let requestID = UUID()
+        editabilityRequestID = requestID
+        canEmbedLyrics = false
+        isCheckingEditability = true
+        guard let isEditable = try? await libraryService.canEditEmbeddedMetadata(for: item),
+              Task.isCancelled == false, editabilityRequestID == requestID, item.id == itemID,
+              item.isDeleted == false, item.modelContext === modelContext else { return }
+        canEmbedLyrics = isEditable
+        isCheckingEditability = false
+        if isEditable == false { saveLocation = .applicationOnly }
     }
 
     private func save() {

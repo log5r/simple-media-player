@@ -18,7 +18,11 @@ struct SimpleMediaPlayerApp: App {
 
     init() {
         BundledFontRegistry.registerFonts()
+        #if DEBUG
+        let libraryService = MetadataEditabilityUITestFixture.makeLibraryService()
+        #else
         let libraryService = LibraryService()
+        #endif
         _libraryService = State(initialValue: libraryService)
         _player = State(initialValue: PlayerViewModel(libraryService: libraryService))
     }
