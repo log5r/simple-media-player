@@ -26,6 +26,7 @@ final class LibraryService {
     @ObservationIgnored private let artworkProcessor: ArtworkProcessor
     @ObservationIgnored let artworkLoader: LibraryArtworkLoader
     @ObservationIgnored private let lyricsReader: EmbeddedLyricsReader
+    @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var editedLyricsItemIDs: Set<UUID> = []
     @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
@@ -55,12 +56,14 @@ final class LibraryService {
         mediaDirectoryURL: URL? = nil,
         artworkProcessor: ArtworkProcessor = ArtworkProcessor(),
         lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader(),
-        artworkLoader: LibraryArtworkLoader = .shared
+        artworkLoader: LibraryArtworkLoader = .shared,
+        editabilityChecker: EmbeddedMetadataEditabilityChecker = EmbeddedMetadataEditabilityChecker()
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
         self.artworkLoader = artworkLoader
+        self.editabilityChecker = editabilityChecker
     }
 
     func importFiles(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
@@ -156,22 +159,7 @@ final class LibraryService {
     }
 
     func resolvedURL(for item: MediaItem) -> URL? {
-        var stale = false
-        do {
-            #if os(macOS)
-            let options: URL.BookmarkResolutionOptions = [.withSecurityScope]
-            #else
-            let options: URL.BookmarkResolutionOptions = []
-            #endif
-            return try URL(
-                resolvingBookmarkData: item.bookmarkData,
-                options: options,
-                relativeTo: nil,
-                bookmarkDataIsStale: &stale
-            )
-        } catch {
-            return fallbackMediaURL(forFileName: item.fileName)
-        }
+        EmbeddedMetadataEditabilityChecker.resolve(item.bookmarkData, fallbackMediaURL(forFileName: item.fileName))
     }
 
     func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
@@ -183,12 +171,17 @@ final class LibraryService {
         return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
     }
 
-    func canEditEmbeddedMetadata(for item: MediaItem) -> Bool {
-        guard let url = resolvedURL(for: item) else { return false }
-        return ID3TagWriter.canWriteMetadata(to: url)
-            || MP4MetadataWriter.canWriteMetadata(to: url)
-            || AIFFMetadataWriter.canWriteMetadata(to: url)
-            || AdditionalAudioMetadata.canWrite(to: url)
+    func editableMetadataItemIDs(for items: [MediaItem]) async throws -> Set<UUID> {
+        try Task.checkCancellation()
+        let inputs = items.map {
+            EmbeddedMetadataEditabilityChecker.Input(id: $0.id, bookmarkData: $0.bookmarkData, fileName: $0.fileName)
+        }
+        return try await editabilityChecker.editableIDs(for: inputs) { self.mediaDirectoryURL() }
+    }
+
+    func canEditEmbeddedMetadata(for item: MediaItem) async throws -> Bool {
+        let itemID = item.id
+        return try await editableMetadataItemIDs(for: [item]).contains(itemID)
     }
 
     func saveLyrics(_ lyrics: String, for item: MediaItem, embedInFile: Bool, in context: ModelContext) async throws {
@@ -197,13 +190,15 @@ final class LibraryService {
         let normalizedLyrics = lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : lyrics
 
         if embedInFile {
+            let itemID = item.id
+            let bookmarkData = item.bookmarkData
+            let fileName = item.fileName
             guard let url = resolvedURL(for: item) else {
                 throw MediaMetadataEditError.cannotResolveFile
             }
-            let canWriteMetadata = ID3TagWriter.canWriteMetadata(to: url)
-                || MP4MetadataWriter.canWriteMetadata(to: url)
-                || AIFFMetadataWriter.canWriteMetadata(to: url)
-                || AdditionalAudioMetadata.canWrite(to: url)
+            let canWriteMetadata = try await editabilityChecker.canWriteMetadata(to: url)
+            guard item.id == itemID, item.bookmarkData == bookmarkData, item.fileName == fileName,
+                  item.isDeleted == false, item.modelContext === context else { throw CancellationError() }
             guard canWriteMetadata else {
                 throw MediaMetadataEditError.unsupportedFileFormat
             }
@@ -283,9 +278,9 @@ final class LibraryService {
         }
         try Task.checkCancellation()
 
-        if AdditionalAudioMetadata.canWrite(to: url),
-           let embedded = try? await Task.detached(priority: .utility, operation: {
-               try AdditionalAudioMetadata.read(from: url)
+        if let embedded = try? await Task.detached(priority: .utility, operation: {
+               guard AdditionalAudioMetadata.canWrite(to: url) else { return nil as AudioTagReadResult? }
+               return try AdditionalAudioMetadata.read(from: url)
            }).value {
             try Task.checkCancellation()
             draft = draft.applying(embedded.values)
@@ -311,6 +306,9 @@ final class LibraryService {
         draft: MediaMetadataEditDraft,
         in context: ModelContext
     ) async throws {
+        let itemID = item.id
+        let bookmarkData = item.bookmarkData
+        let fileName = item.fileName
         guard let url = resolvedURL(for: item) else {
             if draft.editsArtwork {
                 item.artworkData = draft.artworkData
@@ -319,10 +317,9 @@ final class LibraryService {
             }
             throw MediaMetadataEditError.cannotResolveFile
         }
-        let canWriteMetadata = ID3TagWriter.canWriteMetadata(to: url)
-            || MP4MetadataWriter.canWriteMetadata(to: url)
-            || AIFFMetadataWriter.canWriteMetadata(to: url)
-            || AdditionalAudioMetadata.canWrite(to: url)
+        let canWriteMetadata = try await editabilityChecker.canWriteMetadata(to: url)
+        guard item.id == itemID, item.bookmarkData == bookmarkData, item.fileName == fileName,
+              item.isDeleted == false, item.modelContext === context else { throw CancellationError() }
         guard canWriteMetadata || draft.editsArtwork else {
             throw MediaMetadataEditError.unsupportedFileFormat
         }
@@ -346,6 +343,13 @@ final class LibraryService {
             }.value
         }
 
+        applyMetadataValues(draft, to: item, fileURL: url, canWriteMetadata: canWriteMetadata)
+        try context.save()
+    }
+
+    private func applyMetadataValues(
+        _ draft: MediaMetadataEditDraft, to item: MediaItem, fileURL url: URL, canWriteMetadata: Bool
+    ) {
         let modelValues = draft.normalizedModelValues(fileURL: url)
         if canWriteMetadata {
             item.title = modelValues.title
@@ -366,7 +370,6 @@ final class LibraryService {
         if draft.editsLyrics {
             item.lyricsRaw = draft.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft.lyrics
         }
-        try context.save()
     }
 
     func updateEmbeddedMetadata(
@@ -549,18 +552,15 @@ extension LibraryService {
             id3 = nil
         }
         let additional: AudioTagReadResult?
-        if AdditionalAudioMetadata.canWrite(to: url) {
-            do {
-                additional = try await Task.detached(priority: .utility) {
-                    try AdditionalAudioMetadata.read(from: url)
-                }.value
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                try Task.checkCancellation()
-                additional = nil
-            }
-        } else {
+        do {
+            additional = try await Task.detached(priority: .utility) {
+                guard AdditionalAudioMetadata.canWrite(to: url) else { return nil as AudioTagReadResult? }
+                return try AdditionalAudioMetadata.read(from: url)
+            }.value
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
             additional = nil
         }
         return ImportSources(
