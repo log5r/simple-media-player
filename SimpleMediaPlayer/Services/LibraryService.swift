@@ -461,8 +461,8 @@ extension LibraryService {
         for entry in entries { entry.item = nil }
         if let url = resolvedURL(for: item) {
             let cacheURL = ExtendedAudioSource.cacheURL(for: url)
-            try? FileManager.default.removeItem(at: url)
             if let cacheURL { ExtendedAudioSource.removeCacheInBackground(at: cacheURL) }
+            try? FileManager.default.removeItem(at: url)
         }
         context.delete(item)
         try? context.save()
@@ -479,13 +479,13 @@ extension LibraryService {
         var didCreateItem = false
         defer { if didCreateItem == false { try? FileManager.default.removeItem(at: copiedURL) } }
         if sources.extended != nil {
-            let prepareTask = Task.detached(priority: .utility) {
-                try ExtendedAudioSource.readableURL(for: copiedURL)
+            let validationTask = Task.detached(priority: .utility) {
+                try ExtendedAudioSource.validate(for: copiedURL)
             }
-            _ = try await withTaskCancellationHandler {
-                try await prepareTask.value
+            try await withTaskCancellationHandler {
+                try await validationTask.value
             } onCancel: {
-                prepareTask.cancel()
+                validationTask.cancel()
             }
         }
         #if os(macOS)

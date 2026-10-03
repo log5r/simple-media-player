@@ -187,10 +187,14 @@ struct LibraryServicePersistenceTests {
         let mediaDirectory = try sandbox.createDirectory(named: "Media")
         let fixture = try makePersistenceFixture(mediaDirectory: mediaDirectory)
         let fileURL = mediaDirectory.appendingPathComponent("delete-me.wv")
-        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let source = Bundle.allBundles.compactMap({
+            $0.url(forResource: "extended-test", withExtension: "wv")
+        }).first ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/extended-test.wv")
         try FileManager.default.copyItem(at: source, to: fileURL)
-        let cacheURL = try ExtendedAudioSource.readableURL(for: fileURL)
+        let cached = try ExtendedAudioSource.readableFile(for: fileURL)
+        let cacheURL = cached.url
+        cached.release()
         defer { try? FileManager.default.removeItem(at: cacheURL) }
         let item = makeItem(bookmarkData: Data([0xFF]), fileName: fileURL.lastPathComponent)
         fixture.context.insert(item)

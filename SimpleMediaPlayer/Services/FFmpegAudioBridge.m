@@ -41,6 +41,57 @@ static NSError *SMPAVError(int code) {
     return SMPError(code, [NSString stringWithUTF8String:message]);
 }
 
+@implementation SMPAudioCacheSizeLimit
+
++ (NSNumber *)maximumFramesForFormat:(AVAudioFormat *)format
+                        maxFileBytes:(int64_t)maxFileBytes
+                               error:(NSError **)error {
+    static NSCache<AVAudioFormat *, NSDictionary<NSString *, NSNumber *> *> *sizes;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sizes = [[NSCache alloc] init];
+        sizes.countLimit = 64;
+    });
+    NSDictionary<NSString *, NSNumber *> *size = [sizes objectForKey:format];
+    if (!size) {
+        NSURL *probeURL = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+            URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.caf", NSUUID.UUID.UUIDString]];
+        NSError *failure = nil;
+        AVAudioFormat *storedFormat = nil;
+        @autoreleasepool {
+            AVAudioFile *probe = [[AVAudioFile alloc] initForWriting:probeURL
+                                                          settings:format.settings
+                                                      commonFormat:format.commonFormat
+                                                       interleaved:format.isInterleaved
+                                                             error:&failure];
+            storedFormat = probe.fileFormat;
+            // Closing the zero-frame writer finalizes the same CAF header used for decoded caches.
+            probe = nil;
+        }
+        NSDictionary<NSFileAttributeKey, id> *attributes = storedFormat
+            ? [[NSFileManager defaultManager] attributesOfItemAtPath:probeURL.path error:&failure] : nil;
+        [[NSFileManager defaultManager] removeItemAtURL:probeURL error:nil];
+        NSNumber *headerBytes = attributes[NSFileSize];
+        int64_t bytesPerFrame = storedFormat ? storedFormat.streamDescription->mBytesPerFrame : 0;
+        int64_t channels = storedFormat.isInterleaved ? 1 : storedFormat.channelCount;
+        if (!headerBytes || headerBytes.longLongValue <= 0 || bytesPerFrame <= 0
+            || channels <= 0 || bytesPerFrame > INT64_MAX / channels) {
+            if (error) *error = failure ?: SMPError(EINVAL, @"Could not determine the decoded cache file size.");
+            return nil;
+        }
+        size = @{@"header": headerBytes, @"frame": @(bytesPerFrame * channels)};
+        [sizes setObject:size forKey:format];
+    }
+    int64_t headerBytes = size[@"header"].longLongValue;
+    if (maxFileBytes < headerBytes) {
+        if (error) *error = SMPError(EFBIG, @"The decoded audio exceeds the cache size limit.");
+        return nil;
+    }
+    return @((maxFileBytes - headerBytes) / size[@"frame"].longLongValue);
+}
+
+@end
+
 static NSString *SMPTag(AVDictionary *metadata, const char *key) {
     AVDictionaryEntry *entry = av_dict_get(metadata, key, NULL, 0);
     return entry && entry->value ? [NSString stringWithUTF8String:entry->value] : nil;
@@ -76,15 +127,17 @@ static int SMPOpen(NSURL *url, AVFormatContext **format, AVCodecContext **codec,
     return avcodec_open2(*codec, decoder, NULL);
 }
 
-static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t maxBytes,
-                                 AVAudioFile * __strong *output, AVAudioFormat * __strong *outputFormat,
-                                 SwrContext **resampler, int64_t *writtenFrames, NSError **failure) {
-    if (!*output) {
+static BOOL SMPConvertDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t maxBytes,
+                                   AVAudioFile * __strong *output, AVAudioFormat * __strong *outputFormat,
+                                   SwrContext **resampler, int64_t *writtenFrames,
+                                   int64_t *maximumFileFrames, NSError **failure) {
+    if (frame && (frame->ch_layout.nb_channels < 1 || frame->ch_layout.nb_channels > 8
+                  || frame->sample_rate <= 0 || frame->nb_samples < 0)) {
+        *failure = SMPError(EINVAL, @"Unsupported audio channel layout, sample rate, or frame size.");
+        return NO;
+    }
+    if (!*outputFormat) {
         int channels = frame->ch_layout.nb_channels;
-        if (channels < 1 || channels > 8 || frame->sample_rate <= 0) {
-            *failure = SMPError(EINVAL, @"Unsupported audio channel layout or sample rate.");
-            return NO;
-        }
         *outputFormat = [[AVAudioFormat alloc] initWithCommonFormat:AVAudioPCMFormatFloat32
                                                          sampleRate:frame->sample_rate
                                                            channels:channels
@@ -93,12 +146,18 @@ static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t 
             *failure = SMPError(EINVAL, @"Could not create an audio output format.");
             return NO;
         }
-        *output = [[AVAudioFile alloc] initForWriting:destinationURL
-                                            settings:(*outputFormat).settings
-                                        commonFormat:AVAudioPCMFormatFloat32
-                                         interleaved:NO
-                                               error:failure];
-        if (!*output) return NO;
+        NSNumber *maximumFrames = [SMPAudioCacheSizeLimit maximumFramesForFormat:*outputFormat
+                                                                   maxFileBytes:maxBytes error:failure];
+        if (!maximumFrames) return NO;
+        *maximumFileFrames = maximumFrames.longLongValue;
+        if (destinationURL) {
+            *output = [[AVAudioFile alloc] initForWriting:destinationURL
+                                                settings:(*outputFormat).settings
+                                            commonFormat:AVAudioPCMFormatFloat32
+                                             interleaved:NO
+                                                   error:failure];
+            if (!*output) return NO;
+        }
         AVChannelLayout outputLayout;
         av_channel_layout_default(&outputLayout, channels);
         int result = swr_alloc_set_opts2(resampler, &outputLayout, AV_SAMPLE_FMT_FLTP,
@@ -113,8 +172,9 @@ static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t 
         if (result < 0) { *failure = SMPAVError(result); return NO; }
     }
 
-    int capacity = swr_get_out_samples(*resampler, frame->nb_samples);
-    if (capacity <= 0 || capacity > UINT32_MAX) {
+    int capacity = swr_get_out_samples(*resampler, frame ? frame->nb_samples : 0);
+    if (!frame && capacity == 0) return YES;
+    if (capacity <= 0) {
         *failure = SMPError(EINVAL, @"Invalid decoded audio frame size.");
         return NO;
     }
@@ -122,16 +182,17 @@ static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t 
                                                             frameCapacity:(AVAudioFrameCount)capacity];
     if (!buffer) { *failure = SMPError(ENOMEM, @"Could not allocate an audio output buffer."); return NO; }
     int converted = swr_convert(*resampler, (uint8_t **)buffer.floatChannelData,
-                                capacity, (const uint8_t **)frame->extended_data, frame->nb_samples);
+                                capacity, frame ? (const uint8_t **)frame->extended_data : NULL,
+                                frame ? frame->nb_samples : 0);
     if (converted < 0) { *failure = SMPAVError(converted); return NO; }
     buffer.frameLength = (AVAudioFrameCount)converted;
-    *writtenFrames += converted;
-    if (*writtenFrames * (*outputFormat).channelCount * sizeof(float) > maxBytes) {
+    int64_t maximumFrames = maxBytes / ((*outputFormat).channelCount * sizeof(float));
+    if (converted > maximumFrames - *writtenFrames || converted > *maximumFileFrames - *writtenFrames) {
         *failure = SMPError(EFBIG, @"The decoded audio exceeds the cache size limit.");
         return NO;
     }
-    if (![*output writeFromBuffer:buffer error:failure]) return NO;
-    av_frame_unref(frame);
+    *writtenFrames += converted;
+    if (*output && converted > 0 && ![*output writeFromBuffer:buffer error:failure]) return NO;
     return YES;
 }
 
@@ -185,7 +246,7 @@ static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t 
     return info;
 }
 
-+ (BOOL)decodeURL:(NSURL *)url
++ (BOOL)processURL:(NSURL *)url
              toCAF:(NSURL *)destinationURL
           maxBytes:(int64_t)maxBytes
       shouldCancel:(BOOL (^)(void))shouldCancel
@@ -202,8 +263,10 @@ static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t 
     AVAudioFile *output = nil;
     AVAudioFormat *outputFormat = nil;
     int64_t writtenFrames = 0;
+    int64_t maximumFileFrames = 0;
 
     if (result < 0) { failure = SMPAVError(result); goto cleanup; }
+    if (maxBytes <= 0) { failure = SMPError(EFBIG, @"Invalid decoded audio size limit."); goto cleanup; }
     packet = av_packet_alloc();
     frame = av_frame_alloc();
     if (!packet || !frame) { failure = SMPError(ENOMEM, @"Could not allocate an audio decoder buffer."); goto cleanup; }
@@ -216,8 +279,10 @@ static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t 
         if (result < 0) { failure = SMPAVError(result); goto cleanup; }
 
         while ((result = avcodec_receive_frame(codec, frame)) >= 0) {
-            if (!SMPWriteDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
-                                      &resampler, &writtenFrames, &failure)) goto cleanup;
+            if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
+            if (!SMPConvertDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
+                                        &resampler, &writtenFrames, &maximumFileFrames, &failure)) goto cleanup;
+            av_frame_unref(frame);
         }
         if (result != AVERROR(EAGAIN) && result != AVERROR_EOF) {
             failure = SMPAVError(result); goto cleanup;
@@ -228,11 +293,23 @@ static BOOL SMPWriteDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_t 
     result = avcodec_send_packet(codec, NULL);
     if (result < 0) { failure = SMPAVError(result); goto cleanup; }
     while ((result = avcodec_receive_frame(codec, frame)) >= 0) {
-        if (!SMPWriteDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
-                                  &resampler, &writtenFrames, &failure)) goto cleanup;
+        if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
+        if (!SMPConvertDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
+                                    &resampler, &writtenFrames, &maximumFileFrames, &failure)) goto cleanup;
+        av_frame_unref(frame);
     }
     if (result != AVERROR_EOF) { failure = SMPAVError(result); goto cleanup; }
-    if (!output || writtenFrames == 0) {
+    if (resampler) {
+        int64_t previousFrames;
+        do {
+            if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
+            previousFrames = writtenFrames;
+            if (!SMPConvertDecodedFrame(NULL, destinationURL, maxBytes, &output, &outputFormat,
+                                        &resampler, &writtenFrames, &maximumFileFrames, &failure)) goto cleanup;
+        } while (writtenFrames > previousFrames);
+    }
+    if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
+    if (writtenFrames == 0) {
         failure = SMPError(EINVAL, @"The file contains no decodable audio."); goto cleanup;
     }
     success = YES;
@@ -245,6 +322,21 @@ cleanup:
     avformat_close_input(&format);
     if (!success && error) *error = failure ?: SMPError(EINVAL, @"Audio decoding failed.");
     return success;
+}
+
++ (BOOL)validateURL:(NSURL *)url
+          maxBytes:(int64_t)maxBytes
+      shouldCancel:(BOOL (^)(void))shouldCancel
+             error:(NSError **)error {
+    return [self processURL:url toCAF:nil maxBytes:maxBytes shouldCancel:shouldCancel error:error];
+}
+
++ (BOOL)decodeURL:(NSURL *)url
+             toCAF:(NSURL *)destinationURL
+          maxBytes:(int64_t)maxBytes
+      shouldCancel:(BOOL (^)(void))shouldCancel
+             error:(NSError **)error {
+    return [self processURL:url toCAF:destinationURL maxBytes:maxBytes shouldCancel:shouldCancel error:error];
 }
 
 @end

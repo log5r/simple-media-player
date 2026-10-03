@@ -32,15 +32,8 @@ nonisolated enum ExtendedAudioSource {
         let artworkData: Data?
     }
 
-    private struct CacheEntry {
-        let url: URL
-        let size: Int64
-        let modified: Date
-    }
-
-    private static let cacheLock = NSLock()
     private static let maximumFileBytes: Int64 = 4 * 1_024 * 1_024 * 1_024
-    private static let maximumCacheBytes: Int64 = 8 * 1_024 * 1_024 * 1_024
+    private static let cache = ExtendedAudioCache(maximumBytes: 8 * 1_024 * 1_024 * 1_024)
     private static let extensions: [String: Kind] = [
         "wma": .wma, "wv": .wavPack, "ape": .monkeysAudio, "mpc": .musepack
     ]
@@ -143,51 +136,58 @@ nonisolated enum ExtendedAudioSource {
         }
     }
 
-    static func readableURL(for url: URL) throws -> URL {
-        guard let kind = try kind(for: url) else { return url }
+    static func validate(for url: URL) throws {
+        try Task.checkCancellation()
+        guard let kind = try kind(for: url) else { return }
+        try checkDecodedSize(for: url, kind: kind)
+        try decode(url, kind: kind, to: nil, shouldCancel: { Task<Never, Never>.isCancelled })
+        try Task.checkCancellation()
+    }
+
+    static func readableFile(for url: URL) throws -> ExtendedAudioCache.ReadableFile {
+        try Task.checkCancellation()
+        guard let kind = try kind(for: url) else { return ExtendedAudioCache.ReadableFile(url: url) }
         let key = try cacheKey(for: url)
         let directory = try cacheDirectory()
         let destination = directory.appendingPathComponent(key).appendingPathExtension("caf")
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        try Task.checkCancellation()
-        if let file = try? AVAudioFile(forReading: destination), file.length > 0 {
-            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: destination.path)
-            return destination
-        }
-        try? FileManager.default.removeItem(at: destination)
-        let temp = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("caf")
-        defer { try? FileManager.default.removeItem(at: temp) }
+        return try cache.acquireReadableFile(at: destination, create: { temporary, shouldCancel in
+            try checkDecodedSize(for: url, kind: kind)
+            try decode(url, kind: kind, to: temporary, shouldCancel: shouldCancel)
+            let byteCount = try FileManager.default.attributesOfItem(atPath: temporary.path)[.size] as? Int64 ?? 0
+            guard byteCount > 0, byteCount <= maximumFileBytes else {
+                throw CocoaError(.fileReadTooLarge)
+            }
+        }, isSourceCurrent: { try cacheKey(for: url) == key })
+    }
+
+    private static func checkDecodedSize(for url: URL, kind: Kind) throws {
         let sourceInfo = try info(for: url, kind: kind)
         let estimatedBytes = sourceInfo.duration * (sourceInfo.sampleRate ?? 0)
             * Double(sourceInfo.channelCount) * 4
-        if estimatedBytes > Double(maximumFileBytes) {
-            throw CocoaError(.fileReadTooLarge)
-        }
+        if estimatedBytes > Double(maximumFileBytes) { throw CocoaError(.fileReadTooLarge) }
+    }
+
+    private static func decode(
+        _ url: URL, kind: Kind, to destination: URL?, shouldCancel: @escaping @Sendable () -> Bool
+    ) throws {
         switch kind {
         case .wma:
             do {
-                try SMPFFmpegAudio.decode(
-                    url, toCAF: temp, maxBytes: maximumFileBytes,
-                    shouldCancel: { Task<Never, Never>.isCancelled }
-                )
+                if let destination {
+                    try SMPFFmpegAudio.decode(
+                        url, toCAF: destination, maxBytes: maximumFileBytes, shouldCancel: shouldCancel
+                    )
+                } else {
+                    try SMPFFmpegAudio.validate(url, maxBytes: maximumFileBytes, shouldCancel: shouldCancel)
+                }
             } catch let error as NSError {
                 if error.code == NSUserCancelledError { throw CancellationError() }
                 if error.code == POSIXErrorCode.EFBIG.rawValue { throw CocoaError(.fileReadTooLarge) }
                 throw CocoaError(.fileReadCorruptFile)
             }
         case .wavPack, .monkeysAudio, .musepack:
-            try decodeWithSFB(url, to: temp)
+            try decodeWithSFB(url, to: destination, shouldCancel: shouldCancel)
         }
-        try Task.checkCancellation()
-        let byteCount = try FileManager.default.attributesOfItem(atPath: temp.path)[.size] as? Int64 ?? 0
-        guard byteCount > 0, byteCount <= maximumFileBytes,
-              let file = try? AVAudioFile(forReading: temp), file.length > 0 else {
-            throw CocoaError(.fileReadTooLarge)
-        }
-        try FileManager.default.moveItem(at: temp, to: destination)
-        pruneCache(in: directory, preserving: destination)
-        return destination
     }
 
     static func removeCache(for url: URL) {
@@ -201,13 +201,11 @@ nonisolated enum ExtendedAudioSource {
     }
 
     static func removeCacheInBackground(at cacheURL: URL) {
-        _ = Task.detached(priority: .utility) { removeCache(at: cacheURL) }
+        cache.removeInBackground(at: cacheURL)
     }
 
     private static func removeCache(at cacheURL: URL) {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        try? FileManager.default.removeItem(at: cacheURL)
+        cache.remove(at: cacheURL)
     }
 
     private static func cacheKey(for url: URL) throws -> String {
@@ -220,28 +218,41 @@ nonisolated enum ExtendedAudioSource {
         return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func decodeWithSFB(_ source: URL, to destination: URL) throws {
+    private static func decodeWithSFB(
+        _ source: URL, to destination: URL?, shouldCancel: () -> Bool
+    ) throws {
         let decoder = try AudioDecoder(url: source)
         try decoder.open()
         defer { try? decoder.close() }
         let format = decoder.processingFormat
-        let output = try AVAudioFile(
-            forWriting: destination, settings: format.settings,
-            commonFormat: format.commonFormat, interleaved: format.isInterleaved
-        )
+        let maximumFrames = try SMPAudioCacheSizeLimit.maximumFrames(
+            for: format, maxFileBytes: maximumFileBytes
+        ).int64Value
+        let output = try destination.map {
+            try AVAudioFile(
+                forWriting: $0, settings: format.settings,
+                commonFormat: format.commonFormat, interleaved: format.isInterleaved
+            )
+        }
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_384) else {
             throw CocoaError(.fileReadCorruptFile)
         }
         var writtenBytes: Int64 = 0
+        var decodedFrames: AVAudioFramePosition = 0
         while true {
-            try Task.checkCancellation()
+            if shouldCancel() { throw CancellationError() }
             try decoder.decode(into: buffer, length: buffer.frameCapacity)
             guard buffer.frameLength > 0 else { break }
+            decodedFrames += AVAudioFramePosition(buffer.frameLength)
+            guard decodedFrames <= maximumFrames else { throw CocoaError(.fileReadTooLarge) }
             let channelMultiplier = format.isInterleaved ? 1 : Int64(format.channelCount)
             writtenBytes += Int64(buffer.frameLength) * Int64(format.streamDescription.pointee.mBytesPerFrame)
                 * channelMultiplier
             guard writtenBytes <= maximumFileBytes else { throw CocoaError(.fileReadTooLarge) }
-            try output.write(from: buffer)
+            try output?.write(from: buffer)
+        }
+        guard writtenBytes > 0, decoder.length <= 0 || decodedFrames == decoder.length else {
+            throw CocoaError(.fileReadCorruptFile)
         }
     }
 
@@ -251,22 +262,5 @@ nonisolated enum ExtendedAudioSource {
         ).appendingPathComponent("CompatibleAudio", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
-    }
-
-    private static func pruneCache(in directory: URL, preserving keptURL: URL) {
-        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: Array(keys)
-        ) else { return }
-        let entries = urls.compactMap { url -> CacheEntry? in
-            guard let values = try? url.resourceValues(forKeys: keys),
-                  let size = values.fileSize, let date = values.contentModificationDate else { return nil }
-            return CacheEntry(url: url, size: Int64(size), modified: date)
-        }.sorted { $0.modified < $1.modified }
-        var total = entries.reduce(Int64(0)) { $0 + $1.size }
-        for entry in entries where total > maximumCacheBytes && entry.url != keptURL {
-            try? FileManager.default.removeItem(at: entry.url)
-            total -= entry.size
-        }
     }
 }
