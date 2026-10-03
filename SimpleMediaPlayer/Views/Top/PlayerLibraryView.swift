@@ -16,13 +16,14 @@ struct MainView: View {
     @Binding var isImporterPresented: Bool
 
     @State var selection: SidebarSelection = .library(.allSongs)
-    @State var searchText = ""
+    @State var searchText = LibraryListUITestFixture.searchText
     @State var searchFilter = LibrarySearchFilter()
     @State var importErrorPresented = false
     @State var addToPlaylistTarget: Playlist?
     @State var selectedItemID: UUID?
     @State var librarySortField: LibrarySortField = .dateAdded
     @State var librarySortDirection: LibrarySortDirection = .ascending
+    @State var listProjection = LibraryListProjection()
     @State var isPreparingExport = false
     @State var pendingExportPlan: MediaExportPlan?
     @State var namedExportRequest: (plan: MediaExportPlan, names: [UUID: String])?
@@ -171,6 +172,9 @@ struct MainView: View {
         #endif
     }
 
+}
+
+extension MainView {
     var desktopView: some View {
         VStack(spacing: 0) {
             NavigationSplitView {
@@ -237,6 +241,18 @@ struct MainView: View {
                 }
             )
         }
+        .modifier(LibraryListUpdates(
+            projection: listProjection,
+            items: items,
+            playlist: selectedPlaylist,
+            request: LibraryListRequest(
+                section: selectedSection,
+                searchText: searchText,
+                searchFilter: searchFilter,
+                sortField: librarySortField,
+                sortDirection: librarySortDirection
+            )
+        ))
     }
 
     #if os(iOS)

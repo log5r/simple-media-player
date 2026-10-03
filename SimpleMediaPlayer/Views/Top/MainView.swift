@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 import AppKit
 #endif
 
-enum LibrarySection: String, CaseIterable, Identifiable {
+nonisolated enum LibrarySection: String, CaseIterable, Identifiable, Sendable {
     case allSongs
     case allVideos
     case albums
@@ -41,7 +41,7 @@ enum SidebarSelection: Hashable {
     case playlist(UUID)
 }
 
-enum LibrarySortField: String, CaseIterable, Identifiable {
+nonisolated enum LibrarySortField: String, CaseIterable, Identifiable, Sendable {
     case dateAdded
     case title
     case artist
@@ -132,65 +132,92 @@ enum LibrarySortField: String, CaseIterable, Identifiable {
         }
     }
 
-    func sorted(_ items: [MediaItem], direction: LibrarySortDirection) -> [MediaItem] {
+    func sorted<Item: LibraryListItemValues>(_ items: [Item], direction: LibrarySortDirection) -> [Item] {
         items.sorted { lhs, rhs in
-            let comparison = compare(lhs, rhs)
-            if comparison != .orderedSame {
-                return direction == .ascending ? comparison == .orderedAscending : comparison == .orderedDescending
-            }
-
-            return fallbackCompare(lhs, rhs) == .orderedAscending
+            isOrderedBefore(lhs, rhs, direction: direction)
         }
     }
 
-    private func compare(_ lhs: MediaItem, _ rhs: MediaItem) -> ComparisonResult {
+    func sorted<Item: LibraryListItemValues>(
+        _ items: [Item],
+        direction: LibrarySortDirection,
+        cancellationCheck: () -> Bool
+    ) throws -> [Item] {
+        if cancellationCheck() { throw CancellationError() }
+        var comparisonsUntilCancellationCheck = 128
+        let sorted = try items.sorted { lhs, rhs in
+            comparisonsUntilCancellationCheck -= 1
+            if comparisonsUntilCancellationCheck == 0 {
+                if cancellationCheck() { throw CancellationError() }
+                comparisonsUntilCancellationCheck = 128
+            }
+            return isOrderedBefore(lhs, rhs, direction: direction)
+        }
+        if cancellationCheck() { throw CancellationError() }
+        return sorted
+    }
+
+    private func isOrderedBefore<Item: LibraryListItemValues>(
+        _ lhs: Item, _ rhs: Item, direction: LibrarySortDirection
+    ) -> Bool {
+        let comparison = compare(lhs, rhs)
+        if comparison != .orderedSame {
+            return direction == .ascending ? comparison == .orderedAscending : comparison == .orderedDescending
+        }
+        return fallbackCompare(lhs, rhs) == .orderedAscending
+    }
+
+    private func compare<Item: LibraryListItemValues>(_ lhs: Item, _ rhs: Item) -> ComparisonResult {
         switch self {
         case .dateAdded:
             compare(lhs.addedAt, rhs.addedAt)
-        case .title:
-            compare(lhs.title, rhs.title)
-        case .artist:
-            compare(lhs.displayArtist, rhs.displayArtist)
-        case .album:
-            compare(lhs.displayAlbum, rhs.displayAlbum)
-        case .genre:
-            compare(lhs.displayGenre, rhs.displayGenre)
         case .duration:
             compare(lhs.duration, rhs.duration)
-        case .trackNumber:
-            compareNumberMetadata(lhs.trackNumber, rhs.trackNumber)
-        case .year:
-            compareNumberMetadata(lhs.year, rhs.year)
-        case .albumArtist:
-            compareMetadata(lhs.albumArtist, rhs.albumArtist)
-        case .composer:
-            compareMetadata(lhs.composer, rhs.composer)
-        case .discNumber:
-            compareNumberMetadata(lhs.discNumber, rhs.discNumber)
+        case .title, .artist, .album, .genre, .albumArtist, .composer, .contentType, .fileName:
+            compare(stringValue(in: lhs), stringValue(in: rhs))
+        case .trackNumber, .year, .discNumber:
+            compareNumberMetadata(numberMetadata(in: lhs), numberMetadata(in: rhs))
         case .kind:
             compare(
                 lhs.isVideo ? L10n.string("Video") : L10n.string("Audio"),
                 rhs.isVideo ? L10n.string("Video") : L10n.string("Audio")
             )
-        case .contentType:
-            compare(lhs.displayContentType, rhs.displayContentType)
-        case .fileName:
-            compare(lhs.fileName, rhs.fileName)
         }
     }
 
-    private func fallbackCompare(_ lhs: MediaItem, _ rhs: MediaItem) -> ComparisonResult {
-        for comparison in [
-            compare(lhs.title, rhs.title),
-            compare(lhs.displayArtist, rhs.displayArtist),
-            compare(lhs.displayAlbum, rhs.displayAlbum),
-            compare(lhs.fileName, rhs.fileName),
-            compare(lhs.id.uuidString, rhs.id.uuidString)
-        ] where comparison != .orderedSame {
-            return comparison
+    private func stringValue<Item: LibraryListItemValues>(in item: Item) -> String {
+        switch self {
+        case .title: item.title
+        case .artist: item.displayArtist
+        case .album: item.displayAlbum
+        case .genre: item.displayGenre
+        case .albumArtist: normalizedMetadata(item.albumArtist)
+        case .composer: normalizedMetadata(item.composer)
+        case .contentType: item.displayContentType
+        case .fileName: item.fileName
+        default: ""
         }
+    }
 
-        return .orderedSame
+    private func numberMetadata<Item: LibraryListItemValues>(in item: Item) -> String? {
+        switch self {
+        case .trackNumber: item.trackNumber
+        case .year: item.year
+        case .discNumber: item.discNumber
+        default: nil
+        }
+    }
+
+    private func fallbackCompare<Item: LibraryListItemValues>(_ lhs: Item, _ rhs: Item) -> ComparisonResult {
+        let titleComparison = compare(lhs.title, rhs.title)
+        if titleComparison != .orderedSame { return titleComparison }
+        let artistComparison = compare(lhs.displayArtist, rhs.displayArtist)
+        if artistComparison != .orderedSame { return artistComparison }
+        let albumComparison = compare(lhs.displayAlbum, rhs.displayAlbum)
+        if albumComparison != .orderedSame { return albumComparison }
+        let fileNameComparison = compare(lhs.fileName, rhs.fileName)
+        if fileNameComparison != .orderedSame { return fileNameComparison }
+        return compare(lhs.id.uuidString, rhs.id.uuidString)
     }
 
     private func compare(_ lhs: String, _ rhs: String) -> ComparisonResult {
@@ -241,7 +268,7 @@ enum LibrarySortField: String, CaseIterable, Identifiable {
     }
 }
 
-enum LibrarySortDirection: String, CaseIterable, Identifiable {
+nonisolated enum LibrarySortDirection: String, CaseIterable, Identifiable, Sendable {
     case ascending
     case descending
 
