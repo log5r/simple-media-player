@@ -52,8 +52,10 @@ protocol VideoPlaybackControlling: AnyObject {
 final class PlayerViewModel {
     var currentItem: MediaItem?
     var queue: [MediaItem] = []
+    private(set) var isPaused = false
     var isPlaying = false {
         didSet {
+            if isPlaying { isPaused = false }
             guard isPlaying != oldValue else { return }
             audioFrame.isPlaying = isPlaying
             analyzer.setPlaybackActive(isPlaying, currentTime: currentTime)
@@ -181,6 +183,7 @@ final class PlayerViewModel {
         }
         audioEngine.onError = { [weak self] message in
             self?.errorMessage = message
+            self?.isPaused = false
             self?.isPlaying = false
             self?.formatInfo = .empty
             self?.resetSpectrumFrameRate()
@@ -195,7 +198,9 @@ final class PlayerViewModel {
         videoService.setEqualizer(equalizer)
         applyVolume()
     }
+}
 
+extension PlayerViewModel {
     func setVisualizerBandCount(_ count: Int?) {
         analyzer.setBandCount(count)
     }
@@ -280,9 +285,17 @@ final class PlayerViewModel {
             settings.reverbWetDryMix = 0
         }
     }
+}
 
+extension PlayerViewModel {
     func play(item: MediaItem, in queue: [MediaItem]) {
+        guard let url = libraryService.resolvedURL(for: item) else {
+            clearCurrentItem()
+            errorMessage = L10n.format("Could not open file: %@", item.title)
+            return
+        }
         musicAnalysis.reset()
+        isPaused = false
         self.queue = queue
         currentItem = item
         isVideoMode = item.isVideo
@@ -292,10 +305,6 @@ final class PlayerViewModel {
         formatInfo = .empty
         resetSpectrumFrameRate()
 
-        guard let url = libraryService.resolvedURL(for: item) else {
-            errorMessage = L10n.format("Could not open file: %@", item.title)
-            return
-        }
         isPlaying = false
 
         if !item.isVideo {
@@ -347,11 +356,13 @@ final class PlayerViewModel {
         } else {
             audioEngine.pause()
         }
+        isPaused = true
         isPlaying = false
         resetSpectrumFrameRate()
     }
 
     func stop() {
+        isPaused = false
         if isVideoMode {
             closeVideoSession()
         } else {
@@ -454,7 +465,9 @@ final class PlayerViewModel {
         }
         play(item: queue[previousIndex], in: queue)
     }
+}
 
+extension PlayerViewModel {
     func seek(to time: TimeInterval) {
         let target = max(0, min(duration, time))
         currentTime = target
@@ -552,6 +565,7 @@ final class PlayerViewModel {
         queue = []
         currentTime = 0
         duration = 0
+        isPaused = false
         isPlaying = false
         isVideoMode = false
         showVideoArea = false

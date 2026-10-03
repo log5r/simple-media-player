@@ -6,6 +6,8 @@ import AppKit
 
 struct VideoAreaView: View {
     let player: PlayerViewModel
+    var showsBackToListButton = true
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
     @State private var isFullScreenPresented = false
     @State private var showsControls = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,15 +25,16 @@ struct VideoAreaView: View {
                 .modifier(VideoPlaybackAccessibility(player: player))
 
             HStack {
-                Button {
-                    player.showVideoArea = false
-                } label: {
-                    Label("Back to List", systemImage: "chevron.left")
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                if showsBackToListButton {
+                    Button {
+                        player.showVideoArea = false
+                    } label: {
+                        Label("Back to List", systemImage: "chevron.left")
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
-
                 Spacer()
 
                 Button {
@@ -42,6 +45,7 @@ struct VideoAreaView: View {
                         .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
+                .frame(minHeight: usesPhoneLayout ? 44 : nil)
             }
             .padding(14)
             .opacity(showsControls ? 1 : 0)
@@ -97,6 +101,7 @@ struct VideoAreaView: View {
 private struct FullScreenVideoView: View {
     let player: PlayerViewModel
     var onClose: (() -> Void)?
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -118,6 +123,7 @@ private struct FullScreenVideoView: View {
                     .padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
+            .frame(minWidth: usesPhoneLayout ? 44 : nil, minHeight: usesPhoneLayout ? 44 : nil)
             .padding(18)
         }
     }

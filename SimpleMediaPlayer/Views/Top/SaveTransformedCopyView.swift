@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct SaveTransformedCopyView: View {
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
     let item: MediaItem
     let player: PlayerViewModel
     let libraryService: LibraryService
@@ -120,7 +121,7 @@ struct SaveTransformedCopyView: View {
             }
         }
         .padding(22)
-        .frame(width: 460)
+        .frame(width: usesPhoneLayout ? nil : 460)
         .onDisappear {
             exportTask?.cancel()
         }

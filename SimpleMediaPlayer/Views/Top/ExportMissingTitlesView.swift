@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ExportMissingTitlesView: View {
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
     let plan: MediaExportPlan
     let export: ([UUID: String]) -> Void
     let cancel: () -> Void
@@ -42,7 +43,10 @@ struct ExportMissingTitlesView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(plan.missingTitleFiles) { file in
-                        HStack(spacing: 12) {
+                        let layout = usesPhoneLayout
+                            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                            : AnyLayout(HStackLayout(spacing: 12))
+                        layout {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(file.displayName)
                                     .lineLimit(1)
@@ -53,7 +57,7 @@ struct ExportMissingTitlesView: View {
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
-                            .frame(width: 230, alignment: .leading)
+                            .frame(width: usesPhoneLayout ? nil : 230, alignment: .leading)
 
                             TextField("File name", text: binding(for: file.id))
                                 .textFieldStyle(.roundedBorder)
@@ -62,16 +66,21 @@ struct ExportMissingTitlesView: View {
                 }
                 .padding(22)
             }
-            .frame(minHeight: 280)
+            .frame(minHeight: usesPhoneLayout ? 0 : 280)
 
             Divider()
 
-            HStack(spacing: 10) {
+            let buttonLayout = usesPhoneLayout
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+                : AnyLayout(HStackLayout(spacing: 10))
+            buttonLayout {
                 Button("Fill All Names with Timestamps") {
                     timestampFillConfirmationPresented = true
                 }
 
-                Spacer()
+                if usesPhoneLayout == false {
+                    Spacer()
+                }
 
                 Button("Cancel", role: .cancel) {
                     cancel()
@@ -87,7 +96,7 @@ struct ExportMissingTitlesView: View {
             }
             .padding(16)
         }
-        .frame(width: 680, height: 520)
+        .frame(width: usesPhoneLayout ? nil : 680, height: usesPhoneLayout ? nil : 520)
         .confirmationDialog(
             "Fill all names with timestamps?",
             isPresented: $timestampFillConfirmationPresented,

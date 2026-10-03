@@ -1847,7 +1847,7 @@ struct BulkMetadataEditView: View {
             }
             .padding(16)
         }
-        .frame(width: 620, height: 600)
+        .platformEditorFrame(width: 620, height: 600)
         .alert(
             "Changes have not been applied. Close without applying?",
             isPresented: $isDiscardChangesConfirmationPresented
@@ -2231,7 +2231,7 @@ struct MediaInfoView: View {
             }
             .padding(16)
         }
-        .frame(width: 680, height: 720)
+        .platformEditorFrame(width: 680, height: 720)
         .alert("Tags have been changed. Close without saving?", isPresented: $isDiscardChangesConfirmationPresented) {
             Button("Close Without Saving", role: .destructive) {
                 dismiss()
@@ -2567,7 +2567,7 @@ private extension LibrarySection {
     }
 }
 
-private struct ArtworkView: View {
+struct ArtworkView: View {
     let data: Data?
     let isVideo: Bool
     var size: CGFloat = 22

@@ -8,6 +8,7 @@
 import XCTest
 
 final class SimpleMediaPlayerUITests: XCTestCase {
+    #if os(macOS)
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -19,10 +20,8 @@ final class SimpleMediaPlayerUITests: XCTestCase {
         // before they run. The setUp method is a good place to do this.
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
-
+    // Keyboard and mouse workflows use the desktop list.
+    // Phone workflows are covered by IPhoneLibraryWorkflowUITests.
     @MainActor
     func testCreatingPlaylistsUsesUniqueNames() throws {
         let app = XCUIApplication()
@@ -760,4 +759,5 @@ final class SimpleMediaPlayerUITests: XCTestCase {
             line: line
         )
     }
+    #endif
 }

@@ -21,6 +21,11 @@ struct ContentView: View {
             isImporterPresented: $isImporterPresented
         )
             .preferredColorScheme(appearanceMode.preferredColorScheme)
+            #if DEBUG && os(iOS)
+            .transformEnvironment(\.dynamicTypeSize) { size in
+                if let override = PhoneLayoutUITestFixture.dynamicTypeSizeOverride { size = override }
+            }
+            #endif
             #if os(macOS)
             .syncsDockIcon()
             #endif

@@ -1,3 +1,4 @@
+#if os(macOS)
 import XCTest
 
 final class SidebarFocusUITests: XCTestCase {
@@ -162,3 +163,4 @@ final class SidebarFocusUITests: XCTestCase {
         )
     }
 }
+#endif

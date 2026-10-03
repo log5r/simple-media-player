@@ -1,3 +1,4 @@
+#if os(macOS)
 import XCTest
 
 final class LocalizationUITests: XCTestCase {
@@ -67,3 +68,4 @@ final class LocalizationUITests: XCTestCase {
         add(attachment)
     }
 }
+#endif

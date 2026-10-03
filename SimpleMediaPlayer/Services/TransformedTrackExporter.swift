@@ -58,6 +58,7 @@ final class TransformedTrackExporter {
             isExporting = false
         }
 
+        let sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
         var draft = MediaMetadataEditDraft(item: item)
         draft.title = trimmedTitle
         draft.editsArtwork = true
@@ -106,7 +107,7 @@ final class TransformedTrackExporter {
             try Task.checkCancellation()
             progress = 0.98
             let newItem = try await libraryService.registerTransformedCopy(
-                of: item,
+                of: sourceSnapshot,
                 renderedFileURL: outputURL,
                 title: trimmedTitle,
                 duration: renderResult.duration,

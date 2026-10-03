@@ -3,14 +3,22 @@ import SwiftUI
 struct AdvancedSearchView: View {
     @Binding var filter: LibrarySearchFilter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var headerLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            headerLayout {
                 Text("Advanced Search")
                     .font(.headline)
 
-                Spacer()
+                if !dynamicTypeSize.isAccessibilitySize { Spacer() }
 
                 Button("Clear Filters") {
                     filter.clear()
@@ -31,12 +39,11 @@ struct AdvancedSearchView: View {
 
             Form {
                 Section {
-                    Picker("Match", selection: $filter.matchMode) {
-                        ForEach(LibraryFilterMatchMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    AdaptiveSettingsPicker(
+                        title: "Match", selection: $filter.matchMode,
+                        options: LibraryFilterMatchMode.allCases.map { .init(value: $0, title: $0.title) },
+                        identifier: "libraryFilterMatch"
+                    )
                 } footer: {
                     Text("Choose whether media must match all filled filters or any filled filter.")
                 }
@@ -52,6 +59,6 @@ struct AdvancedSearchView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(idealWidth: 420, idealHeight: 420)
+        .frame(idealWidth: usesPhoneLayout ? nil : 420, idealHeight: usesPhoneLayout ? nil : 420)
     }
 }

@@ -5,10 +5,15 @@ struct LyricsPanelView: View {
     let item: MediaItem?
     let listIndex: Int?
     let libraryService: LibraryService
+    var page: PanelContent?
+    var playbackTime: TimeInterval?
+    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
+    @State private var parsed = ParsedLyrics(lines: [], hasTimeTags: false)
     @State private var selectedContent = PanelContent.lyrics
     #if !os(macOS)
     @State private var isArtworkPreviewPresented = false
@@ -21,20 +26,21 @@ struct LyricsPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Picker("Panel Content", selection: $selectedContent) {
-                ForEach(PanelContent.allCases) { content in
-                    Label(content.title, systemImage: content.systemImage)
-                        .tag(content)
+            if page == nil {
+                Picker("Panel Content", selection: $selectedContent) {
+                    ForEach(PanelContent.allCases) { content in
+                        Label(content.title, systemImage: content.systemImage)
+                            .tag(content)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(.bar)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .background(.bar)
-
-            switch selectedContent {
+            switch page ?? selectedContent {
             case .lyrics:
                 lyricsContent
                     .task(id: item?.id) {
@@ -49,6 +55,7 @@ struct LyricsPanelView: View {
             }
         }
         .background(.background)
+        .onChange(of: item?.lyricsRaw, initial: true) { _, raw in parsed = LyricsParser.parse(raw) }
         .sheet(isPresented: Binding(
             get: { infoItem != nil },
             set: { if $0 == false { infoItem = nil } }
@@ -70,7 +77,8 @@ struct LyricsPanelView: View {
     }
 
     private var lyricsContent: some View {
-        VStack(spacing: 0) {
+        let activeIndex = activeLyricIndex
+        return VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
                     if parsed.lines.isEmpty || item?.isVideo == true {
@@ -80,14 +88,24 @@ struct LyricsPanelView: View {
                             .padding(.top, 36)
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(parsed.lines) { line in
+                            ForEach(Array(parsed.lines.enumerated()), id: \.offset) { index, line in
                                 Text(line.text.isEmpty ? " " : line.text)
-                                    .font(.system(size: 13))
+                                    .font(usesPhoneLayout ? .title3 : .system(size: 13))
+                                    .fontWeight(activeIndex == index ? .bold : .regular)
+                                    .foregroundStyle(activeIndex == index ? Color.accentColor : Color.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id(index)
+                                    .accessibilityAddTraits(activeIndex == index ? .isSelected : [])
                             }
                         }
                         .id(item?.id)
                         .padding(14)
+                    }
+                }
+                .onChange(of: activeIndex, initial: true) { _, index in
+                    guard let index else { return }
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(index, anchor: .center)
                     }
                 }
                 .onChange(of: item?.id) { _, newID in
@@ -105,12 +123,18 @@ struct LyricsPanelView: View {
                     lyricsItem = item
                 } label: {
                     Label(lyricsButtonTitle, systemImage: "square.and.pencil")
+                        .frame(minHeight: usesPhoneLayout ? 44 : nil)
                 }
                 .disabled(item == nil || item?.isVideo == true)
             }
             .padding(12)
             .background(.bar)
         }
+    }
+
+    private var activeLyricIndex: Int? {
+        guard let playbackTime, parsed.hasTimeTags else { return nil }
+        return parsed.lines.lastIndex { ($0.timestamp ?? .infinity) <= playbackTime }
     }
 
     private var lyricsButtonTitle: LocalizedStringKey {
@@ -133,12 +157,12 @@ struct LyricsPanelView: View {
             .accessibilityLabel("Artwork")
             .padding(28)
             .frame(
-                minWidth: 420,
-                idealWidth: 520,
-                maxWidth: 640,
-                minHeight: 420,
-                idealHeight: 520,
-                maxHeight: 640
+                minWidth: usesPhoneLayout ? 0 : 420,
+                idealWidth: usesPhoneLayout ? nil : 520,
+                maxWidth: usesPhoneLayout ? .infinity : 640,
+                minHeight: usesPhoneLayout ? 0 : 420,
+                idealHeight: usesPhoneLayout ? nil : 520,
+                maxHeight: usesPhoneLayout ? .infinity : 640
             )
             .background(.background)
             .overlay(alignment: .topTrailing) {
@@ -148,6 +172,7 @@ struct LyricsPanelView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title2)
                         .symbolRenderingMode(.hierarchical)
+                        .frame(minWidth: usesPhoneLayout ? 44 : nil, minHeight: usesPhoneLayout ? 44 : nil)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")
@@ -205,6 +230,7 @@ struct LyricsPanelView: View {
                     infoItem = item
                 } label: {
                     Label("Edit Information…", systemImage: "pencil")
+                        .frame(minHeight: usesPhoneLayout ? 44 : nil)
                 }
                 .disabled(item == nil || informationDraftItemID != item?.id)
             }
@@ -213,13 +239,17 @@ struct LyricsPanelView: View {
         }
     }
 
+}
+
+private extension LyricsPanelView {
     private func informationRow(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 13))
+                .font(usesPhoneLayout ? .body : .system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -254,7 +284,8 @@ struct LyricsPanelView: View {
                 #endif
             } else {
                 Label("No artwork available", systemImage: "photo")
-                    .font(.system(size: 13))
+                    .font(usesPhoneLayout ? .body : .system(size: 13))
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(.secondary)
             }
         }
@@ -343,140 +374,9 @@ struct LyricsPanelView: View {
         #endif
     }
 
-    private var parsed: ParsedLyrics {
-        LyricsParser.parse(item?.lyricsRaw)
-    }
 }
 
-private struct LyricsEditorView: View {
-    let item: MediaItem
-    let libraryService: LibraryService
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @State private var lyrics: String
-    @State private var saveLocation = LyricsSaveLocation.applicationOnly
-    @State private var isSaving = false
-    @State private var saveError: String?
-
-    init(item: MediaItem, libraryService: LibraryService) {
-        self.item = item
-        self.libraryService = libraryService
-        _lyrics = State(initialValue: item.lyricsRaw ?? "")
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 0) {
-                TextEditor(text: $lyrics)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .accessibilityLabel("Lyrics")
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Save Location")
-                        .font(.headline)
-
-                    Picker("Save Location", selection: $saveLocation) {
-                        Text("App Only")
-                            .tag(LyricsSaveLocation.applicationOnly)
-                        Text("Embed in File")
-                            .tag(LyricsSaveLocation.embeddedTag)
-                            .disabled(canEmbedLyrics == false)
-                    }
-                    .pickerStyle(.segmented)
-
-                    Text(saveLocation.explanation)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if canEmbedLyrics == false {
-                        Label("This file format does not support embedded lyrics editing.", systemImage: "lock")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let saveError {
-                        Label(saveError, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .textSelection(.enabled)
-                    }
-                }
-                .padding(14)
-                .background(.bar)
-            }
-            .navigationTitle(
-                item.lyricsRaw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-                    ? "Edit Lyrics" : "Add Lyrics"
-            )
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .disabled(isSaving)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        save()
-                    }
-                    .disabled(isSaving)
-                }
-            }
-            .overlay {
-                if isSaving {
-                    ProgressView("Saving…")
-                        .padding(16)
-                        .background(.regularMaterial, in: .rect(cornerRadius: 10))
-                }
-            }
-        }
-        .frame(minWidth: 420, idealWidth: 560, minHeight: 400, idealHeight: 520)
-    }
-
-    private var canEmbedLyrics: Bool {
-        libraryService.canEditEmbeddedMetadata(for: item)
-    }
-
-    private func save() {
-        isSaving = true
-        saveError = nil
-        Task {
-            do {
-                try await libraryService.saveLyrics(
-                    lyrics,
-                    for: item,
-                    embedInFile: saveLocation == .embeddedTag,
-                    in: modelContext
-                )
-                dismiss()
-            } catch {
-                saveError = error.localizedDescription
-                isSaving = false
-            }
-        }
-    }
-}
-
-private enum LyricsSaveLocation: Hashable {
-    case applicationOnly
-    case embeddedTag
-
-    var explanation: LocalizedStringKey {
-        switch self {
-        case .applicationOnly:
-            "Lyrics are saved in this app without changing the media file."
-        case .embeddedTag:
-            "Lyrics are saved in this app and embedded in the media file."
-        }
-    }
-}
-
-private enum PanelContent: CaseIterable, Identifiable {
+enum PanelContent: CaseIterable, Identifiable {
     case lyrics
     case information
 
