@@ -59,6 +59,7 @@ struct ExtendedAudioSourceTests {
         let source = fixture("wma", baseName: "short-wma")
         defer { ExtendedAudioSource.removeCache(for: source) }
         #expect(try ExtendedAudioSource.kind(for: source) == .wma)
+        try ExtendedAudioSource.validate(for: source)
         let cacheURL = try ExtendedAudioSource.readableURL(for: source)
         #expect(try AVAudioFile(forReading: cacheURL).length > 0)
     }
@@ -148,6 +149,9 @@ struct ExtendedAudioSourceTests {
         #expect(service.lastImportErrors.isEmpty)
 
         let item = try #require(container.mainContext.fetch(FetchDescriptor<MediaItem>()).first)
+        let managed = service.fallbackMediaURL(forFileName: item.fileName)
+        let cache = try #require(ExtendedAudioSource.cacheURL(for: managed))
+        #expect(FileManager.default.fileExists(atPath: cache.path) == false)
         #expect(item.title == title)
         #expect(item.duration > 0.8 && item.duration < 1.2)
         if ext == "wma" { #expect(item.lyricsRaw == "Fixture lyrics") }
