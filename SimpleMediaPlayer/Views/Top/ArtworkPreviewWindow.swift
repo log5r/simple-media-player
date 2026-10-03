@@ -16,12 +16,8 @@ struct ArtworkPreviewWindow: View {
 
     var body: some View {
         Group {
-            if let item,
-               let artworkData = item.artworkData,
-               let artwork = NSImage(data: artworkData) {
-                Image(nsImage: artwork)
-                    .resizable()
-                    .scaledToFit()
+            if let item, item.hasArtwork {
+                LibraryArtworkView(artworkID: item.artworkID, contentMode: .fit)
                     .accessibilityLabel("Artwork")
                     .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

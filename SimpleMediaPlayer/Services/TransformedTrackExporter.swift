@@ -31,6 +31,7 @@ final class TransformedTrackExporter {
         context: ModelContext
     ) async throws -> MediaItem {
         try Task.checkCancellation()
+        let sourceContext = item.modelContext
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedTitle.isEmpty == false else {
             throw TransformedAudioExportError.emptyTitle
@@ -58,16 +59,15 @@ final class TransformedTrackExporter {
             isExporting = false
         }
 
-        let sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
-        var draft = MediaMetadataEditDraft(item: item)
-        draft.title = trimmedTitle
-        draft.editsArtwork = true
-        draft.editsLyrics = true
+        var sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
         let pitchCents = Float(pitchSemitones * 100)
         let renderRate = Float(rate)
         let renderer = renderer
 
         do {
+            let draft = try await metadataDraft(for: item, title: trimmedTitle, libraryService: libraryService)
+            try libraryService.validateCopySource(item, in: sourceContext)
+            sourceSnapshot.artworkData = draft.artworkData
             let renderTask = Task.detached(priority: .userInitiated) { [weak self] in
                 try Task.checkCancellation()
                 let result = try renderer.render(
@@ -104,7 +104,7 @@ final class TransformedTrackExporter {
                 renderTask.cancel()
             }
 
-            try Task.checkCancellation()
+            try libraryService.validateCopySource(item, in: sourceContext)
             progress = 0.98
             let newItem = try await libraryService.registerTransformedCopy(
                 of: sourceSnapshot,
@@ -124,5 +124,19 @@ final class TransformedTrackExporter {
             errorMessage = error.localizedDescription
             throw error
         }
+    }
+
+    private func metadataDraft(
+        for item: MediaItem,
+        title: String,
+        libraryService: LibraryService
+    ) async throws -> MediaMetadataEditDraft {
+        var draft = MediaMetadataEditDraft(item: item)
+        draft.artworkData = try await libraryService.libraryArtwork(for: item)
+        try Task.checkCancellation()
+        draft.title = title
+        draft.editsArtwork = true
+        draft.editsLyrics = true
+        return draft
     }
 }

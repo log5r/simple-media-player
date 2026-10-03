@@ -14,6 +14,7 @@ struct SimpleMediaPlayerApp: App {
     @State private var libraryService: LibraryService
     @State private var player: PlayerViewModel
     @State private var isImporterPresented = false
+    @State private var libraryPreparation = LibraryPreparation()
 
     init() {
         BundledFontRegistry.registerFonts()
@@ -42,7 +43,7 @@ struct SimpleMediaPlayerApp: App {
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
             if isMultipleSelectionUITest {
-                let context = container.mainContext
+                let context = ModelContext(container)
                 let mediaCountArgument = ProcessInfo.processInfo.arguments.first {
                     $0.hasPrefix("--ui-testing-media-count=")
                 }
@@ -65,6 +66,9 @@ struct SimpleMediaPlayerApp: App {
                         )
                     )
                 }
+                if ProcessInfo.processInfo.arguments.contains("--ui-testing-artwork") {
+                    try ArtworkUITestFixture.addArtwork(in: context)
+                }
                 try context.save()
             }
             #if DEBUG && os(iOS)
@@ -78,11 +82,13 @@ struct SimpleMediaPlayerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(
-                libraryService: libraryService,
-                player: player,
-                isImporterPresented: $isImporterPresented
-            )
+            LibraryPreparationView(preparation: libraryPreparation) {
+                ContentView(
+                    libraryService: libraryService,
+                    player: player,
+                    isImporterPresented: $isImporterPresented
+                )
+            }
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
@@ -103,7 +109,9 @@ struct SimpleMediaPlayerApp: App {
 
         #if os(macOS)
         WindowGroup("Artwork", id: ArtworkPreviewWindow.sceneID, for: UUID.self) { $itemID in
-            ArtworkPreviewWindow(itemID: itemID)
+            LibraryPreparationView(preparation: libraryPreparation) {
+                ArtworkPreviewWindow(itemID: itemID)
+            }
         }
         .modelContainer(sharedModelContainer)
         .defaultSize(width: 640, height: 640)

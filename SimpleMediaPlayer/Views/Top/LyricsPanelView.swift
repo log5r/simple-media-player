@@ -22,6 +22,7 @@ struct LyricsPanelView: View {
     @State private var lyricsItem: MediaItem?
     @State private var informationDraft: MediaMetadataEditDraft?
     @State private var informationDraftItemID: UUID?
+    @State private var informationDraftArtworkID: UUID?
     @State private var informationLoadRequestID = UUID()
 
     var body: some View {
@@ -49,7 +50,7 @@ struct LyricsPanelView: View {
                     }
             case .information:
                 informationContent
-                    .task(id: item?.id) {
+                    .task(id: [item?.id, item?.artworkID]) {
                         await reloadInformation()
                     }
             }
@@ -341,14 +342,17 @@ private extension LyricsPanelView {
     }
 
     private func informationArtworkData(for item: MediaItem) -> Data? {
-        guard let informationDraft else { return item.artworkData }
-        return informationDraft.artworkData
+        guard informationDraftItemID == item.id,
+              informationDraftArtworkID == item.artworkID else { return nil }
+        return informationDraft?.artworkData
     }
 
     private func reloadInformation() async {
         let requestID = UUID()
         informationLoadRequestID = requestID
         informationDraftItemID = nil
+        informationDraftArtworkID = nil
+        informationDraft = nil
 
         guard let item else {
             informationDraft = nil
@@ -356,12 +360,15 @@ private extension LyricsPanelView {
         }
 
         let itemID = item.id
-        let draft = await libraryService.editableMetadataDraft(for: item)
+        let artworkID = item.artworkID
+        guard let draft = try? await libraryService.editableMetadataDraft(for: item) else { return }
         guard Task.isCancelled == false,
               self.item?.id == itemID,
+              self.item?.artworkID == artworkID,
               informationLoadRequestID == requestID else { return }
         informationDraft = draft
         informationDraftItemID = itemID
+        informationDraftArtworkID = artworkID
     }
 
     private func platformImage(data: Data) -> Image? {
@@ -374,25 +381,4 @@ private extension LyricsPanelView {
         #endif
     }
 
-}
-
-enum PanelContent: CaseIterable, Identifiable {
-    case lyrics
-    case information
-
-    var id: Self { self }
-
-    var title: LocalizedStringKey {
-        switch self {
-        case .lyrics: "Lyrics"
-        case .information: "Info"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .lyrics: "text.quote"
-        case .information: "info.circle"
-        }
-    }
 }

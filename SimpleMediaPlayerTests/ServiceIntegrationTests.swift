@@ -281,7 +281,7 @@ struct LibraryServicePersistenceTests {
         #expect(fixture.service.canEditEmbeddedMetadata(for: item) == false)
         item.fileName = "missing.mp3"
 
-        let draft = await fixture.service.editableMetadataDraft(for: item)
+        let draft = try await fixture.service.editableMetadataDraft(for: item)
 
         #expect(draft.title == "Title")
         #expect(draft.artist.isEmpty)

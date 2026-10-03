@@ -125,7 +125,7 @@ struct IPhoneTrackListView: View {
                         if editMode.isEditing {
                             Image(systemName: selection.contains(item.id) ? "checkmark.circle.fill" : "circle")
                         }
-                        ArtworkView(data: item.artworkData, isVideo: item.isVideo)
+                        LibraryItemArtworkView(item: item)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.title).foregroundStyle(.primary).lineLimit(1)
                             Text(item.displayArtist).font(.caption).foregroundStyle(.secondary).lineLimit(1)

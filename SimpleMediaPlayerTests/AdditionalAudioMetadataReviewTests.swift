@@ -130,7 +130,7 @@ struct AdditionalAudioMetadataReviewTests {
         #expect(item.title == "Filename fallback")
         #expect(item.artist == "Unknown Artist")
         #expect(item.album == "Unknown Album")
-        let editable = await service.editableMetadataDraft(for: item)
+        let editable = try await service.editableMetadataDraft(for: item)
         #expect(editable.title == item.title)
         #expect(editable.artist == "")
         #expect(editable.album == "")

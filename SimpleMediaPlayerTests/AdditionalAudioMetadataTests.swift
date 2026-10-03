@@ -151,7 +151,7 @@ struct AdditionalAudioMetadataTests {
         #expect(first.service.canEditEmbeddedMetadata(for: item))
         let managedURL = try #require(first.service.resolvedURL(for: item))
         #expect(try AdditionalAudioMetadata.read(from: managedURL).artworkData == artwork)
-        let editable = await first.service.editableMetadataDraft(for: item)
+        let editable = try await first.service.editableMetadataDraft(for: item)
         #expect(editable.title == draft.title)
         #expect(editable.artworkData != nil)
         #expect(editable.lyrics == draft.lyrics)

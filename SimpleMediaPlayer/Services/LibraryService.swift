@@ -24,6 +24,7 @@ struct BulkMetadataEditResult: Sendable {
 final class LibraryService {
     @ObservationIgnored nonisolated private let mediaDirectoryOverride: URL?
     @ObservationIgnored private let artworkProcessor: ArtworkProcessor
+    @ObservationIgnored let artworkLoader: LibraryArtworkLoader
     @ObservationIgnored private let lyricsReader: EmbeddedLyricsReader
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var editedLyricsItemIDs: Set<UUID> = []
@@ -53,11 +54,13 @@ final class LibraryService {
     init(
         mediaDirectoryURL: URL? = nil,
         artworkProcessor: ArtworkProcessor = ArtworkProcessor(),
-        lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader()
+        lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader(),
+        artworkLoader: LibraryArtworkLoader = .shared
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
+        self.artworkLoader = artworkLoader
     }
 
     func importFiles(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
@@ -240,8 +243,17 @@ final class LibraryService {
         }
     }
 
-    func editableMetadataDraft(for item: MediaItem) async -> MediaMetadataEditDraft {
+    func editableMetadataDraft(for item: MediaItem) async throws -> MediaMetadataEditDraft {
+        try Task.checkCancellation()
         var draft = MediaMetadataEditDraft(item: item)
+        do {
+            draft.artworkData = try await libraryArtwork(for: item)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+        }
+        try Task.checkCancellation()
         guard let url = resolvedURL(for: item) else { return draft }
 
         let didAccess = url.startAccessingSecurityScopedResource()
@@ -250,64 +262,38 @@ final class LibraryService {
         }
 
         if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
-            draft.title = info.title ?? draft.title
-            draft.artist = info.artist ?? draft.artist
-            draft.album = info.album ?? draft.album
-            draft.genre = info.genre ?? draft.genre
-            draft.year = info.year ?? draft.year
-            draft.trackNumber = info.trackNumber ?? draft.trackNumber
-            draft.comment = info.comment ?? draft.comment
-            draft.albumArtist = info.albumArtist ?? draft.albumArtist
-            draft.composer = info.composer ?? draft.composer
-            draft.discNumber = info.discNumber ?? draft.discNumber
-            draft.isCompilation = info.isCompilation
-            draft.lyrics = info.lyrics ?? draft.lyrics
-            // Artwork edits for extended formats live in the library item, not the source file.
-            return draft
+            try Task.checkCancellation()
+            return draftByApplyingExtendedInfo(info, to: draft)
         }
+        try Task.checkCancellation()
 
         let metadata = await allMetadata(for: AVURLAsset(url: url))
+        try Task.checkCancellation()
         let metadataValues = await metadata.embeddedValues(compilationKeyNeedles: Self.compilationKeyNeedles)
+        try Task.checkCancellation()
         draft = draft.applying(metadataValues)
-
-        if let mp4Metadata = await mp4Metadata(for: url) {
-            draft = draft.applying(mp4Metadata.values)
-            if item.isVideo == false {
-                let hints = MusicLibraryMatchHints(
-                    sortTitle: mp4Metadata.values.title,
-                    sortArtist: mp4Metadata.values.artist,
-                    sortAlbum: mp4Metadata.values.album,
-                    duration: item.duration
-                )
-                if case let .found(musicLibraryValues) = await MusicLibraryMetadataProvider.lookup(
-                    url: url,
-                    hints: hints
-                ) {
-                    draft = draft.applying(musicLibraryValues)
-                }
-            }
-            if let embeddedArtwork = mp4Metadata.artworkData,
-               let artworkData = await artworkProcessor.thumbnail(from: embeddedArtwork) {
-                draft.artworkData = artworkData
-            }
-        }
+        draft = try await draftByApplyingMP4Metadata(to: draft, for: url, item: item)
 
         if ID3TagWriter.canWriteMetadata(to: url),
            let values = try? await Task.detached(priority: .utility, operation: {
                try ID3TagWriter.readMetadata(from: url)
            }).value {
+            try Task.checkCancellation()
             draft = draft.applying(values)
         }
+        try Task.checkCancellation()
 
         if AdditionalAudioMetadata.canWrite(to: url),
            let embedded = try? await Task.detached(priority: .utility, operation: {
                try AdditionalAudioMetadata.read(from: url)
            }).value {
+            try Task.checkCancellation()
             draft = draft.applying(embedded.values)
             if let artwork = embedded.artworkData { draft.artworkData = artwork }
             if let lyrics = embedded.lyrics { draft.lyrics = lyrics }
         }
 
+        try Task.checkCancellation()
         return draft
     }
 
@@ -397,7 +383,7 @@ final class LibraryService {
 
         for item in items {
             do {
-                let currentDraft = await editableMetadataDraft(for: item)
+                let currentDraft = try await editableMetadataDraft(for: item)
                 let patchedDraft = patch.applying(to: currentDraft)
                 try await updateEmbeddedMetadata(for: item, draft: patchedDraft, in: context)
                 updatedCount += 1
@@ -407,6 +393,55 @@ final class LibraryService {
         }
 
         return BulkMetadataEditResult(updatedCount: updatedCount, failures: failures)
+    }
+}
+
+private extension LibraryService {
+    func draftByApplyingExtendedInfo(
+        _ info: ExtendedAudioSource.Info, to original: MediaMetadataEditDraft
+    ) -> MediaMetadataEditDraft {
+        var draft = original
+        draft.title = info.title ?? draft.title
+        draft.artist = info.artist ?? draft.artist
+        draft.album = info.album ?? draft.album
+        draft.genre = info.genre ?? draft.genre
+        draft.year = info.year ?? draft.year
+        draft.trackNumber = info.trackNumber ?? draft.trackNumber
+        draft.comment = info.comment ?? draft.comment
+        draft.albumArtist = info.albumArtist ?? draft.albumArtist
+        draft.composer = info.composer ?? draft.composer
+        draft.discNumber = info.discNumber ?? draft.discNumber
+        draft.isCompilation = info.isCompilation
+        draft.lyrics = info.lyrics ?? draft.lyrics
+        // Artwork edits for extended formats live in the library item, not the source file.
+        return draft
+    }
+
+    func draftByApplyingMP4Metadata(
+        to original: MediaMetadataEditDraft, for url: URL, item: MediaItem
+    ) async throws -> MediaMetadataEditDraft {
+        try Task.checkCancellation()
+        let metadata = await mp4Metadata(for: url)
+        try Task.checkCancellation()
+        guard let metadata else { return original }
+        var draft = original.applying(metadata.values)
+        if item.isVideo == false {
+            let hints = MusicLibraryMatchHints(
+                sortTitle: metadata.values.title,
+                sortArtist: metadata.values.artist,
+                sortAlbum: metadata.values.album,
+                duration: item.duration
+            )
+            let match = await MusicLibraryMetadataProvider.lookup(url: url, hints: hints)
+            try Task.checkCancellation()
+            if case let .found(values) = match { draft = draft.applying(values) }
+        }
+        if let embeddedArtwork = metadata.artworkData {
+            let artworkData = await artworkProcessor.thumbnail(from: embeddedArtwork)
+            try Task.checkCancellation()
+            if let artworkData { draft.artworkData = artworkData }
+        }
+        return draft
     }
 }
 
@@ -680,9 +715,12 @@ extension LibraryService {
     }
 
     private func allMetadata(for asset: AVURLAsset) async -> [AVMetadataItem] {
+        guard Task.isCancelled == false else { return [] }
         var metadata = (try? await asset.load(.metadata)) ?? []
+        guard Task.isCancelled == false else { return metadata }
         let formats = (try? await asset.load(.availableMetadataFormats)) ?? []
         for format in formats {
+            guard Task.isCancelled == false else { return metadata }
             if let formatMetadata = try? await asset.loadMetadata(for: format) {
                 metadata.append(contentsOf: formatMetadata)
             }
