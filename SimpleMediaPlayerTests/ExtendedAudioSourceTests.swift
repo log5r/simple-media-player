@@ -205,15 +205,15 @@ struct ExtendedAudioSourceTests {
         container.mainContext.insert(item)
 
         let replacement = Data([1, 2, 3])
-        var draft = await service.editableMetadataDraft(for: item)
+        var draft = try await service.editableMetadataDraft(for: item)
         draft.artworkData = replacement
         draft.editsArtwork = true
         try await service.updateEmbeddedMetadata(for: item, draft: draft, in: container.mainContext)
-        #expect((await service.editableMetadataDraft(for: item)).artworkData == replacement)
+        #expect((try await service.editableMetadataDraft(for: item)).artworkData == replacement)
 
         draft.artworkData = nil
         try await service.updateEmbeddedMetadata(for: item, draft: draft, in: container.mainContext)
-        #expect((await service.editableMetadataDraft(for: item)).artworkData == nil)
+        #expect((try await service.editableMetadataDraft(for: item)).artworkData == nil)
     }
 
     @Test(arguments: ["wma", "wv"])

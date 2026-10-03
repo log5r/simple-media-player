@@ -124,7 +124,7 @@ struct ArtworkProcessingTests {
             })
         )
 
-        let draft = await service.editableMetadataDraft(for: item)
+        let draft = try await service.editableMetadataDraft(for: item)
 
         #expect(draft.artworkData == probe.output)
         #expect(item.artworkData == nil)

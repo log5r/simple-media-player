@@ -2516,7 +2516,16 @@ private extension MediaInfoView {
     func reloadMetadata(itemID: UUID, requestID: UUID) async -> Bool {
         while isCurrentMetadataRequest(itemID: itemID, requestID: requestID) {
             let artworkID = item.artworkID
-            let loadedDraft = await libraryService.editableMetadataDraft(for: item)
+            let loadedDraft: MediaMetadataEditDraft
+            do {
+                loadedDraft = try await libraryService.editableMetadataDraft(for: item)
+            } catch is CancellationError {
+                guard isCurrentMetadataRequest(itemID: itemID, requestID: requestID),
+                      item.artworkID != artworkID else { return false }
+                continue
+            } catch {
+                return false
+            }
             guard isCurrentMetadataRequest(itemID: itemID, requestID: requestID) else { return false }
             guard item.artworkID == artworkID else { continue }
             let loadedDetails = await libraryService.loadMediaInfo(for: item)

@@ -361,7 +361,7 @@ private extension LyricsPanelView {
 
         let itemID = item.id
         let artworkID = item.artworkID
-        let draft = await libraryService.editableMetadataDraft(for: item)
+        guard let draft = try? await libraryService.editableMetadataDraft(for: item) else { return }
         guard Task.isCancelled == false,
               self.item?.id == itemID,
               self.item?.artworkID == artworkID,

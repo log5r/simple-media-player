@@ -11,7 +11,7 @@ struct TransformedExportCancellationTests {
         defer { fixture.remove() }
         let renderer = ControlledExportRenderer(behavior: .observeCancellation)
         let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
-        let task = Task { try await fixture.export(using: exporter) }
+        let task = Task { _ = try await fixture.export(using: exporter) }
         defer { task.cancel(); renderer.release() }
 
         try await renderer.waitUntilStarted()
@@ -39,7 +39,7 @@ struct TransformedExportCancellationTests {
         defer { fixture.remove() }
         let renderer = ControlledExportRenderer(behavior: .finishImmediately)
         let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
-        let task = Task { try await fixture.export(using: exporter) }
+        let task = Task { _ = try await fixture.export(using: exporter) }
         task.cancel()
 
         do {
@@ -59,7 +59,7 @@ struct TransformedExportCancellationTests {
         defer { fixture.remove() }
         let renderer = ControlledExportRenderer(behavior: .ignoreCancellation)
         let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
-        let task = Task { try await fixture.export(using: exporter) }
+        let task = Task { _ = try await fixture.export(using: exporter) }
         defer { task.cancel(); renderer.release() }
 
         try await renderer.waitUntilStarted()
@@ -140,7 +140,7 @@ struct TransformedExportCancellationTests {
         let renderedData = Data("rendered audio".utf8)
         try renderedData.write(to: renderedURL)
         let task = Task {
-            try await fixture.service.registerTransformedCopy(
+            _ = try await fixture.service.registerTransformedCopy(
                 of: fixture.source,
                 renderedFileURL: renderedURL,
                 title: "Rendered",
@@ -229,7 +229,7 @@ struct TransformedExportCancellationTests {
         try fixture.context.save()
         let renderer = ControlledExportRenderer(behavior: .ignoreCancellation)
         let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
-        let task = Task { try await fixture.export(using: exporter) }
+        let task = Task { try await fixture.export(using: exporter).id }
         defer { task.cancel(); renderer.release() }
         try await renderer.waitUntilStarted()
 
@@ -237,7 +237,8 @@ struct TransformedExportCancellationTests {
         fixture.source.artworkData = editedArtwork
         try fixture.context.save()
         renderer.release()
-        let copy = try await task.value
+        let copyID = try await task.value
+        let copy = try #require(fixture.context.fetch(FetchDescriptor<MediaItem>()).first { $0.id == copyID })
 
         let outputURL = fixture.mediaDirectory.appendingPathComponent(copy.fileName)
         #expect(try AdditionalAudioMetadata.read(from: outputURL).artworkData == initialArtwork)
@@ -255,7 +256,7 @@ struct TransformedExportCancellationTests {
         try fixture.context.save()
         let renderer = ControlledExportRenderer(behavior: .ignoreCancellation)
         let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
-        let task = Task { try await fixture.export(using: exporter) }
+        let task = Task { _ = try await fixture.export(using: exporter) }
         defer { task.cancel(); renderer.release() }
         try await renderer.waitUntilStarted()
 
