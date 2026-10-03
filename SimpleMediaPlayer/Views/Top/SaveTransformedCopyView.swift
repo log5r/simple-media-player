@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct SaveTransformedCopyView: View {
-    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    @Environment(\.usesTouchControls) private var usesTouchControls
     let item: MediaItem
     let player: PlayerViewModel
     let libraryService: LibraryService
@@ -121,7 +121,7 @@ struct SaveTransformedCopyView: View {
             }
         }
         .padding(22)
-        .frame(width: usesPhoneLayout ? nil : 460)
+        .platformEditorFrame(width: 460)
         .onDisappear {
             exportTask?.cancel()
         }

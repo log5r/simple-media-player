@@ -27,7 +27,7 @@ final class IPhoneEditorPickerUITests: XCTestCase {
     @MainActor private func launch(language: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-testing-phone-layout", "-UIPreferredContentSizeCategoryName",
+            "--ui-testing-phone-layout", "--ui-testing-compact-layout", "-UIPreferredContentSizeCategoryName",
             "UICTContentSizeCategoryAccessibilityXXXL", "-AppleLanguages", "(\(language))",
             "-AppleLocale", language, "-volumeNormalizationEnabled", "NO"
         ]

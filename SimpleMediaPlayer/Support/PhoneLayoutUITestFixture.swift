@@ -6,6 +6,20 @@ import SwiftUI
 /// Local media keeps the phone navigation tests independent of file-provider dialogs and network access.
 @MainActor
 enum PhoneLayoutUITestFixture {
+    static var autoplayProbeEnabled: Bool {
+        let arguments = ProcessInfo.processInfo.arguments
+        return arguments.contains("--ui-testing-phone-layout")
+            && arguments.contains("--ui-testing-duo-autoplay-probe")
+    }
+
+    /// Compact UI suites specify their layout independently of the simulator's current fold posture.
+    static var layoutOverride: Bool? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--ui-testing-phone-layout") else { return nil }
+        if arguments.contains("--ui-testing-compact-layout") { return true }
+        return nil
+    }
+
     static var dynamicTypeSizeOverride: DynamicTypeSize? {
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("--ui-testing-phone-layout") else { return nil }
@@ -26,15 +40,14 @@ enum PhoneLayoutUITestFixture {
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000) else { return }
         buffer.frameLength = buffer.frameCapacity
-        for channel in 0..<2 {
-            buffer.floatChannelData?[channel].initialize(repeating: 0, count: Int(buffer.frameLength))
-        }
+        fillAudio(buffer)
         let playlist = Playlist(name: "Layout Playlist")
         context.insert(playlist)
+        let duration = ProcessInfo.processInfo.arguments.contains("--ui-testing-duo-long-playback") ? 180 : 60
         for index in 1...3 {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("phone-layout-\(index).wav")
             let file = try AVAudioFile(forWriting: url, settings: format.settings)
-            for _ in 0..<60 { try file.write(from: buffer) }
+            for _ in 0..<duration { try file.write(from: buffer) }
             let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             let usesLongTitle = index == 1
                 && ProcessInfo.processInfo.arguments.contains("--ui-testing-phone-long-title")
@@ -43,7 +56,7 @@ enum PhoneLayoutUITestFixture {
                 : "Layout Track \(index)"
             let item = MediaItem(
                 title: title, artist: "Layout Artist", album: "Layout Album",
-                duration: 60, isVideo: false,
+                duration: TimeInterval(duration), isVideo: false,
                 lyricsRaw: "[00:00.00]First lyric\n[00:20.00]Second lyric\n[00:40.00]Third lyric",
                 bookmarkData: bookmark, fileName: url.lastPathComponent
             )
@@ -53,6 +66,16 @@ enum PhoneLayoutUITestFixture {
             context.insert(entry)
         }
         try context.save()
+    }
+
+    private static func fillAudio(_ buffer: AVAudioPCMBuffer) {
+        let isAudible = ProcessInfo.processInfo.arguments.contains("--ui-testing-audible-layout")
+        for channel in 0..<2 {
+            guard let samples = buffer.floatChannelData?[channel] else { continue }
+            for frame in 0..<Int(buffer.frameLength) {
+                samples[frame] = isAudible ? Float(sin(Double(frame) * 2 * .pi * 440 / 48_000) * 0.1) : 0
+            }
+        }
     }
 
     private static func resetLEDSettingsIfRequested() {

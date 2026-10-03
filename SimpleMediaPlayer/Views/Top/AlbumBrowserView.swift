@@ -12,13 +12,24 @@ struct AlbumBrowserView<ItemMenu: View>: View {
     @Binding var selectedItemID: UUID?
     @Binding var isBulkEditMode: Bool
     let bulkSelection: BulkMediaSelectionState
+    @Bindable var browsingState: LibraryBrowsingState
     let itemMenu: (MediaItem) -> ItemMenu
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var artworkTransition
-    @State private var selectedAlbumID: String?
+
+    private var selectedAlbumID: String? {
+        get { browsingState.group?.section == .albums ? browsingState.group?.name : nil }
+        nonmutating set {
+            if let newValue {
+                browsingState.openGroup(section: .albums, name: newValue)
+            } else {
+                browsingState.closeGroup()
+            }
+        }
+    }
 
     private let gridColumns = [
         GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 20, alignment: .top)
@@ -76,10 +87,14 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(album.title), \(album.artist)")
+                    .accessibilityIdentifier("libraryGroup.albums.\(album.id)")
+                    .id(album.id)
                 }
             }
+            .scrollTargetLayout()
             .padding(24)
         }
+        .scrollPosition(id: $browsingState.albumScrollID, anchor: .top)
         .background(.background)
     }
 
@@ -94,6 +109,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                     Label("Back to List", systemImage: "chevron.left")
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("libraryGroupBackButton")
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 18)
 
@@ -104,6 +120,8 @@ struct AlbumBrowserView<ItemMenu: View>: View {
 
                 ForEach(Array(album.tracks.enumerated()), id: \.element.id) { offset, item in
                     albumTrackRow(item, fallbackNumber: offset + 1, tracks: album.tracks)
+                        .id(item.id)
+                        .modifier(LibraryScrollAnchorRow(id: item.id))
 
                     if offset < album.tracks.count - 1 {
                         Divider()
@@ -113,6 +131,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
             }
             .padding(24)
         }
+        .modifier(LibraryScrollAnchor(itemIDs: album.tracks.map(\.id), browsingState: browsingState))
         .background(.background)
     }
 
@@ -178,6 +197,29 @@ struct AlbumBrowserView<ItemMenu: View>: View {
     private func albumTrackRow(_ item: MediaItem, fallbackNumber: Int, tracks: [MediaItem]) -> some View {
         let isSelected = isBulkEditMode ? bulkSelection.contains(item.id) : selectedItemID == item.id
 
+        return albumTrackContent(item, fallbackNumber: fallbackNumber)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 48)
+        .contentShape(Rectangle())
+        .background(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
+        .clipShape(.rect(cornerRadius: 6))
+        .contextMenu {
+            if isBulkEditMode == false { itemMenu(item) }
+        }
+        .onTapGesture { selectTrack(item, tracks: tracks) }
+        #if os(macOS)
+        .onTapGesture(count: 2) {
+            if isBulkEditMode == false { play(item, in: tracks) }
+        }
+        #endif
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("libraryTrack.\(item.id)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityAction { selectTrack(item, tracks: tracks) }
+    }
+
+    private func albumTrackContent(_ item: MediaItem, fallbackNumber: Int) -> some View {
+        let isSelected = isBulkEditMode ? bulkSelection.contains(item.id) : selectedItemID == item.id
         return HStack(spacing: 12) {
             if differentiateWithoutColor, isSelected {
                 Image(systemName: "checkmark.circle.fill")
@@ -214,41 +256,23 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
-        .padding(.horizontal, 10)
-        .frame(minHeight: 48)
-        .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
-        .clipShape(.rect(cornerRadius: 6))
-        .contextMenu {
-            if isBulkEditMode == false {
-                itemMenu(item)
-            }
-        }
-        .onTapGesture {
-            if isBulkEditMode {
-                bulkSelection.toggle(item.id)
-            } else {
-                selectedItemID = item.id
-            }
-        }
-        .onTapGesture(count: 2) {
-            if isBulkEditMode == false {
-                play(item, in: tracks)
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityAction {
-            if isBulkEditMode {
-                bulkSelection.toggle(item.id)
-            } else {
-                selectedItemID = item.id
-            }
+    }
+
+    private func selectTrack(_ item: MediaItem, tracks: [MediaItem]) {
+        if isBulkEditMode {
+            bulkSelection.toggle(item.id)
+        } else {
+            #if os(iOS)
+            play(item, in: tracks)
+            #else
+            selectedItemID = item.id
+            #endif
         }
     }
 
     private func play(_ item: MediaItem, in tracks: [MediaItem]) {
         selectedItemID = item.id
+        browsingState.playingListName = selectedAlbum?.title ?? item.displayAlbum
         player.play(item: item, in: tracks)
     }
 

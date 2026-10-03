@@ -7,7 +7,8 @@ import AppKit
 struct VideoAreaView: View {
     let player: PlayerViewModel
     var showsBackToListButton = true
-    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    var presentVideoFullScreen: (() -> Void)?
+    @Environment(\.usesTouchControls) private var usesTouchControls
     @State private var isFullScreenPresented = false
     @State private var showsControls = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -45,7 +46,7 @@ struct VideoAreaView: View {
                         .padding(.vertical, 6)
                 }
                 .buttonStyle(.borderedProminent)
-                .frame(minHeight: usesPhoneLayout ? 44 : nil)
+                .frame(minHeight: usesTouchControls ? 44 : nil)
             }
             .padding(14)
             .opacity(showsControls ? 1 : 0)
@@ -93,15 +94,20 @@ struct VideoAreaView: View {
         #if os(macOS)
         fullScreenPresenter.present(player: player)
         #else
-        isFullScreenPresented = true
+        guard player.isVideoMode, player.currentItem?.isVideo == true else { return }
+        if let presentVideoFullScreen {
+            presentVideoFullScreen()
+        } else {
+            isFullScreenPresented = true
+        }
         #endif
     }
 }
 
-private struct FullScreenVideoView: View {
+struct FullScreenVideoView: View {
     let player: PlayerViewModel
     var onClose: (() -> Void)?
-    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    @Environment(\.usesTouchControls) private var usesTouchControls
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -115,18 +121,46 @@ private struct FullScreenVideoView: View {
                 .gesture(videoTapGesture)
                 .modifier(VideoPlaybackAccessibility(player: player))
 
-            Button {
-                close()
-            } label: {
-                Label("Close", systemImage: "xmark")
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
+            #if os(iOS)
+            DeckSafeControlsOverlay {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) { playbackButton; closeButton }
+                    VStack(alignment: .trailing, spacing: 12) { playbackButton; closeButton }
+                }
+                .padding(18)
             }
-            .buttonStyle(.borderedProminent)
-            .frame(minWidth: usesPhoneLayout ? 44 : nil, minHeight: usesPhoneLayout ? 44 : nil)
-            .padding(18)
+            #else
+            closeButton.padding(18)
+            #endif
         }
     }
+
+    private var closeButton: some View {
+        Button {
+            close()
+        } label: {
+            Label("Close", systemImage: "xmark")
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+        }
+        .buttonStyle(.borderedProminent)
+        .frame(minWidth: usesTouchControls ? 44 : nil, minHeight: usesTouchControls ? 44 : nil)
+        .accessibilityIdentifier("videoFullScreenCloseButton")
+    }
+
+    #if os(iOS)
+    private var playbackButton: some View {
+        Button { player.togglePlayPause() } label: {
+            Label(player.isPlaying ? L10n.string("Pause") : L10n.string("Play"),
+                  systemImage: player.isPlaying ? "pause.fill" : "play.fill")
+                .padding(.horizontal, 10).padding(.vertical, 6)
+        }
+        .buttonStyle(.borderedProminent)
+        .frame(minWidth: 44, minHeight: 44)
+        .disabled(!player.isVideoMode)
+        .accessibilityIdentifier("videoFullScreenPlayPauseButton")
+    }
+    #endif
 
     private var videoTapGesture: some Gesture {
         TapGesture(count: 2)

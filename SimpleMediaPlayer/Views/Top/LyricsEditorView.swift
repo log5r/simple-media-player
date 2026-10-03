@@ -7,7 +7,7 @@ struct LyricsEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    @Environment(\.usesTouchControls) private var usesTouchControls
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var lyrics: String
     @State private var saveLocation = LyricsSaveLocation.applicationOnly
@@ -68,10 +68,10 @@ struct LyricsEditorView: View {
             }
         }
         .frame(
-            minWidth: usesPhoneLayout ? nil : 420,
-            idealWidth: usesPhoneLayout ? nil : 560,
-            minHeight: usesPhoneLayout ? nil : 400,
-            idealHeight: usesPhoneLayout ? nil : 520
+            minWidth: usesTouchControls ? nil : 420,
+            idealWidth: usesTouchControls ? nil : 560,
+            minHeight: usesTouchControls ? nil : 400,
+            idealHeight: usesTouchControls ? nil : 520
         )
         .task(id: item.id) {
             await loadEditability()
@@ -79,11 +79,18 @@ struct LyricsEditorView: View {
         .onDisappear {
             editabilityRequestID = nil
         }
+        #if DEBUG && os(iOS)
+        .modifier(DuoEditorDiagnostics(
+            kind: "lyrics", itemID: item.id,
+            draft: ["lyrics": lyrics, "saveLocation": saveLocation == .embeddedTag ? "embedded" : "app"],
+            isBusy: isSaving
+        ))
+        #endif
     }
 
     private var saveOptions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if !usesPhoneLayout && !dynamicTypeSize.isAccessibilitySize {
+            if !usesTouchControls && !dynamicTypeSize.isAccessibilitySize {
                 Text("Save Location")
                     .font(.headline)
             }

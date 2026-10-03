@@ -1,25 +1,5 @@
 import SwiftUI
 
-extension EnvironmentValues {
-    @Entry var usesPhoneLayout = false
-}
-
-extension View {
-    func platformEditorFrame(width: CGFloat, height: CGFloat? = nil) -> some View {
-        modifier(PlatformEditorFrame(width: width, height: height))
-    }
-}
-
-private struct PlatformEditorFrame: ViewModifier {
-    let width: CGFloat
-    let height: CGFloat?
-    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
-
-    func body(content: Content) -> some View {
-        content.frame(width: usesPhoneLayout ? nil : width, height: usesPhoneLayout ? nil : height)
-    }
-}
-
 #if os(iOS)
 import SwiftData
 import UIKit
@@ -36,6 +16,7 @@ struct IPhoneLibraryActions {
     let createAACVersion: (MediaItem) -> Void
     let exportItems: ([MediaItem]) -> Void
     let deleteItem: (MediaItem) -> Void
+    let showAddTracks: (Playlist) -> Void
 }
 
 struct IPhoneLibraryView: View {
@@ -50,36 +31,36 @@ struct IPhoneLibraryView: View {
     let canCreateAACVersion: Bool
     let aacVersionExporter: TransformedTrackExporter
     let actions: IPhoneLibraryActions
-
-    @State private var tab = 0
-    @State private var searchText = LibraryListUITestFixture.searchText
-    @State private var searchFilter = LibrarySearchFilter()
-    @State private var showsFilters = false
-    @State private var showsSettings = false
-    @State private var playlistToRename: Playlist?
-    @State private var playlistToDelete: Playlist?
-    @State private var nameDraft = ""
-    @State private var playlistPath: [UUID] = []
-    @State private var playingListName = L10n.string("All Songs")
+    @Bindable var browsingState: LibraryBrowsingState
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: Binding(get: { browsingState.phoneTab }, set: browsingState.selectPhoneTab)) {
             Tab("Library", systemImage: "music.note.house", value: 0) {
-                NavigationStack {
+                NavigationStack(path: Binding(
+                    get: { browsingState.libraryPath }, set: browsingState.navigateLibrary
+                )) {
                     List(LibrarySection.allCases.filter { $0 != .allVideos }) { section in
-                        NavigationLink {
-                            trackList(section: section, title: section.title)
-                        } label: {
+                        NavigationLink(value: LibraryBrowsingRoute.section(section)) {
                             Label(section.title, systemImage: section.icon)
                                 .frame(minHeight: 44)
                         }
                     }
                     .navigationTitle("Library")
                     .toolbar { libraryMenu }
+                    .navigationDestination(for: LibraryBrowsingRoute.self) { route in
+                        switch route {
+                        case let .section(section):
+                            trackList(section: section, title: section.title)
+                        case let .group(group):
+                            trackList(section: group.section, title: group.name, group: group)
+                        }
+                    }
                 }
             }
             Tab("Playlists", systemImage: "music.note.list", value: 1) {
-                NavigationStack(path: $playlistPath) {
+                NavigationStack(path: Binding(
+                    get: { browsingState.playlistPath }, set: browsingState.navigatePlaylists
+                )) {
                     playlistList
                         .navigationDestination(for: UUID.self) { id in
                             if let playlist = playlists.first(where: { $0.id == id }) {
@@ -95,14 +76,14 @@ struct IPhoneLibraryView: View {
             }
             Tab("Search", systemImage: "magnifyingglass", value: 3, role: .search) {
                 NavigationStack {
-                    trackList(section: nil, title: L10n.string("Search"), isSearch: true)
-                        .searchable(text: $searchText, prompt: "Search")
+                    trackList(section: nil, title: L10n.string("Search"))
+                        .searchable(text: $browsingState.searchText, prompt: "Search")
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
-                                Button("Filters", systemImage: searchFilter.isActive
+                                Button("Filters", systemImage: browsingState.searchFilter.isActive
                                        ? "line.3.horizontal.decrease.circle.fill"
                                        : "line.3.horizontal.decrease.circle") {
-                                    showsFilters = true
+                                    browsingState.showsFilters = true
                                 }
                                 .accessibilityIdentifier("advancedSearchButton")
                             }
@@ -113,37 +94,6 @@ struct IPhoneLibraryView: View {
         .tabBarMinimizeBehavior(.never)
         .tabViewBottomAccessory(isEnabled: player.currentItem != nil) {
             IPhoneLEDDock(player: player) { showsDeck = true }
-        }
-        .fullScreenCover(isPresented: $showsDeck) {
-            IPhoneDeckView(
-                player: player, libraryService: libraryService, listName: playingListName,
-                canCreateAACVersion: canCreateAACVersion, createAACVersion: actions.createAACVersion,
-                isPresented: $showsDeck, aacResultMessage: $aacResultMessage, showsAACResult: $showsAACResult
-            )
-        }
-        .sheet(isPresented: $showsSettings) { AppSettingsView(player: player) }
-        .sheet(isPresented: $showsFilters) { AdvancedSearchView(filter: $searchFilter) }
-        .alert("Rename Playlist", isPresented: Binding(
-            get: { playlistToRename != nil }, set: { if !$0 { playlistToRename = nil } }
-        )) {
-            TextField("Name", text: $nameDraft)
-            Button("Rename") {
-                if let playlistToRename { actions.renamePlaylist(playlistToRename, nameDraft) }
-                playlistToRename = nil
-            }
-            Button("Cancel", role: .cancel) { playlistToRename = nil }
-        }
-        .alert("Delete Playlist?", isPresented: Binding(
-            get: { playlistToDelete != nil }, set: { if !$0 { playlistToDelete = nil } }
-        ), presenting: playlistToDelete) { playlist in
-            Button("Delete", role: .destructive) {
-                playlistPath.removeAll { $0 == playlist.id }
-                actions.deletePlaylist(playlist)
-                playlistToDelete = nil
-            }
-            Button("Cancel", role: .cancel) { playlistToDelete = nil }
-        } message: { playlist in
-            Text(L10n.format("Delete “%@”? Media files in your library will not be deleted.", playlist.name))
         }
         .overlay(alignment: .top) { progressPanel }
         .onChange(of: player.currentItem?.id) { _, id in
@@ -159,7 +109,7 @@ struct IPhoneLibraryView: View {
                     .accessibilityIdentifier("importMediaButton")
                 Button("Export…", systemImage: "square.and.arrow.up") { actions.exportItems(items) }
                     .disabled(items.isEmpty || !canCreateAACVersion)
-                Button("Settings", systemImage: "gearshape") { showsSettings = true }
+                Button("Settings", systemImage: "gearshape") { browsingState.showsSettings = true }
                     .accessibilityIdentifier("settingsButton")
             }
             .accessibilityIdentifier("phoneLibraryMore")
@@ -174,17 +124,17 @@ struct IPhoneLibraryView: View {
                 }
                 .contextMenu {
                     Button("Rename", systemImage: "pencil") {
-                        nameDraft = playlist.name
-                        playlistToRename = playlist
+                        browsingState.nameDraft = playlist.name
+                        browsingState.playlistToRename = playlist
                     }
                     Button("Delete Playlist", systemImage: "trash", role: .destructive) {
-                        playlistToDelete = playlist
+                        browsingState.playlistToDelete = playlist
                     }
                 }
             }
             Button("Add Playlist", systemImage: "plus.circle") {
                 let playlist = actions.createPlaylist()
-                playlistPath.append(playlist.id)
+                browsingState.navigatePlaylists(to: [playlist.id])
             }
             .frame(minHeight: 44)
             .accessibilityIdentifier("addPlaylistButton")
@@ -193,18 +143,21 @@ struct IPhoneLibraryView: View {
     }
 
     private func trackList(
-        section: LibrarySection?, playlist: Playlist? = nil, title: String, isSearch: Bool = false
+        section: LibrarySection?, playlist: Playlist? = nil, title: String,
+        group: LibraryBrowsingGroup? = nil
     ) -> some View {
         return IPhoneTrackListView(
             items: items, section: section, playlist: playlist, title: title,
             playlists: playlists, player: player, libraryService: libraryService,
             canCreateAACVersion: canCreateAACVersion, actions: actions,
             play: { item, queue, playingTitle in
-                playingListName = playingTitle
+                browsingState.playingListName = playingTitle
+                browsingState.selectedItemID = item.id
                 player.play(item: item, in: queue)
             }, allItems: items,
-            searchText: isSearch ? searchText : "",
-            searchFilter: isSearch ? searchFilter : LibrarySearchFilter()
+            searchText: browsingState.searchText,
+            searchFilter: browsingState.searchFilter,
+            browsingState: browsingState, group: group
         )
     }
 

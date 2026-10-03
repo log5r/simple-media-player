@@ -181,6 +181,10 @@ struct TransportButtonsView: View {
                     .foregroundStyle(iconColor(active: active, isEnabled: isEnabled))
                     .shadow(color: active ? palette.activeIconShadow : .clear, radius: 3)
             }
+            #if os(iOS)
+            .frame(minWidth: 44, minHeight: 44)
+            #endif
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isEnabled == false)

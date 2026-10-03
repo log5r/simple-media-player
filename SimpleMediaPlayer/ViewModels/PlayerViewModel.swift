@@ -62,6 +62,7 @@ final class PlayerViewModel {
             updateClock()
         }
     }
+    private(set) var playbackGeneration: UInt64 = 0
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0
     var audioFrame = AudioFrameData.silent()
@@ -182,6 +183,7 @@ final class PlayerViewModel {
             self?.formatInfo = formatInfo
         }
         audioEngine.onError = { [weak self] message in
+            self?.playbackGeneration &+= 1
             self?.errorMessage = message
             self?.isPaused = false
             self?.isPlaying = false
@@ -289,6 +291,7 @@ extension PlayerViewModel {
 
 extension PlayerViewModel {
     func play(item: MediaItem, in queue: [MediaItem]) {
+        playbackGeneration &+= 1
         guard let url = libraryService.resolvedURL(for: item) else {
             clearCurrentItem()
             errorMessage = L10n.format("Could not open file: %@", item.title)
@@ -313,9 +316,10 @@ extension PlayerViewModel {
 
         if item.isVideo {
             audioEngine.suspend()
+            let generation = playbackGeneration
             Task {
                 await videoService.load(url: url)
-                guard currentItem?.id == item.id, isVideoMode else { return }
+                guard playbackGeneration == generation, currentItem?.id == item.id, isVideoMode else { return }
                 duration = videoService.duration > 0 ? videoService.duration : item.duration
                 videoService.play()
                 isPlaying = true
@@ -362,6 +366,7 @@ extension PlayerViewModel {
     }
 
     func stop() {
+        playbackGeneration &+= 1
         isPaused = false
         if isVideoMode {
             closeVideoSession()
@@ -433,6 +438,7 @@ extension PlayerViewModel {
     // 作り直すが、再生位置・再生状態・各種設定はエンジン側が引き継ぐので
     // ViewModel の公開状態はそのままでよい
     func resetAudioEngine() {
+        if !isVideoMode { playbackGeneration &+= 1 }
         audioEngine.resetEngine()
     }
 
@@ -559,6 +565,7 @@ extension PlayerViewModel {
     }
 
     private func closeVideoSession() {
+        playbackGeneration &+= 1
         musicAnalysis.reset()
         videoService.close()
         currentItem = nil

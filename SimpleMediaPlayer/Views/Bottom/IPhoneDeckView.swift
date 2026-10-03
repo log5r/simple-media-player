@@ -28,37 +28,32 @@ struct IPhoneDeckView: View {
     @State private var lyricsItem: MediaItem?
     @State private var saveItem: MediaItem?
     @State private var pendingSaveItem: MediaItem?
-
-    private var palette: BottomPanelPalette { BottomPanelPalette(colorScheme: colorScheme) }
-
-    private var pitchSpeedAvailable: Bool { player.isVideoMode == false }
-
-    private var queuePlaybackState: String {
-        if player.isPlaying { return L10n.string("Playing") }
-        return player.isPaused ? L10n.string("Paused") : L10n.string("Stopped")
-    }
+    @State private var showsVideoFullScreen = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
                 if page == .display {
-                    ScrollView {
+                    IPhoneDeckArrangementView { height in
+                        display(height: height)
+                    } controls: {
                         VStack(spacing: 18) {
-                            display
                             SeekBarView(player: player).frame(minHeight: 44)
                             indicators
                             transport(large: true)
                             volume
-                        }.padding(.horizontal, 16).padding(.bottom, 12)
+                        }
                     }
                 } else {
-                    LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
-                        .clipShape(RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 16)
+                    DeckSafeRow(height: 90) {
+                        LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
+                            .clipShape(RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 16)
+                    }
                     pageContent.frame(maxWidth: .infinity, maxHeight: .infinity)
                     SeekBarView(player: player).frame(minHeight: 44)
-                    transport(large: false).padding(.horizontal, 16)
+                    DeckSafeRow(height: 52) { transport(large: false).padding(.horizontal, 16) }
                 }
-                pageSwitcher
+                DeckSafeRow(height: dynamicTypeSize.isAccessibilitySize ? 72 : 52) { pageSwitcher }
             }
             .background(palette.panelBackground.ignoresSafeArea())
             .navigationTitle(listName)
@@ -84,6 +79,7 @@ struct IPhoneDeckView: View {
                 onComplete: { _ in saveItem = nil }, onCancel: { saveItem = nil }
             )
         }
+        .fullScreenCover(isPresented: $showsVideoFullScreen) { FullScreenVideoView(player: player) }
         .alert("Create AAC Version", isPresented: Binding(
             get: { showsAACResult && isPresented },
             set: { if !$0 && isPresented { showsAACResult = false } }
@@ -92,6 +88,9 @@ struct IPhoneDeckView: View {
         } message: { Text(aacResultMessage) }
         .onChange(of: player.currentItem?.id) { _, id in
             if id == nil { isPresented = false }
+        }
+        .onChange(of: player.isVideoMode) { _, isVideo in
+            if !isVideo { showsVideoFullScreen = false }
         }
     }
 
@@ -166,12 +165,16 @@ struct IPhoneDeckView: View {
         }
     }
 
-    @ViewBuilder private var display: some View {
+    @ViewBuilder private func display(height: CGFloat) -> some View {
         if player.isVideoMode {
-            VideoAreaView(player: player, showsBackToListButton: false)
-                .frame(height: 300).clipShape(RoundedRectangle(cornerRadius: 12))
+            VideoAreaView(player: player, showsBackToListButton: false,
+                          presentVideoFullScreen: { showsVideoFullScreen = true })
+                .frame(height: height).clipShape(RoundedRectangle(cornerRadius: 12))
         } else {
-            LEDDisplayView(player: player, height: 300, visualizerHeight: 88, layout: .phoneDeck)
+            LEDDisplayView(
+                player: player, height: height, visualizerHeight: min(88, max(20, height - 180)),
+                layout: height < 200 ? .phoneStrip : .phoneDeck
+            )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(5).background(palette.displayBezelFill, in: RoundedRectangle(cornerRadius: 16))
         }
@@ -257,18 +260,6 @@ struct IPhoneDeckView: View {
             IPhoneRoutePicker().frame(width: 44, height: 44)
         }.frame(maxWidth: .infinity)
     }
-
-    private var volume: some View {
-        HStack(spacing: 12) {
-            IPhoneTransportButton(
-                title: player.isMuted ? "Unmute" : "Mute",
-                symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill", identifier: "phoneMute"
-            ) { player.toggleMuted() }
-            VolumeSlotView(value: player.volume, palette: palette, axis: .horizontal) { player.setVolume($0) }
-                .frame(height: 44)
-            Text("\(Int(player.volume * 100))").font(.caption.monospacedDigit()).frame(width: 30)
-        }
-    }
 }
 
 struct IPhoneTransportButton: View {
@@ -306,6 +297,27 @@ private struct IPhoneRoutePicker: UIViewRepresentable {
 }
 
 private extension IPhoneDeckView {
+    var volume: some View {
+        HStack(spacing: 12) {
+            IPhoneTransportButton(
+                title: player.isMuted ? "Unmute" : "Mute",
+                symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill", identifier: "phoneMute"
+            ) { player.toggleMuted() }
+            VolumeSlotView(value: player.volume, palette: palette, axis: .horizontal) { player.setVolume($0) }
+                .frame(height: 44)
+            Text("\(Int(player.volume * 100))").font(.caption.monospacedDigit()).frame(width: 30)
+        }
+    }
+
+    var palette: BottomPanelPalette { BottomPanelPalette(colorScheme: colorScheme) }
+
+    var pitchSpeedAvailable: Bool { player.isVideoMode == false }
+
+    var queuePlaybackState: String {
+        if player.isPlaying { return L10n.string("Playing") }
+        return player.isPaused ? L10n.string("Paused") : L10n.string("Stopped")
+    }
+
     var moreMenu: some View {
         Menu {
             Button { saveItem = player.currentItem } label: {

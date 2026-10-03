@@ -6,49 +6,52 @@ struct SidebarView: View {
     let createPlaylist: () -> Void
     let renamePlaylist: (Playlist, String) -> Void
     let deletePlaylist: (Playlist) -> Void
-
-    @State private var playlistToRename: Playlist?
-    @State private var playlistToDelete: Playlist?
-    @State private var nameDraft = ""
+    @Bindable var browsingState: LibraryBrowsingState
 
     var body: some View {
         sidebarList
             .listStyle(.sidebar)
+            .accessibilityIdentifier("librarySidebar")
             .navigationTitle("Library")
+            #if os(macOS)
             .alert(
                 "Rename Playlist",
                 isPresented: Binding(
-                    get: { playlistToRename != nil }, set: { if $0 == false { playlistToRename = nil } }
+                    get: { browsingState.playlistToRename != nil },
+                    set: { if $0 == false { browsingState.playlistToRename = nil } }
                 )
             ) {
-                TextField("Name", text: $nameDraft)
+                TextField("Name", text: $browsingState.nameDraft)
                 Button("Rename") {
-                    if let playlistToRename {
-                        renamePlaylist(playlistToRename, nameDraft)
+                    if let playlistToRename = browsingState.playlistToRename {
+                        renamePlaylist(playlistToRename, browsingState.nameDraft)
                     }
-                    playlistToRename = nil
+                    browsingState.playlistToRename = nil
                 }
                 Button("Cancel", role: .cancel) {
-                    playlistToRename = nil
+                    browsingState.playlistToRename = nil
                 }
             }
             .alert(
                 "Delete Playlist?",
                 isPresented: Binding(
-                    get: { playlistToDelete != nil }, set: { if $0 == false { playlistToDelete = nil } }
+                    get: { browsingState.playlistToDelete != nil },
+                    set: { if $0 == false { browsingState.playlistToDelete = nil } }
                 ),
-                presenting: playlistToDelete
+                presenting: browsingState.playlistToDelete
             ) { playlist in
                 Button("Delete", role: .destructive) {
                     deletePlaylist(playlist)
-                    playlistToDelete = nil
+                    browsingState.removePlaylist(playlist.id)
+                    browsingState.playlistToDelete = nil
                 }
                 Button("Cancel", role: .cancel) {
-                    playlistToDelete = nil
+                    browsingState.playlistToDelete = nil
                 }
             } message: { playlist in
                 Text(L10n.format("Delete “%@”? Media files in your library will not be deleted.", playlist.name))
             }
+            #endif
     }
 
     @ViewBuilder
@@ -94,9 +97,11 @@ struct SidebarView: View {
     private func libraryRow(_ section: LibrarySection) -> some View {
         Label(section.title, systemImage: section.icon)
             .tag(SidebarSelection.library(section))
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("sidebarLibraryRow.\(section.rawValue)")
             .onTapGesture {
                 selection = .library(section)
+                browsingState.select(.library(section))
             }
     }
 
@@ -104,9 +109,11 @@ struct SidebarView: View {
         Label(playlist.name, systemImage: "music.note.list")
             .lineLimit(1)
             .tag(SidebarSelection.playlist(playlist.id))
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("sidebarPlaylistRow.\(playlist.id.uuidString)")
             .onTapGesture {
                 selection = .playlist(playlist.id)
+                browsingState.select(.playlist(playlist.id))
             }
             .contextMenu {
                 playlistMenu(for: playlist)
@@ -122,14 +129,14 @@ struct SidebarView: View {
         }
 
         Button(role: .destructive) {
-            playlistToDelete = playlist
+            browsingState.playlistToDelete = playlist
         } label: {
             Label("Delete Playlist", systemImage: "trash")
         }
     }
 
     private func beginRename(_ playlist: Playlist) {
-        nameDraft = playlist.name
-        playlistToRename = playlist
+        browsingState.nameDraft = playlist.name
+        browsingState.playlistToRename = playlist
     }
 }
