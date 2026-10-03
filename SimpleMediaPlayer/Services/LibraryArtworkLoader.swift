@@ -41,7 +41,20 @@ actor LibraryArtworkLoader {
         return data
     }
 
-    func image(for artworkID: UUID, in container: ModelContainer, maxPixelSize: Int) throws -> CGImage? {
+    @MainActor
+    func image(for artworkID: UUID, in context: ModelContext, maxPixelSize: Int) async throws -> CGImage? {
+        let pendingData = LibraryArtworkStorage.pendingData(for: artworkID, in: context)
+        return try await image(
+            for: artworkID, in: context.container, maxPixelSize: maxPixelSize, pendingData: pendingData
+        )
+    }
+
+    func image(
+        for artworkID: UUID,
+        in container: ModelContainer,
+        maxPixelSize: Int,
+        pendingData: Data? = nil
+    ) throws -> CGImage? {
         try Task.checkCancellation()
         let pixelSize = min(max(maxPixelSize, 1), 600)
         let key = Key(container: ObjectIdentifier(container), artworkID: artworkID, pixelSize: pixelSize)
@@ -53,7 +66,7 @@ actor LibraryArtworkLoader {
         }
 
         let image: CGImage? = try autoreleasepool {
-            guard let data = try read(artworkID, container),
+            guard let data = try pendingData ?? read(artworkID, container),
                   let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,

@@ -59,7 +59,7 @@ final class TransformedTrackExporter {
             isExporting = false
         }
 
-        let sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
+        var sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
         let pitchCents = Float(pitchSemitones * 100)
         let renderRate = Float(rate)
         let renderer = renderer
@@ -67,6 +67,7 @@ final class TransformedTrackExporter {
         do {
             let draft = try await metadataDraft(for: item, title: trimmedTitle, libraryService: libraryService)
             try libraryService.validateCopySource(item, in: sourceContext)
+            sourceSnapshot.artworkData = draft.artworkData
             let renderTask = Task.detached(priority: .userInitiated) { [weak self] in
                 try Task.checkCancellation()
                 let result = try renderer.render(
@@ -110,7 +111,6 @@ final class TransformedTrackExporter {
                 renderedFileURL: outputURL,
                 title: trimmedTitle,
                 duration: renderResult.duration,
-                artworkSnapshot: LibraryArtworkSnapshot(data: draft.artworkData),
                 in: context
             )
             progress = 1

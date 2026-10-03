@@ -139,8 +139,6 @@ final class LibraryService {
                 if isDuplicate == false {
                     let item = try await makeMediaItem(from: url, importFingerprint: fingerprint)
                     context.insert(item)
-                    // Publish the artwork record before a visible row requests it from a worker context.
-                    try context.save()
                     itemsByFingerprint[fingerprint, default: []].append(item)
                 }
             } catch {

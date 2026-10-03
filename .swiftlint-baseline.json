@@ -1414,8 +1414,8 @@
     "violation": {
       "location": {
         "character": 5,
-        "file": "SimpleMediaPlayerTests/TransformedExportCancellationTests.swift",
-        "line": 278
+        "file": "SimpleMediaPlayerTests/TransformedExportTestSupport.swift",
+        "line": 117
       },
       "reason": "Function should have 5 parameters or less: it currently has 6",
       "ruleDescription": "Number of function parameters should be low.",
@@ -1564,10 +1564,10 @@
       "severity": "warning",
       "ruleDescription": "Files should not span too many lines.",
       "ruleName": "File Length",
-      "reason": "File should contain 400 lines or less: currently contains 995",
+      "reason": "File should contain 400 lines or less: currently contains 907",
       "ruleIdentifier": "file_length",
       "location": {
-        "line": 1423,
+        "line": 907,
         "file": "SimpleMediaPlayer/Services/LibraryService.swift",
         "character": 1
       }
@@ -1594,7 +1594,7 @@
       "severity": "warning",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleName": "Type Body Length",
-      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 350 lines",
+      "reason": "Class body should span 250 lines or less excluding comments and whitespace: currently spans 349 lines",
       "ruleIdentifier": "type_body_length",
       "location": {
         "line": 24,

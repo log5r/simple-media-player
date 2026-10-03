@@ -12,24 +12,7 @@ struct MediaImportMigrationTests {
             let playlistID = UUID()
             let entryID = UUID()
 
-            try autoreleasepool {
-                let schema = Schema(versionedSchema: PreFingerprintLibrarySchema.self)
-                let configuration = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
-                let container = try ModelContainer(for: schema, configurations: [configuration])
-                let context = container.mainContext
-                let item = PreFingerprintLibrarySchema.MediaItem(id: itemID)
-                let playlist = PreFingerprintLibrarySchema.Playlist(id: playlistID)
-                let entry = PreFingerprintLibrarySchema.PlaylistEntry(
-                    id: entryID,
-                    sortIndex: 7,
-                    playlist: playlist,
-                    item: item
-                )
-                context.insert(item)
-                context.insert(playlist)
-                context.insert(entry)
-                try context.save()
-            }
+            try createLegacyStore(at: storeURL, itemID: itemID, playlistID: playlistID, entryID: entryID)
 
             let container = try autoreleasepool {
                 let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
@@ -43,30 +26,8 @@ struct MediaImportMigrationTests {
                 let items = try context.fetch(FetchDescriptor<MediaItem>())
                 let item = try #require(items.first)
                 #expect(items.count == 1)
-                #expect(item.id == itemID)
-                #expect(item.title == "Legacy title")
-                #expect(item.artist == "Legacy artist")
-                #expect(item.album == "Legacy album")
-                #expect(item.genre == "Legacy genre")
-                #expect(item.year == "2020")
-                #expect(item.trackNumber == "3")
-                #expect(item.comment == "Legacy comment")
-                #expect(item.albumArtist == "Legacy album artist")
-                #expect(item.composer == "Legacy composer")
-                #expect(item.discNumber == "2")
-                #expect(item.isCompilation)
-                #expect(item.duration == 123)
-                #expect(item.isVideo == false)
-                #expect(item.lyricsRaw == "Legacy lyrics")
-                #expect(item.bookmarkData == Data([1, 2, 3]))
-                #expect(item.artworkData == Data([4, 5, 6]))
-                #expect(item.hasArtwork)
-                #expect(item.artworkID == item.artwork?.id)
-                #expect(item.legacyArtworkData == nil)
+                expectLegacyMetadata(item, id: itemID)
                 #expect(try context.fetchCount(FetchDescriptor<MediaArtwork>()) == 1)
-                #expect(item.addedAt == Date(timeIntervalSince1970: 1_700_000_000))
-                #expect(item.fileName == "legacy.mp3")
-                #expect(item.importFingerprint == nil)
 
                 let playlists = try context.fetch(FetchDescriptor<Playlist>())
                 let playlist = try #require(playlists.first)
@@ -89,6 +50,53 @@ struct MediaImportMigrationTests {
                 #expect(savedItem.importFingerprint == "sha256:migrated")
             }
         }
+    }
+
+    private func createLegacyStore(at storeURL: URL, itemID: UUID, playlistID: UUID, entryID: UUID) throws {
+        try autoreleasepool {
+            let schema = Schema(versionedSchema: PreFingerprintLibrarySchema.self)
+            let configuration = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            let context = container.mainContext
+            let item = PreFingerprintLibrarySchema.MediaItem(id: itemID)
+            let playlist = PreFingerprintLibrarySchema.Playlist(id: playlistID)
+            let entry = PreFingerprintLibrarySchema.PlaylistEntry(
+                id: entryID,
+                sortIndex: 7,
+                playlist: playlist,
+                item: item
+            )
+            context.insert(item)
+            context.insert(playlist)
+            context.insert(entry)
+            try context.save()
+        }
+    }
+
+    private func expectLegacyMetadata(_ item: MediaItem, id: UUID) {
+        #expect(item.id == id)
+        #expect(item.title == "Legacy title")
+        #expect(item.artist == "Legacy artist")
+        #expect(item.album == "Legacy album")
+        #expect(item.genre == "Legacy genre")
+        #expect(item.year == "2020")
+        #expect(item.trackNumber == "3")
+        #expect(item.comment == "Legacy comment")
+        #expect(item.albumArtist == "Legacy album artist")
+        #expect(item.composer == "Legacy composer")
+        #expect(item.discNumber == "2")
+        #expect(item.isCompilation)
+        #expect(item.duration == 123)
+        #expect(item.isVideo == false)
+        #expect(item.lyricsRaw == "Legacy lyrics")
+        #expect(item.bookmarkData == Data([1, 2, 3]))
+        #expect(item.artworkData == Data([4, 5, 6]))
+        #expect(item.hasArtwork)
+        #expect(item.artworkID == item.artwork?.id)
+        #expect(item.legacyArtworkData == nil)
+        #expect(item.addedAt == Date(timeIntervalSince1970: 1_700_000_000))
+        #expect(item.fileName == "legacy.mp3")
+        #expect(item.importFingerprint == nil)
     }
 }
 

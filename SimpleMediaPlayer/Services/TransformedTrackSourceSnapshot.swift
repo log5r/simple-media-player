@@ -6,6 +6,7 @@ struct TransformedTrackSourceSnapshot: Sendable {
     let registeredID: UUID?
     let metadata: MediaMetadataModelValues
     let lyricsRaw: String?
+    var artworkData: Data?
 
     @MainActor init(item: MediaItem) {
         registeredID = item.modelContext == nil ? nil : item.id
@@ -16,5 +17,7 @@ struct TransformedTrackSourceSnapshot: Sendable {
             isCompilation: item.isCompilation
         )
         lyricsRaw = item.lyricsRaw
+        // Filled from the asynchronous artwork read after the model values have been frozen.
+        artworkData = nil
     }
 }

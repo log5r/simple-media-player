@@ -59,7 +59,7 @@ struct LibraryArtworkView: View {
 
         let loadedImage = try? await LibraryArtworkLoader.shared.image(
             for: artworkID,
-            in: modelContext.container,
+            in: modelContext,
             maxPixelSize: request.maxPixelSize
         )
         guard Task.isCancelled == false, loadRequestID == requestID else { return }

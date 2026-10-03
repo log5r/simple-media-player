@@ -26,9 +26,8 @@ extension LibraryService {
             return item.artworkData
         }
         // Pending inserts are already in memory but invisible to the worker's saved-store context.
-        if let inserted = context.insertedModelsArray.lazy.compactMap({ $0 as? MediaArtwork })
-            .first(where: { $0.id == artworkID }) {
-            return inserted.data
+        if let data = LibraryArtworkStorage.pendingData(for: artworkID, in: context) {
+            return data
         }
         let data = try await artworkLoader.data(for: artworkID, in: context.container)
         try Task.checkCancellation()

@@ -12,12 +12,13 @@ extension LibraryService {
     ) async throws -> MediaItem {
         let sourceContext = source.modelContext
         try validateCopySource(source, in: sourceContext)
-        let sourceSnapshot = TransformedTrackSourceSnapshot(item: source)
+        var sourceSnapshot = TransformedTrackSourceSnapshot(item: source)
         let artworkData = try await artworkForCopy(of: source, snapshot: artworkSnapshot)
         try validateCopySource(source, in: sourceContext)
+        sourceSnapshot.artworkData = artworkData
         return try await registerTransformedCopy(
             of: sourceSnapshot, renderedFileURL: renderedFileURL, title: title, duration: duration,
-            artworkSnapshot: LibraryArtworkSnapshot(data: artworkData), in: context
+            in: context
         )
     }
 
@@ -26,7 +27,6 @@ extension LibraryService {
         renderedFileURL: URL,
         title: String,
         duration: TimeInterval,
-        artworkSnapshot: LibraryArtworkSnapshot,
         in context: ModelContext
     ) async throws -> MediaItem {
         try Task.checkCancellation()
@@ -66,7 +66,7 @@ extension LibraryService {
             isVideo: false,
             lyricsRaw: source.lyricsRaw,
             bookmarkData: bookmark,
-            artworkData: artworkSnapshot.data,
+            artworkData: source.artworkData,
             fileName: copiedURL.lastPathComponent
         )
         try Task.checkCancellation()

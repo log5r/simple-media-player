@@ -138,6 +138,39 @@ struct LibraryArtworkLoaderTests {
         #expect(probe.readCount == 0)
     }
 
+    @Test func pendingImagesDecodeBeforeBatchSaveAndReuseTheCacheAfterSave() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        context.autosaveEnabled = false
+        let data = try makeImage()
+        let item = MediaItem(
+            title: "Pending", duration: 1, isVideo: false, bookmarkData: Data(),
+            artworkData: data, fileName: "pending.mp3"
+        )
+        context.insert(item)
+        let probe = ArtworkReadProbe(data: data)
+        let loader = LibraryArtworkLoader(read: probe.read)
+        let artworkID = try #require(item.artworkID)
+
+        let image = try #require(await loader.image(for: artworkID, in: context, maxPixelSize: 32))
+        #expect(image.width == 32)
+        #expect(probe.readCount == 0)
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<MediaArtwork>()) == 0)
+
+        item.artworkData = data
+        let replacementID = try #require(item.artworkID)
+        #expect(replacementID != artworkID)
+        #expect(try await loader.image(for: replacementID, in: context, maxPixelSize: 32) != nil)
+        #expect(probe.readCount == 0)
+
+        try context.save()
+        #expect(try await loader.image(for: replacementID, in: context, maxPixelSize: 32) != nil)
+        #expect(probe.readCount == 0)
+        #expect(try await loader.image(for: replacementID, in: context, maxPixelSize: 64) != nil)
+        #expect(probe.readCount == 1)
+        #expect(probe.wasMainThread == false)
+    }
+
     private func waitUntilReading(_ probe: ArtworkReadProbe) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while probe.readCount == 0, ContinuousClock.now < deadline {
