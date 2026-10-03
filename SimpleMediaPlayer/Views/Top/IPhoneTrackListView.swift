@@ -13,7 +13,10 @@ struct IPhoneTrackListView: View {
     let actions: IPhoneLibraryActions
     let play: (MediaItem, [MediaItem], String) -> Void
     let allItems: [MediaItem]
+    var searchText = ""
+    var searchFilter = LibrarySearchFilter()
 
+    @State private var listProjection = LibraryListProjection()
     @State private var sortField = LibrarySortField.dateAdded
     @State private var sortDirection = LibrarySortDirection.ascending
     @State private var editMode = EditMode.inactive
@@ -46,7 +49,7 @@ struct IPhoneTrackListView: View {
                         Menu("More", systemImage: "ellipsis") {
                             if !isCategoryBrowser {
                                 Button("Select", systemImage: "checklist") { editMode = .active }
-                                    .disabled(items.isEmpty || !canCreateAACVersion)
+                                    .disabled(orderedItems.isEmpty || !canCreateAACVersion)
                                     .accessibilityIdentifier("multipleEditButton")
                             }
                             if playlist == nil && !isCategoryBrowser {
@@ -60,7 +63,7 @@ struct IPhoneTrackListView: View {
                                 }
                             }
                             Button("Export…", systemImage: "square.and.arrow.up") { actions.exportItems(orderedItems) }
-                                .disabled(items.isEmpty || !canCreateAACVersion)
+                                .disabled(orderedItems.isEmpty || !canCreateAACVersion)
                         }
                         .accessibilityIdentifier("phoneTrackMore")
                     }
@@ -80,7 +83,9 @@ struct IPhoneTrackListView: View {
         }
         .sheet(item: $infoItem) { item in MediaInfoView(item: item, libraryService: libraryService) }
         .sheet(isPresented: $showsBulkEditor, onDismiss: endEditing) {
-            BulkMetadataEditView(items: items.filter { selection.contains($0.id) }, libraryService: libraryService)
+            BulkMetadataEditView(
+                items: orderedItems.filter { selection.contains($0.id) }, libraryService: libraryService
+            )
         }
         .sheet(isPresented: $showsAddTracks) {
             if let playlist {
@@ -95,7 +100,14 @@ struct IPhoneTrackListView: View {
         } message: { item in
             Text(L10n.format("Delete “%@” from your library. This action cannot be undone.", item.title))
         }
-        .onChange(of: items.map(\.id)) { _, ids in selection.formIntersection(ids) }
+        .modifier(LibraryListUpdates(
+            projection: listProjection, items: items, playlist: playlist,
+            request: LibraryListRequest(
+                section: section, searchText: searchText, searchFilter: searchFilter,
+                sortField: sortField, sortDirection: sortDirection
+            )
+        ))
+        .onChange(of: orderedItems) { _, items in selection.formIntersection(items.map(\.id)) }
     }
 
     private var isCategoryBrowser: Bool {
@@ -103,7 +115,7 @@ struct IPhoneTrackListView: View {
     }
 
     private var orderedItems: [MediaItem] {
-        playlist == nil ? sortField.sorted(items, direction: sortDirection) : items
+        listProjection.items
     }
 
     private var trackPlaybackState: String {
@@ -167,12 +179,12 @@ struct IPhoneTrackListView: View {
         }
         .environment(\.editMode, $editMode)
         .overlay {
-            if items.isEmpty { ContentUnavailableView("No Media", systemImage: "music.note") }
+            if orderedItems.isEmpty { ContentUnavailableView("No Media", systemImage: "music.note") }
         }
     }
 
     private func categoryList(_ section: LibrarySection) -> some View {
-        let groups = Dictionary(grouping: items) { item in
+        let groups = Dictionary(grouping: orderedItems) { item in
             switch section {
             case .albums: item.displayAlbum
             case .artists: item.displayArtist
@@ -207,13 +219,13 @@ struct IPhoneTrackListView: View {
             }
             Button("New Playlist", systemImage: "plus") { actions.createPlaylistWithItem(item) }
         }
-        if let playlist, let index = items.firstIndex(where: { $0.id == item.id }) {
+        if let playlist, let index = orderedItems.firstIndex(where: { $0.id == item.id }) {
             Button("Move Up", systemImage: "arrow.up") {
                 actions.moveItems(IndexSet(integer: index), index - 1, playlist)
             }.disabled(index == 0)
             Button("Move Down", systemImage: "arrow.down") {
                 actions.moveItems(IndexSet(integer: index), index + 2, playlist)
-            }.disabled(index == items.count - 1)
+            }.disabled(index == orderedItems.count - 1)
             Button("Remove from Playlist", systemImage: "minus.circle") {
                 actions.removeItem(item, playlist)
             }

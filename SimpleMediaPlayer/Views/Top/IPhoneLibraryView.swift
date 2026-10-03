@@ -52,7 +52,7 @@ struct IPhoneLibraryView: View {
     let actions: IPhoneLibraryActions
 
     @State private var tab = 0
-    @State private var searchText = ""
+    @State private var searchText = LibraryListUITestFixture.searchText
     @State private var searchFilter = LibrarySearchFilter()
     @State private var showsFilters = false
     @State private var showsSettings = false
@@ -195,18 +195,16 @@ struct IPhoneLibraryView: View {
     private func trackList(
         section: LibrarySection?, playlist: Playlist? = nil, title: String, isSearch: Bool = false
     ) -> some View {
-        let source = playlist?.orderedItems ?? items.filter {
-            isSearch || (section == .allVideos ? $0.isVideo : !$0.isVideo)
-        }
-        let filtered = isSearch ? source.filter { searchFilter.matches($0, searchText: searchText) } : source
         return IPhoneTrackListView(
-            items: filtered, section: section, playlist: playlist, title: title,
+            items: items, section: section, playlist: playlist, title: title,
             playlists: playlists, player: player, libraryService: libraryService,
             canCreateAACVersion: canCreateAACVersion, actions: actions,
             play: { item, queue, playingTitle in
                 playingListName = playingTitle
                 player.play(item: item, in: queue)
-            }, allItems: items
+            }, allItems: items,
+            searchText: isSearch ? searchText : "",
+            searchFilter: isSearch ? searchFilter : LibrarySearchFilter()
         )
     }
 

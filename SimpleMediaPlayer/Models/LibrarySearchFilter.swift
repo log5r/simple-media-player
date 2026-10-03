@@ -1,6 +1,6 @@
 import Foundation
 
-enum LibraryFilterMatchMode: String, CaseIterable, Identifiable {
+nonisolated enum LibraryFilterMatchMode: String, CaseIterable, Identifiable, Sendable {
     case all
     case any
 
@@ -14,7 +14,7 @@ enum LibraryFilterMatchMode: String, CaseIterable, Identifiable {
     }
 }
 
-struct LibrarySearchFilter: Equatable {
+nonisolated struct LibrarySearchFilter: Equatable, Sendable {
     var title = ""
     var album = ""
     var artist = ""
@@ -40,43 +40,69 @@ struct LibrarySearchFilter: Equatable {
         genre = ""
     }
 
-    func matches(_ item: MediaItem, searchText: String = "") -> Bool {
-        let searchQuery = normalized(searchText)
-        if searchQuery.isEmpty == false {
-            let searchableValues = [
-                item.title,
-                item.artist,
-                item.album,
-                item.albumArtist ?? "",
-                item.composer ?? "",
-                item.genre ?? ""
-            ]
-            guard searchableValues.contains(where: { contains(searchQuery, in: $0) }) else {
-                return false
+    func matches<Item: LibraryListItemValues>(_ item: Item, searchText: String = "") -> Bool {
+        prepared(searchText: searchText).matches(item)
+    }
+
+    func prepared(searchText: String = "") -> Prepared {
+        Prepared(searchQuery: normalized(searchText), criteria: activeCriteria, matchMode: matchMode)
+    }
+
+    nonisolated struct Prepared: Sendable {
+        fileprivate let searchQuery: String
+        fileprivate let criteria: [Criterion]
+        fileprivate let matchMode: LibraryFilterMatchMode
+
+        func matches<Item: LibraryListItemValues>(_ item: Item) -> Bool {
+            if searchQuery.isEmpty == false {
+                guard LibrarySearchFilter.contains(searchQuery, in: item.title)
+                    || LibrarySearchFilter.contains(searchQuery, in: item.artist)
+                    || LibrarySearchFilter.contains(searchQuery, in: item.album)
+                    || LibrarySearchFilter.contains(searchQuery, in: item.albumArtist ?? "")
+                    || LibrarySearchFilter.contains(searchQuery, in: item.composer ?? "")
+                    || LibrarySearchFilter.contains(searchQuery, in: item.genre ?? "") else {
+                    return false
+                }
             }
-        }
 
-        let results = activeCriteria.map { criterion in
-            contains(criterion.query, in: criterion.value(item))
-        }
-
-        guard results.isEmpty == false else { return true }
-        switch matchMode {
-        case .all:
-            return results.allSatisfy { $0 }
-        case .any:
-            return results.contains(true)
+            guard criteria.isEmpty == false else { return true }
+            switch matchMode {
+            case .all:
+                return criteria.allSatisfy { LibrarySearchFilter.contains($0.query, in: $0.field.value(item)) }
+            case .any:
+                return criteria.contains { LibrarySearchFilter.contains($0.query, in: $0.field.value(item)) }
+            }
         }
     }
 
-    private var activeCriteria: [(query: String, value: (MediaItem) -> String)] {
+    nonisolated fileprivate struct Criterion: Sendable {
+        let query: String
+        let field: Field
+    }
+
+    nonisolated fileprivate enum Field: Sendable {
+        case title, album, artist, albumArtist, composer, genre
+
+        func value<Item: LibraryListItemValues>(_ item: Item) -> String {
+            switch self {
+            case .title: item.title
+            case .album: item.album
+            case .artist: item.artist
+            case .albumArtist: item.albumArtist ?? ""
+            case .composer: item.composer ?? ""
+            case .genre: item.genre ?? ""
+            }
+        }
+    }
+
+    private var activeCriteria: [Criterion] {
         [
-            (normalized(title), { $0.title }),
-            (normalized(album), { $0.album }),
-            (normalized(artist), { $0.artist }),
-            (normalized(albumArtist), { $0.albumArtist ?? "" }),
-            (normalized(composer), { $0.composer ?? "" }),
-            (normalized(genre), { $0.genre ?? "" })
+            Criterion(query: normalized(title), field: .title),
+            Criterion(query: normalized(album), field: .album),
+            Criterion(query: normalized(artist), field: .artist),
+            Criterion(query: normalized(albumArtist), field: .albumArtist),
+            Criterion(query: normalized(composer), field: .composer),
+            Criterion(query: normalized(genre), field: .genre)
         ].filter { $0.query.isEmpty == false }
     }
 
@@ -84,7 +110,7 @@ struct LibrarySearchFilter: Equatable {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func contains(_ query: String, in value: String) -> Bool {
+    private static func contains(_ query: String, in value: String) -> Bool {
         value.range(
             of: query,
             options: [.caseInsensitive, .diacriticInsensitive],

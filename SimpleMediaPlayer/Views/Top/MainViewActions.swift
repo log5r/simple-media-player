@@ -49,15 +49,12 @@ extension MainView {
     }
 
     var filteredItems: [MediaItem] {
-        let filtered = baseItems.filter { searchFilter.matches($0, searchText: searchText) }
-
-        guard selectedPlaylist == nil else { return filtered }
-        return librarySortField.sorted(filtered, direction: librarySortDirection)
+        listProjection.items
     }
 
     var selectedItem: MediaItem? {
         guard let selectedItemID else { return nil }
-        return filteredItems.first { $0.id == selectedItemID }
+        return listProjection.selectedItem(id: selectedItemID)
     }
 
     var canCreateAACVersion: Bool {
@@ -74,21 +71,6 @@ extension MainView {
         #else
         false
         #endif
-    }
-
-    var baseItems: [MediaItem] {
-        switch selection {
-        case let .library(section):
-            return items.filter { item in
-                switch section {
-                case .allSongs: item.isVideo == false
-                case .allVideos: item.isVideo
-                case .albums, .artists, .genres: item.isVideo == false
-                }
-            }
-        case let .playlist(id):
-            return playlists.first { $0.id == id }?.orderedItems ?? []
-        }
     }
 
     func startImport(_ urls: [URL], retainingSecurityScopedAccess: Bool = false) {
