@@ -5,13 +5,16 @@ import Testing
 
 @MainActor
 struct AdaptiveBottomPanelTests {
-    @Test func wideDeckAllocatesControlsFromTheirMinimumWidth() {
-        let bounds = CGRect(x: 0, y: 0, width: 900, height: 180)
-        let placement = AdaptiveBottomPanelPlacement.make(in: bounds, avoiding: [], side: .right, layout: .ledHalf)
+    @Test(arguments: [LEDPanelSide.left, .right], [CGFloat(664), CGFloat(867), CGFloat(900), CGFloat(1_400)])
+    func wideDeckAllocatesExactlyHalfItsSafeWidthToTheLED(side: LEDPanelSide, width: CGFloat) {
+        let bounds = CGRect(x: 17, y: 11, width: width, height: 216)
+        let placement = AdaptiveBottomPanelPlacement.make(in: bounds, avoiding: [], side: side, layout: .ledHalf)
 
-        #expect(placement.controls.width == AdaptiveBottomPanelMetrics.inlineControlWidth)
-        #expect(placement.display.width == 374)
-        #expect(placement.controls.maxX == placement.display.minX)
+        #expect(placement.controls.width == bounds.width / 2)
+        #expect(placement.display.width == bounds.width / 2)
+        #expect(side == .left ? placement.display.maxX == placement.controls.minX :
+                    placement.controls.maxX == placement.display.minX)
+        #expect(placement.controls.width >= AdaptiveBottomPanelMetrics.minimumControlWidth)
         #expect(bounds.contains(placement.controls))
         #expect(bounds.contains(placement.display))
     }
@@ -23,16 +26,34 @@ struct AdaptiveBottomPanelTests {
         let placement = AdaptiveBottomPanelPlacement.make(in: bounds, avoiding: [], side: .left, layout: .ledHalf)
 
         #expect(placement.display.height == 153)
-        #expect(placement.controls.height == 236)
+        #expect(placement.controls.height == 216)
         #expect(placement.display.maxY == placement.controls.minY)
         #expect(placement.controls.width == width)
     }
 
-    @Test func controlsSwitchRowsAtTheSpaceRequiredByTheirContent() {
-        #expect(AdaptiveBottomPanelMetrics.height(width: 825, layout: .ledHalf) == 236)
-        #expect(AdaptiveBottomPanelMetrics.height(width: 826, layout: .ledHalf) == 180)
-        #expect(AdaptiveBottomPanelMetrics.height(width: 631, layout: .ledHalf) == 389)
-        #expect(AdaptiveBottomPanelMetrics.height(width: 632, layout: .ledHalf) == 236)
+    @Test func equalHalvesRequireEnoughSpaceForBothTouchControlRegions() {
+        let minimumWidth = AdaptiveBottomPanelMetrics.minimumSplitWidth
+        #expect(minimumWidth == 664)
+        #expect(AdaptiveBottomPanelMetrics.height(width: minimumWidth - 1, layout: .ledHalf) == 369)
+        #expect(AdaptiveBottomPanelMetrics.height(width: minimumWidth, layout: .ledHalf) == 216)
+        #expect(AdaptiveBottomPanelMetrics.height(width: 1_400, layout: .ledHalf) == 216)
+    }
+
+    @Test func compactButtonRowsKeepTouchTargetsWhenMetersMoveElsewhere() {
+        #expect(AdaptiveBottomPanelMetrics.controlHeight(width: 332, layout: .ledHalf, showsMeters: false) == 112)
+        #expect(AdaptiveBottomPanelMetrics.controlHeight(width: 667, layout: .ledHalf, showsMeters: false) == 112)
+        #expect(AdaptiveBottomPanelMetrics.controlHeight(width: 433.5, layout: .ledHalf) == 216)
+    }
+
+    @Test func outputControlsGainATouchRowWhenTheVolumeRowIsTooNarrow() {
+        #expect(AdaptiveBottomPanelMetrics.controlHeight(width: 381, layout: .ledHalf,
+                                                        showsOutputControls: true) == 268)
+        #expect(AdaptiveBottomPanelMetrics.controlHeight(width: 382, layout: .ledHalf,
+                                                        showsOutputControls: true) == 216)
+        #expect(AdaptiveBottomPanelMetrics.controlHeight(width: 381, layout: .ledHalf,
+                                                        showsMeters: false, showsOutputControls: true) == 164)
+        #expect(AdaptiveBottomPanelMetrics.height(width: 764, layout: .ledHalf,
+                                                 showsOutputControls: true) == 216)
     }
 
     @Test(arguments: [CGFloat(500), CGFloat(900)])
@@ -73,16 +94,16 @@ struct AdaptiveBottomPanelTests {
 
     @Test func verticalDivisionHeightConvergesUsingTheLocalControlWidth() {
         let division = CGRect(x: 435.5, y: -500, width: 80, height: 1_500)
-        for height in [CGFloat(180), CGFloat(236)] {
+        for height in [CGFloat(180), CGFloat(216)] {
             let bounds = CGRect(x: 0, y: 0, width: 951, height: height)
             let placement = AdaptiveBottomPanelPlacement.make(
                 in: bounds, avoiding: [division], side: .right, layout: .ledHalf
             )
             let width = placement.controlWidthForVerticalDivision(in: bounds, divisionFrames: [division])
             #expect(width == 435.5)
-            #expect(AdaptiveBottomPanelMetrics.height(width: 951, layout: .ledHalf, dividedControlWidth: width) == 236)
+            #expect(AdaptiveBottomPanelMetrics.height(width: 951, layout: .ledHalf, dividedControlWidth: width) == 216)
         }
-        #expect(AdaptiveBottomPanelMetrics.height(width: 951, layout: .ledHalf, dividedControlWidth: nil) == 180)
+        #expect(AdaptiveBottomPanelMetrics.height(width: 951, layout: .ledHalf, dividedControlWidth: nil) == 216)
     }
 
     @Test func horizontalDivisionDoesNotDriveAHeightFeedbackLoop() {

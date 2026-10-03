@@ -6,6 +6,7 @@ import SwiftUI
 struct IndicatorColumnView: View {
     let player: PlayerViewModel
     let palette: BottomPanelPalette
+    var usesCompactLayout = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -20,7 +21,8 @@ struct IndicatorColumnView: View {
                 value: player.equalizer.isEnabled ? "ON" : "OFF",
                 isOn: player.equalizer.isEnabled,
                 palette: palette,
-                reduceMotion: reduceMotion
+                reduceMotion: reduceMotion,
+                usesCompactLayout: usesCompactLayout
             )
             .accessibilityLabel("Equalizer")
             .accessibilityValue(player.equalizer.isEnabled ? L10n.string("On") : L10n.string("Off"))
@@ -31,7 +33,8 @@ struct IndicatorColumnView: View {
                 value: PitchSpeedTextFormatter.pitch(pitchSpeedAvailable ? player.pitchSemitones : 0),
                 isOn: pitchSpeedAvailable && player.pitchSemitones != 0,
                 palette: palette,
-                reduceMotion: reduceMotion
+                reduceMotion: reduceMotion,
+                usesCompactLayout: usesCompactLayout
             )
             .accessibilityLabel("Key")
             .accessibilityValue(L10n.format("%d semitones", pitchSpeedAvailable ? player.pitchSemitones : 0))
@@ -42,15 +45,16 @@ struct IndicatorColumnView: View {
                 value: PitchSpeedTextFormatter.rate(pitchSpeedAvailable ? player.playbackRate : 1),
                 isOn: pitchSpeedAvailable && abs(player.playbackRate - 1) > 0.001,
                 palette: palette,
-                reduceMotion: reduceMotion
+                reduceMotion: reduceMotion,
+                usesCompactLayout: usesCompactLayout
             )
             .accessibilityLabel("Speed")
             .accessibilityValue(PitchSpeedTextFormatter.rate(pitchSpeedAvailable ? player.playbackRate : 1))
             .accessibilityIdentifier("indicatorSpeed")
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 6)
-        .frame(width: 168, height: 96)
+        .padding(.leading, usesCompactLayout ? 6 : 10)
+        .padding(.trailing, usesCompactLayout ? 4 : 6)
+        .frame(width: usesCompactLayout ? 132 : 168, height: 96)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("indicatorColumn")
     }
@@ -62,22 +66,23 @@ private struct IndicatorRow: View {
     let isOn: Bool
     let palette: BottomPanelPalette
     let reduceMotion: Bool
+    let usesCompactLayout: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: usesCompactLayout ? 6 : 8) {
             ledDot
-                .frame(width: 12)
+                .frame(width: usesCompactLayout ? 8 : 12)
 
             Text(verbatim: legend)
-                .font(.system(size: 10, weight: .heavy))
-                .kerning(1.2)
+                .font(.system(size: usesCompactLayout ? 9 : 10, weight: .heavy))
+                .kerning(usesCompactLayout ? 0.7 : 1.2)
                 .foregroundStyle(isOn ? palette.indicatorLegendOn : palette.indicatorLegendOff)
                 .shadow(color: palette.indicatorLegendEmboss, radius: 0, y: 1)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             glassWindow
-                .frame(width: 60, height: 20)
+                .frame(width: usesCompactLayout ? 48 : 60, height: 20)
         }
         .frame(height: 22)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isOn)
@@ -134,7 +139,7 @@ private struct IndicatorRow: View {
                 .foregroundStyle(isOn ? palette.glassValueOn : palette.glassValueOff)
                 .shadow(color: isOn ? palette.glassValueGlow : .clear, radius: 6)
                 .lineLimit(1)
-                .padding(.trailing, 8)
+                .padding(.trailing, usesCompactLayout ? 4 : 8)
         }
     }
 }

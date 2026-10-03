@@ -36,6 +36,7 @@ struct BottomPanelView: View {
     let requestSaveCopy: (MediaItem) -> Void
     var availableWidth: CGFloat?
     @AppStorage(AppSettingsKey.bottomPanelLayout) private var layoutRaw = AppSettingsDefault.bottomPanelLayout
+    @Environment(\.usesDividedDisplay) private var usesDividedDisplay
 
     var body: some View {
         #if os(iOS)
@@ -45,7 +46,7 @@ struct BottomPanelView: View {
             queue: queue,
             playItem: playItem,
             requestSaveCopy: requestSaveCopy,
-            layout: BottomPanelLayout(rawValue: layoutRaw) ?? .ledHalf,
+            layout: usesDividedDisplay ? .ledHalf : BottomPanelLayout(rawValue: layoutRaw) ?? .ledHalf,
             availableWidth: availableWidth
         )
         #else

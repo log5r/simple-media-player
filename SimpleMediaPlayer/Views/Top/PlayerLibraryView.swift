@@ -59,6 +59,7 @@ struct MainView: View {
     @State var sharedExportSession: SharedExportSession?
     @State var showsExportErrorsAfterSharing = false
     @State var isPhoneDeckPresented = false
+    @State var showsPortraitLibrary = false
     #endif
 
     @State var browsingState = LibraryBrowsingState()
@@ -67,8 +68,21 @@ struct MainView: View {
     var body: some View {
         GeometryReader { proxy in
             let compact = usesCompactLayout(width: proxy.size.width)
-            withLibraryPresentations(libraryContent(compact: compact, width: proxy.size.width))
+            #if os(iOS)
+            let hasDisplayDivision = DeckReservedRegions.hasDisplayDivision(in: proxy)
+            let portraitPlayer = DuoPortraitPlayerLayout.isPreferred(
+                size: proxy.size, compact: compact,
+                hasDisplayDivision: hasDisplayDivision
+            )
+            #else
+            let portraitPlayer = false
+            #endif
+            withLibraryPresentations(libraryContent(compact: compact, size: proxy.size, portraitPlayer: portraitPlayer))
                 .environment(\.usesPhoneLayout, compact)
+                #if os(iOS)
+                .environment(\.usesDividedDisplay, !compact && hasDisplayDivision)
+                .onChange(of: portraitPlayer) { _, _ in showsPortraitLibrary = false }
+                #endif
                 #if DEBUG && os(iOS)
                 .modifier(DuoLayoutDiagnostics(
                     layoutName: compact ? "compact" : "expanded", player: player, autoplayItems: items
@@ -85,15 +99,18 @@ struct MainView: View {
     }
 
     @ViewBuilder
-    private func libraryContent(compact: Bool, width: CGFloat) -> some View {
+    private func libraryContent(compact: Bool, size: CGSize, portraitPlayer: Bool) -> some View {
         #if os(iOS)
         if compact {
             phoneView
         } else {
-            desktopView(availableWidth: width)
+            expandedIOSView(size: size, portraitPlayer: portraitPlayer)
+                // A disappearing orientation branch must not cancel the new branch's shared projection.
+                .modifier(libraryListUpdates)
         }
         #else
-        desktopView(availableWidth: width)
+        desktopView(availableWidth: size.width)
+            .modifier(libraryListUpdates)
         #endif
     }
 
@@ -168,7 +185,10 @@ extension MainView {
                 availableWidth: availableWidth
             )
         }
-        .modifier(LibraryListUpdates(
+    }
+
+    var libraryListUpdates: LibraryListUpdates {
+        LibraryListUpdates(
             projection: listProjection,
             items: items,
             playlist: selectedPlaylist,
@@ -179,7 +199,7 @@ extension MainView {
                 sortField: librarySortField,
                 sortDirection: librarySortDirection
             )
-        ))
+        )
     }
 
     var libraryNavigation: some View {

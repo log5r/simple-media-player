@@ -14,7 +14,11 @@ extension MainView {
                 player: player, libraryService: libraryService, listName: browsingState.playingListName,
                 canCreateAACVersion: canCreateAACVersion, createAACVersion: createAACVersion,
                 isPresented: $isPhoneDeckPresented, aacResultMessage: $aacVersionResultMessage,
-                showsAACResult: $aacVersionResultPresented
+                showsAACResult: $aacVersionResultPresented,
+                showExpandedLibrary: {
+                    showsPortraitLibrary = true
+                    isPhoneDeckPresented = false
+                }
             )
         }
         #endif

@@ -2,6 +2,7 @@ import SwiftUI
 
 extension EnvironmentValues {
     @Entry var usesPhoneLayout = false
+    @Entry var usesDividedDisplay = false
     #if os(iOS)
     @Entry var usesTouchControls = true
     #else

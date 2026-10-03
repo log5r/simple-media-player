@@ -8,7 +8,8 @@ extension XCTestCase {
     /// Enable DUO_INTERACTIVE_ORIENTATION_TESTS=1 and rotate in Device Hub when the step is logged.
     @MainActor func rotateDuo(
         to orientation: UIDeviceOrientation, in app: XCUIApplication,
-        layoutIdentifier: String = "duoLayoutMetrics", portraitKey: String = "portrait"
+        layoutIdentifier: String = "duoLayoutMetrics", portraitKey: String = "portrait",
+        interactiveTimeout: TimeInterval = 45
     ) {
         let interactive = ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] == "1"
         let posture = orientation.isPortrait ? "Portrait" : "Landscape"
@@ -24,7 +25,7 @@ extension XCTestCase {
             let expectation = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value CONTAINS %@", expected), object: layout
             )
-            wait(for: [expectation], timeout: interactive ? 45 : 10)
+            wait(for: [expectation], timeout: interactive ? interactiveTimeout : 10)
             let attachment = XCTAttachment(string: layout.value as? String ?? "missing")
             attachment.name = "Duo actual \(posture) layout"
             attachment.lifetime = .keepAlways

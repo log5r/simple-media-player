@@ -6,26 +6,42 @@ enum AdaptiveBottomPanelMetrics {
     static let inlineControlWidth: CGFloat = 526
     static let minimumLEDWidth: CGFloat = 300
     static let minimumTransportWidth: CGFloat = 224
+    static let combinedButtonsWidth: CGFloat = 382
     static let classicLEDHeight: CGFloat = 117
+    static let compactControlsHeight: CGFloat = 112
+    static let compactMeterHeight: CGFloat = 96
+    static let compactSpacing: CGFloat = 8
 
-    static func controlHeight(width: CGFloat, layout: BottomPanelLayout) -> CGFloat {
+    static func controlHeight(
+        width: CGFloat, layout: BottomPanelLayout, showsMeters: Bool = true, showsOutputControls: Bool = false
+    ) -> CGFloat {
         if layout == .classic { return width >= inlineControlWidth ? 164 : 128 }
-        return width >= inlineControlWidth ? 180 : 236
+        let outputHeight: CGFloat = showsOutputControls && width < combinedButtonsWidth ? 44 + compactSpacing : 0
+        return compactControlsHeight + (showsMeters ? compactMeterHeight + compactSpacing : 0) + outputHeight
     }
 
     static func height(
-        width: CGFloat, layout: BottomPanelLayout, dividedControlWidth: CGFloat? = nil
+        width: CGFloat, layout: BottomPanelLayout, dividedControlWidth: CGFloat? = nil,
+        showsOutputControls: Bool = false
     ) -> CGFloat {
-        let normalHeight = normalHeight(width: width, layout: layout)
+        let normalHeight = normalHeight(width: width, layout: layout, showsOutputControls: showsOutputControls)
         guard let dividedControlWidth else { return normalHeight }
-        return max(normalHeight, controlHeight(width: dividedControlWidth, layout: layout))
+        return max(normalHeight, controlHeight(
+            width: dividedControlWidth, layout: layout, showsOutputControls: showsOutputControls
+        ))
     }
 
-    private static func normalHeight(width: CGFloat, layout: BottomPanelLayout) -> CGFloat {
+    private static func normalHeight(
+        width: CGFloat, layout: BottomPanelLayout, showsOutputControls: Bool
+    ) -> CGFloat {
         if layout == .classic { return classicLEDHeight + controlHeight(width: width, layout: layout) }
-        guard width >= minimumControlWidth + minimumLEDWidth else { return 153 + 236 }
-        return controlHeight(width: min(inlineControlWidth, width - minimumLEDWidth), layout: layout)
+        guard width >= minimumSplitWidth else {
+            return 153 + controlHeight(width: width, layout: layout, showsOutputControls: showsOutputControls)
+        }
+        return controlHeight(width: width / 2, layout: layout, showsOutputControls: showsOutputControls)
     }
+
+    static var minimumSplitWidth: CGFloat { max(minimumControlWidth, minimumLEDWidth) * 2 }
 }
 
 struct AdaptiveBottomPanelPlacement: Equatable {
@@ -60,8 +76,7 @@ struct AdaptiveBottomPanelPlacement: Equatable {
             return Self(controls: pair[displayFirst ? 1 : 0], display: pair[displayFirst ? 0 : 1])
         }
         let region = candidates.first ?? regions.max { $0.width * $0.height < $1.width * $1.height } ?? .zero
-        if layout == .classic || region.width <
-            AdaptiveBottomPanelMetrics.minimumControlWidth + AdaptiveBottomPanelMetrics.minimumLEDWidth {
+        if layout == .classic || region.width < AdaptiveBottomPanelMetrics.minimumSplitWidth {
             let displayHeight = min(layout == .classic ? AdaptiveBottomPanelMetrics.classicLEDHeight : 153,
                                     region.height * 0.5)
             return Self(
@@ -70,9 +85,8 @@ struct AdaptiveBottomPanelPlacement: Equatable {
                 display: CGRect(x: region.minX, y: region.minY, width: region.width, height: displayHeight)
             )
         }
-        let controlWidth = min(AdaptiveBottomPanelMetrics.inlineControlWidth,
-                               region.width - AdaptiveBottomPanelMetrics.minimumLEDWidth)
-        let displayWidth = region.width - controlWidth
+        let controlWidth = region.width / 2
+        let displayWidth = controlWidth
         return Self(
             controls: CGRect(x: side == .left ? region.minX + displayWidth : region.minX,
                              y: region.minY, width: controlWidth, height: region.height),

@@ -19,9 +19,11 @@ struct IPhoneDeckView: View {
     @Binding var isPresented: Bool
     @Binding var aacResultMessage: String
     @Binding var showsAACResult: Bool
+    var showExpandedLibrary: () -> Void = {}
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var page = IPhoneDeckPage.display
     @State private var showsAdjustments = false
     @State private var infoItem: MediaItem?
@@ -29,31 +31,39 @@ struct IPhoneDeckView: View {
     @State private var saveItem: MediaItem?
     @State private var pendingSaveItem: MediaItem?
     @State private var showsVideoFullScreen = false
+    @State private var showsSettings = false
+    @State private var showsEqualizer = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                if page == .display {
-                    IPhoneDeckArrangementView { height in
-                        display(height: height)
-                    } controls: {
-                        VStack(spacing: 18) {
-                            SeekBarView(player: player).frame(minHeight: 44)
-                            indicators
-                            transport(large: true)
-                            volume
+            GeometryReader { proxy in
+                VStack(spacing: 12) {
+                    if page == .display {
+                        if usesExpandedDisplay(in: proxy) {
+                            expandedDisplay(size: proxy.size)
+                        } else {
+                            IPhoneDeckArrangementView { height in
+                                display(height: height)
+                            } controls: {
+                                VStack(spacing: 18) {
+                                    SeekBarView(player: player).frame(minHeight: 44)
+                                    indicators
+                                    transport(large: true)
+                                    volume
+                                }
+                            }
                         }
+                    } else {
+                        DeckSafeRow(height: 90) {
+                            LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
+                                .clipShape(RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 16)
+                        }
+                        pageContent.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        SeekBarView(player: player).frame(minHeight: 44)
+                        DeckSafeRow(height: 52) { transport(large: false).padding(.horizontal, 16) }
                     }
-                } else {
-                    DeckSafeRow(height: 90) {
-                        LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
-                            .clipShape(RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 16)
-                    }
-                    pageContent.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    SeekBarView(player: player).frame(minHeight: 44)
-                    DeckSafeRow(height: 52) { transport(large: false).padding(.horizontal, 16) }
+                    DeckSafeRow(height: dynamicTypeSize.isAccessibilitySize ? 72 : 52) { pageSwitcher }
                 }
-                DeckSafeRow(height: dynamicTypeSize.isAccessibilitySize ? 72 : 52) { pageSwitcher }
             }
             .background(palette.panelBackground.ignoresSafeArea())
             .navigationTitle(listName)
@@ -73,6 +83,18 @@ struct IPhoneDeckView: View {
         })
         .sheet(item: $infoItem) { item in MediaInfoView(item: item, libraryService: libraryService) }
         .sheet(item: $lyricsItem) { item in LyricsEditorView(item: item, libraryService: libraryService) }
+        .sheet(isPresented: $showsSettings) { AppSettingsView(player: player) }
+        .sheet(isPresented: $showsEqualizer) {
+            NavigationStack {
+                ScrollView { EqualizerPanelView(player: player) }
+                    .navigationTitle("Equalizer")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Close") { showsEqualizer = false }
+                        }
+                    }
+            }
+        }
         .sheet(item: $saveItem) { item in
             SaveTransformedCopyView(
                 item: item, player: player, libraryService: libraryService, modelContext: modelContext,
@@ -94,58 +116,30 @@ struct IPhoneDeckView: View {
         }
     }
 
-    private var pageSwitcher: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                Menu {
-                    ForEach(IPhoneDeckPage.allCases, id: \.self) { target in
-                        Button {
-                            page = target
-                        } label: {
-                            if page == target {
-                                Label(L10n.string(String.LocalizationValue(target.rawValue)), systemImage: "checkmark")
-                            } else {
-                                Text(L10n.string(String.LocalizationValue(target.rawValue)))
-                            }
-                        }
-                        .accessibilityIdentifier("phonePage.\(target.rawValue)")
-                        .accessibilityAddTraits(page == target ? .isSelected : [])
-                    }
-                } label: {
-                    Label(L10n.string(String.LocalizationValue(page.rawValue)), systemImage: "chevron.up.chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Panel Content")
-                .accessibilityValue(L10n.string(String.LocalizationValue(page.rawValue)))
-                .accessibilityIdentifier("phonePageMenu")
-            } else {
-                pageButtons
-            }
-        }
-        .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 16).padding(.bottom, 8)
+    private func usesExpandedDisplay(in proxy: GeometryProxy) -> Bool {
+        #if DEBUG
+        if PhoneLayoutUITestFixture.layoutOverride == true { return false }
+        #endif
+        return horizontalSizeClass == .regular && DeckReservedRegions.hasDisplayDivision(in: proxy)
     }
 
-    private var pageButtons: some View {
-        HStack(spacing: 0) {
-            ForEach(IPhoneDeckPage.allCases, id: \.self) { target in
-                Button { page = target } label: {
-                    Text(L10n.string(String.LocalizationValue(target.rawValue)))
-                        .font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background {
-                            if page == target { RoundedRectangle(cornerRadius: 8).fill(palette.normalButtonFill) }
-                        }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(page == target ? .isSelected : [])
-                .accessibilityIdentifier("phonePage.\(target.rawValue)")
-            }
+    @ViewBuilder private func expandedDisplay(size: CGSize) -> some View {
+        if size.height > size.width {
+            DuoPortraitPlayerView(
+                player: player, selectedItem: player.currentItem, queue: player.queue,
+                playItem: { player.play(item: $0, in: player.queue) }, requestSaveCopy: { saveItem = $0 },
+                showLibrary: showExpandedLibrary, showSettings: { showsSettings = true },
+                showEqualizer: { showsEqualizer = true }, showDetails: { page = .info },
+                showVideoFullScreen: { showsVideoFullScreen = true }
+            )
+        } else {
+            DuoLandscapePlayerView(
+                player: player, selectedItem: player.currentItem, queue: player.queue,
+                playItem: { player.play(item: $0, in: player.queue) }, requestSaveCopy: { saveItem = $0 },
+                showLibrary: showExpandedLibrary, showSettings: { showsSettings = true },
+                showEqualizer: { showsEqualizer = true }, showDetails: { page = .info },
+                showVideoFullScreen: { showsVideoFullScreen = true }
+            )
         }
     }
 
@@ -286,10 +280,11 @@ struct IPhoneTransportButton: View {
     }
 }
 
-private struct IPhoneRoutePicker: UIViewRepresentable {
+struct IPhoneRoutePicker: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
         view.accessibilityLabel = L10n.string("Output Device")
+        view.accessibilityIdentifier = "phoneRoutePicker"
         view.prioritizesVideoDevices = false
         return view
     }
@@ -297,6 +292,61 @@ private struct IPhoneRoutePicker: UIViewRepresentable {
 }
 
 private extension IPhoneDeckView {
+    var pageSwitcher: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                Menu {
+                    ForEach(IPhoneDeckPage.allCases, id: \.self) { target in
+                        Button {
+                            page = target
+                        } label: {
+                            if page == target {
+                                Label(L10n.string(String.LocalizationValue(target.rawValue)), systemImage: "checkmark")
+                            } else {
+                                Text(L10n.string(String.LocalizationValue(target.rawValue)))
+                            }
+                        }
+                        .accessibilityIdentifier("phonePage.\(target.rawValue)")
+                        .accessibilityAddTraits(page == target ? .isSelected : [])
+                    }
+                } label: {
+                    Label(L10n.string(String.LocalizationValue(page.rawValue)), systemImage: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Panel Content")
+                .accessibilityValue(L10n.string(String.LocalizationValue(page.rawValue)))
+                .accessibilityIdentifier("phonePageMenu")
+            } else {
+                pageButtons
+            }
+        }
+        .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 16).padding(.bottom, 8)
+    }
+
+    var pageButtons: some View {
+        HStack(spacing: 0) {
+            ForEach(IPhoneDeckPage.allCases, id: \.self) { target in
+                Button { page = target } label: {
+                    Text(L10n.string(String.LocalizationValue(target.rawValue)))
+                        .font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background {
+                            if page == target { RoundedRectangle(cornerRadius: 8).fill(palette.normalButtonFill) }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(page == target ? .isSelected : [])
+                .accessibilityIdentifier("phonePage.\(target.rawValue)")
+            }
+        }
+    }
+
     var volume: some View {
         HStack(spacing: 12) {
             IPhoneTransportButton(

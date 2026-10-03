@@ -14,6 +14,13 @@ enum DeckReservedRegions {
         return []
     }
 
+    static func hasDisplayDivision(in proxy: GeometryProxy) -> Bool {
+        if #available(iOS 27.1, *) {
+            return proxy.reservedRegions(kind: .division, options: [.includeInactive]).isEmpty == false
+        }
+        return false
+    }
+
     @available(iOS 27.1, *)
     private static func frames(in proxy: GeometryProxy, kind: ReservedRegion.Kind) -> [CGRect] {
         proxy.reservedRegions(kind: kind, options: [.includeInactive], layoutDirectionBehavior: .fixed)
@@ -26,4 +33,5 @@ enum DeckReservedRegions {
             }
     }
 }
+
 #endif
