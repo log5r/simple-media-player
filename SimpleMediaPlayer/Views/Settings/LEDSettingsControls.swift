@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LEDColorEditor: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: LocalizedStringKey
     @Binding var selection: String
     let presets: [LEDColorPreset]
@@ -21,34 +22,30 @@ struct LEDColorEditor: View {
         LEDColorValue.normalizedHex(selection)
     }
 
+    private var customHexLayout: AnyLayout {
+        if dynamicTypeSize.isAccessibilitySize {
+            AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+        } else {
+            AnyLayout(HStackLayout())
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
 
-            HStack(spacing: 10) {
-                ForEach(presets) { preset in
-                    Button {
-                        applyHex(preset.hex)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(preset.value.color)
-                                .frame(width: 12, height: 12)
-                                .overlay(Circle().strokeBorder(.secondary.opacity(0.35), lineWidth: 1))
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    presetButtons
+                }
+                .fixedSize(horizontal: true, vertical: false)
 
-                            Text(preset.name)
-
-                            if normalizedSelection == preset.hex {
-                                Image(systemName: "checkmark")
-                                    .font(.caption.weight(.semibold))
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
+                VStack(alignment: .leading, spacing: 10) {
+                    presetButtons
                 }
             }
 
-            HStack {
+            customHexLayout {
                 Text("Hex")
                 TextField("#RRGGBB", text: $customHexInput)
                     .font(.system(.body, design: .monospaced))
@@ -77,6 +74,30 @@ struct LEDColorEditor: View {
         }
         .onChange(of: selection) { _, newValue in
             customHexInput = newValue
+        }
+    }
+
+    private var presetButtons: some View {
+        ForEach(presets) { preset in
+            Button {
+                applyHex(preset.hex)
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(preset.value.color)
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().strokeBorder(.secondary.opacity(0.35), lineWidth: 1))
+
+                    Text(preset.name)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if normalizedSelection == preset.hex {
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.semibold))
+                    }
+                }
+            }
+            .buttonStyle(.bordered)
         }
     }
 
