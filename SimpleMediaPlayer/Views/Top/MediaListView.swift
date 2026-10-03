@@ -1088,7 +1088,7 @@ private struct AlbumBrowserView<ItemMenu: View>: View {
     }
 }
 
-private struct LibraryAlbum: Identifiable {
+struct LibraryAlbum: Identifiable {
     let id: String
     let title: String
     let artist: String
@@ -1125,16 +1125,11 @@ private struct LibraryAlbum: Identifiable {
     }
 
     private static func summarizedArtist(in items: [MediaItem]) -> String {
-        let artists = items.map(\.displayArtist).reduce(into: [String]()) { result, artist in
-            if result.contains(where: { $0.localizedStandardCompare(artist) == .orderedSame }) == false {
-                result.append(artist)
-            }
+        guard let firstArtist = items.first?.displayArtist else { return L10n.string("Various Artists") }
+        for item in items.dropFirst() where firstArtist.localizedStandardCompare(item.displayArtist) != .orderedSame {
+            return L10n.string("Various Artists")
         }
-
-        if artists.count == 1 {
-            return artists[0]
-        }
-        return L10n.string("Various Artists")
+        return firstArtist
     }
 
     private static func trackComesBefore(_ lhs: MediaItem, _ rhs: MediaItem) -> Bool {

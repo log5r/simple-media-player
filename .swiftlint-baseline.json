@@ -1160,9 +1160,9 @@
       "location": {
         "character": 1,
         "file": "SimpleMediaPlayer/Views/Top/MediaListView.swift",
-        "line": 2669
+        "line": 2664
       },
-      "reason": "File should contain 1000 lines or less: currently contains 2669",
+      "reason": "File should contain 1000 lines or less: currently contains 2664",
       "ruleDescription": "Files should not span too many lines.",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",
