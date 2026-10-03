@@ -12,24 +12,24 @@ struct ExtendedAudioCacheTests {
         let cachedURL = fixture.url("cached")
         try writePlayableAudio(to: cachedURL)
         let probe = BlockingCacheDecode()
-        let producer = Task.detached {
-            try cache.readableURL(at: decodingURL, create: probe.create, isSourceCurrent: { true })
+        let producer = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: decodingURL, create: probe.create, isSourceCurrent: { true })
         }
         defer { producer.cancel(); probe.release() }
-        try #require(probe.waitUntilStarted())
+        try #require(await probe.waitUntilStarted())
 
         let completed = DispatchSemaphore(value: 0)
-        let reader = Task.detached {
+        let reader = Task.detached(executorPreference: CacheTestExecutor.shared) {
             defer { completed.signal() }
-            return try cache.readableURL(at: cachedURL, create: { _, _ in
+            return try cache.acquireReadableFile(at: cachedURL, create: { _, _ in
                 Issue.record("A playable cache entry must not be decoded again")
                 throw CacheTestError.unexpectedDecode
             }, isSourceCurrent: { true })
         }
-        #expect(completed.wait(timeout: .now() + 2) == .success)
+        #expect(await completed.waitAsync(timeout: .now() + 2) == .success)
         probe.release()
-        #expect(try await reader.value == cachedURL)
-        #expect(try await producer.value == decodingURL)
+        #expect((try await reader.value).url == cachedURL)
+        #expect((try await producer.value).url == decodingURL)
         #expect(try fixture.partialFiles().isEmpty)
     }
 
@@ -39,25 +39,25 @@ struct ExtendedAudioCacheTests {
         let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
         let destination = fixture.url("shared")
         let probe = BlockingCacheDecode()
-        let producer = Task.detached {
-            try cache.readableURL(at: destination, create: probe.create, isSourceCurrent: { true })
+        let producer = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
         }
         defer { producer.cancel(); probe.release() }
-        try #require(probe.waitUntilStarted())
+        try #require(await probe.waitUntilStarted())
 
         let entered = DispatchSemaphore(value: 0)
         let completed = DispatchSemaphore(value: 0)
-        let duplicate = Task.detached {
+        let duplicate = Task.detached(executorPreference: CacheTestExecutor.shared) {
             defer { completed.signal() }
             entered.signal()
-            return try cache.readableURL(at: destination, create: probe.create, isSourceCurrent: { true })
+            return try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
         }
-        try #require(entered.wait(timeout: .now() + 2) == .success)
-        #expect(completed.wait(timeout: .now() + 0.1) == .timedOut)
+        try #require(await entered.waitAsync(timeout: .now() + 2) == .success)
+        #expect(await completed.waitAsync(timeout: .now() + 0.1) == .timedOut)
         probe.release()
 
-        #expect(try await producer.value == destination)
-        #expect(try await duplicate.value == destination)
+        #expect((try await producer.value).url == destination)
+        #expect((try await duplicate.value).url == destination)
         #expect(probe.createCount == 1)
         #expect(try fixture.partialFiles().isEmpty)
     }
@@ -68,29 +68,29 @@ struct ExtendedAudioCacheTests {
         let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
         let destination = fixture.url("shared")
         let probe = BlockingCacheDecode()
-        let producer = Task.detached {
-            try cache.readableURL(at: destination, create: probe.create, isSourceCurrent: { true })
+        let producer = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
         }
         defer { producer.cancel(); probe.release() }
-        try #require(probe.waitUntilStarted())
+        try #require(await probe.waitUntilStarted())
 
         let entered = DispatchSemaphore(value: 0)
         let completed = DispatchSemaphore(value: 0)
-        let waiter = Task.detached {
+        let waiter = Task.detached(executorPreference: CacheTestExecutor.shared) {
             defer { completed.signal() }
             entered.signal()
-            return try cache.readableURL(at: destination, create: probe.create, isSourceCurrent: { true })
+            return try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
         }
         defer { waiter.cancel() }
-        try #require(entered.wait(timeout: .now() + 2) == .success)
-        #expect(completed.wait(timeout: .now() + 0.1) == .timedOut)
+        try #require(await entered.waitAsync(timeout: .now() + 2) == .success)
+        #expect(await completed.waitAsync(timeout: .now() + 0.1) == .timedOut)
         waiter.cancel()
-        #expect(completed.wait(timeout: .now() + 2) == .success)
+        #expect(await completed.waitAsync(timeout: .now() + 2) == .success)
         #expect(probe.createCount == 1)
         probe.release()
 
         await #expect(throws: CancellationError.self) { try await waiter.value }
-        #expect(try await producer.value == destination)
+        #expect((try await producer.value).url == destination)
         #expect(try fixture.partialFiles().isEmpty)
     }
 
@@ -100,31 +100,31 @@ struct ExtendedAudioCacheTests {
         let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
         let destination = fixture.url("retried")
         let probe = BlockingCacheDecode()
-        let producer = Task.detached {
-            try cache.readableURL(at: destination, create: probe.create, isSourceCurrent: { true })
+        let producer = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
         }
         defer { producer.cancel(); probe.release() }
-        try #require(probe.waitUntilStarted())
+        try #require(await probe.waitUntilStarted())
 
         let entered = DispatchSemaphore(value: 0)
         let completed = DispatchSemaphore(value: 0)
-        let waiter = Task.detached {
+        let waiter = Task.detached(executorPreference: CacheTestExecutor.shared) {
             defer { completed.signal() }
             entered.signal()
-            return try cache.readableURL(at: destination, create: probe.create, isSourceCurrent: { true })
+            return try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
         }
         defer { waiter.cancel(); probe.release() }
-        try #require(entered.wait(timeout: .now() + 2) == .success)
-        #expect(completed.wait(timeout: .now() + 0.1) == .timedOut)
+        try #require(await entered.waitAsync(timeout: .now() + 2) == .success)
+        #expect(await completed.waitAsync(timeout: .now() + 0.1) == .timedOut)
         producer.cancel()
         probe.release()
 
         await #expect(throws: CancellationError.self) { try await producer.value }
-        try #require(probe.waitUntilStarted())
+        try #require(await probe.waitUntilStarted())
         #expect(probe.createCount == 2)
         #expect(!FileManager.default.fileExists(atPath: destination.path))
         probe.release()
-        #expect(try await waiter.value == destination)
+        #expect((try await waiter.value).url == destination)
         #expect(try AVAudioFile(forReading: destination).length > 0)
         #expect(try fixture.partialFiles().isEmpty)
     }
@@ -136,11 +136,11 @@ struct ExtendedAudioCacheTests {
         let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
         let destination = fixture.url("invalidated")
         let probe = BlockingCacheDecode()
-        let producer = Task.detached {
-            try cache.readableURL(at: destination, create: probe.create, isSourceCurrent: { true })
+        let producer = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
         }
         defer { producer.cancel(); probe.release() }
-        try #require(probe.waitUntilStarted())
+        try #require(await probe.waitUntilStarted())
 
         switch invalidation {
         case .invalidate: cache.invalidate(at: destination)
@@ -161,7 +161,7 @@ struct ExtendedAudioCacheTests {
         let destination = fixture.url("failed")
 
         #expect(throws: CacheTestError.terminalDecodeFailure) {
-            try cache.readableURL(at: destination, create: { temporary, _ in
+            try cache.acquireReadableFile(at: destination, create: { temporary, _ in
                 try writePlayableAudio(to: temporary)
                 #expect(try AVAudioFile(forReading: temporary).length > 0)
                 throw CacheTestError.terminalDecodeFailure
@@ -170,9 +170,9 @@ struct ExtendedAudioCacheTests {
         #expect(!FileManager.default.fileExists(atPath: destination.path))
         #expect(try fixture.partialFiles().isEmpty)
 
-        #expect(try cache.readableURL(at: destination, create: { temporary, _ in
+        #expect(try cache.acquireReadableFile(at: destination, create: { temporary, _ in
             try writePlayableAudio(to: temporary)
-        }, isSourceCurrent: { true }) == destination)
+        }, isSourceCurrent: { true }).url == destination)
         #expect(try AVAudioFile(forReading: destination).length > 0)
     }
 
@@ -194,34 +194,37 @@ struct ExtendedAudioCacheTests {
         let cache = ExtendedAudioCache(maximumBytes: capacity)
         let pendingURL = fixture.url("pending")
         let probe = BlockingCacheDecode()
-        let pending = Task.detached {
-            try cache.readableURL(at: pendingURL, create: probe.create, isSourceCurrent: { true })
+        let pending = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: pendingURL, create: probe.create, isSourceCurrent: { true })
         }
         defer { pending.cancel(); probe.release() }
-        try #require(probe.waitUntilStarted())
+        try #require(await probe.waitUntilStarted())
         let temporary = try #require(probe.temporaryURL)
+        let abandoned = fixture.directory.appendingPathComponent(".abandoned.partial.caf")
+        try writePlayableAudio(to: abandoned)
         let completedURL = fixture.url("completed")
 
         let completed = DispatchSemaphore(value: 0)
-        let writer = Task.detached {
+        let writer = Task.detached(executorPreference: CacheTestExecutor.shared) {
             defer { completed.signal() }
-            return try cache.readableURL(at: completedURL, create: { temporary, _ in
+            return try cache.acquireReadableFile(at: completedURL, create: { temporary, _ in
                 try writePlayableAudio(to: temporary)
             }, isSourceCurrent: { true })
         }
-        let finishedWhileDecodeWasBlocked = completed.wait(timeout: .now() + 2) == .success
+        let finishedWhileDecodeWasBlocked = await completed.waitAsync(timeout: .now() + 2) == .success
         #expect(finishedWhileDecodeWasBlocked)
         if !finishedWhileDecodeWasBlocked {
             // Release even after a regression so the test cannot strand either task.
             probe.release()
         }
-        #expect(try await writer.value == completedURL)
+        #expect((try await writer.value).url == completedURL)
         #expect(!FileManager.default.fileExists(atPath: oldest.path))
         #expect(FileManager.default.fileExists(atPath: newer.path))
         #expect(FileManager.default.fileExists(atPath: temporary.path))
+        #expect(!FileManager.default.fileExists(atPath: abandoned.path))
         #expect(try fixture.completedBytes() <= capacity)
         probe.release()
-        #expect(try await pending.value == pendingURL)
+        #expect((try await pending.value).url == pendingURL)
         #expect(FileManager.default.fileExists(atPath: completedURL.path))
         #expect(try fixture.completedBytes() <= capacity)
         #expect(try fixture.partialFiles().isEmpty)
@@ -234,7 +237,7 @@ struct ExtendedAudioCacheTests {
         let destination = fixture.url("changed-source")
 
         #expect(throws: CancellationError.self) {
-            try cache.readableURL(at: destination, create: { temporary, _ in
+            try cache.acquireReadableFile(at: destination, create: { temporary, _ in
                 try writePlayableAudio(to: temporary)
             }, isSourceCurrent: { false })
         }
@@ -249,8 +252,8 @@ extension ExtendedAudioCacheTests {
         defer { fixture.cleanup() }
         let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
         let destination = fixture.url("cancelled-source-validation")
-        let task = Task.detached {
-            try cache.readableURL(at: destination, create: { temporary, _ in
+        let task = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: { temporary, _ in
                 try writePlayableAudio(to: temporary)
             }, isSourceCurrent: {
                 withUnsafeCurrentTask { $0?.cancel() }
@@ -270,8 +273,8 @@ extension ExtendedAudioCacheTests {
         let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
         let destination = fixture.url("cached-source-validation")
         try writePlayableAudio(to: destination)
-        let task = Task.detached {
-            try cache.readableURL(at: destination, create: { _, _ in
+        let task = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: { _, _ in
                 Issue.record("A source-invalid cache hit must not start decoding")
                 throw CacheTestError.unexpectedDecode
             }, isSourceCurrent: {
@@ -303,68 +306,4 @@ private enum CacheInvalidation: CaseIterable {
 private enum CacheHitInvalidity: CaseIterable, Sendable {
     case changedSource
     case cancelledTask
-}
-
-private struct CacheFixture: Sendable {
-    let directory: URL
-
-    init() throws {
-        directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    }
-
-    func url(_ name: String) -> URL { directory.appendingPathComponent("\(name).caf") }
-
-    func partialFiles() throws -> [URL] {
-        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.lastPathComponent.hasPrefix(".") && $0.pathExtension == "caf" }
-    }
-
-    func completedBytes() throws -> Int64 {
-        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
-            .filter { !$0.lastPathComponent.hasPrefix(".") && $0.pathExtension == "caf" }
-            .reduce(0) { total, url in
-                total + Int64(try #require(url.resourceValues(forKeys: [.fileSizeKey]).fileSize))
-            }
-    }
-
-    func cleanup() { try? FileManager.default.removeItem(at: directory) }
-}
-
-private final class BlockingCacheDecode: @unchecked Sendable {
-    private let lock = NSLock()
-    private let started = DispatchSemaphore(value: 0)
-    private let gate = DispatchSemaphore(value: 0)
-    private var calls = 0
-    private var temporary: URL?
-    private var cancelled = false
-
-    var createCount: Int { lock.withLock { calls } }
-    var temporaryURL: URL? { lock.withLock { temporary } }
-    var observedCancellation: Bool { lock.withLock { cancelled } }
-
-    func create(_ url: URL, shouldCancel: @escaping @Sendable () -> Bool) throws {
-        try writePlayableAudio(to: url)
-        lock.withLock {
-            calls += 1
-            temporary = url
-        }
-        started.signal()
-        guard gate.wait(timeout: .now() + 10) == .success else { throw CancellationError() }
-        lock.withLock { cancelled = shouldCancel() }
-        // Return playable output even when cancelled to exercise the publication check.
-    }
-
-    func waitUntilStarted() -> Bool { started.wait(timeout: .now() + 2) == .success }
-    func release() { gate.signal() }
-}
-
-private func writePlayableAudio(to url: URL) throws {
-    let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1))
-    let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 512))
-    buffer.frameLength = buffer.frameCapacity
-    let samples = try #require(buffer.floatChannelData?[0])
-    for index in 0..<Int(buffer.frameLength) { samples[index] = 0 }
-    let file = try AVAudioFile(forWriting: url, settings: format.settings)
-    try file.write(from: buffer)
 }

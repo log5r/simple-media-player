@@ -78,7 +78,13 @@ nonisolated enum AudioLoudnessNormalizer {
 
     private static func measuredGain(for url: URL) throws -> Float {
         try Task.checkCancellation()
-        let file = try AVAudioFile(forReading: ExtendedAudioSource.readableURL(for: url))
+        let source = try ExtendedAudioSource.readableFile(for: url)
+        defer { source.release() }
+        let file = try AVAudioFile(forReading: source.url)
+        return try measuredGain(in: file)
+    }
+
+    private static func measuredGain(in file: AVAudioFile) throws -> Float {
         let format = file.processingFormat
         let channelCount = Int(format.channelCount)
         guard channelCount > 0,

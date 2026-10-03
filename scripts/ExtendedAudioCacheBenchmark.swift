@@ -83,7 +83,13 @@ struct ExtendedAudioCacheBenchmark {
 
         // The first track has been evicted in the baseline because the batch exceeds the cache budget.
         let revisitStarted = Metrics()
+        #if AFTER
+        let readable = try ExtendedAudioSource.readableFile(for: tracks[0])
+        defer { readable.release() }
+        let cached = readable.url
+        #else
         let cached = try ExtendedAudioSource.readableURL(for: tracks[0])
+        #endif
         var revisit = Metrics().since(revisitStarted)
         revisit["stage"] = "first_track_playback_preparation"
         revisit["mode"] = result["mode"]

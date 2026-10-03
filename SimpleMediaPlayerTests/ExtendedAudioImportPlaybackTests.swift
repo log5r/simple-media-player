@@ -15,7 +15,8 @@ struct ExtendedAudioImportPlaybackTests {
         let sources = try makeUniqueSources(in: directory)
         let playbackSource = directory.appendingPathComponent("playback.wma")
         try FileManager.default.copyItem(at: fixture("wma"), to: playbackSource)
-        _ = try await Task.detached { try ExtendedAudioSource.readableURL(for: playbackSource) }.value
+        let cached = try await Task.detached { try ExtendedAudioSource.readableFile(for: playbackSource) }.value
+        cached.release()
         defer { ExtendedAudioSource.removeCache(for: playbackSource) }
         let container = try makeModelContainer()
         let service = LibraryService(mediaDirectoryURL: directory.appendingPathComponent("Managed"))

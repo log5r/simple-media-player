@@ -27,7 +27,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var loudnessNormalizationStorage: AudioLoudnessNormalization?
     private var audioFile: AVAudioFile?
     private var currentURL: URL?
-    private var currentAudioURL: URL?
+    private var currentReadableFile: ExtendedAudioCache.ReadableFile?
     private var preparationTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var playWhenReady = false
@@ -155,53 +155,80 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
             self.loadGeneration += 1
             let generation = self.loadGeneration
             self.performStop(reset: true)
+            self.releaseLoadedAudio()
             self.currentURL = url
-            self.currentAudioURL = nil
-            self.audioFile = nil
             self.playWhenReady = false
             self.setCachedDuration(0)
             self.preparationTask = Task.detached(priority: .userInitiated) {
-                do {
-                    let readableURL = try ExtendedAudioSource.readableURL(for: url)
-                    try Task.checkCancellation()
-                    let file = try AVAudioFile(forReading: readableURL)
-                    self.controlQueue.async {
-                        guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
-                        self.preparationTask = nil
-                        self.currentAudioURL = readableURL
-                        self.audioFile = file
-                        self.sampleRate = file.fileFormat.sampleRate
-                        self.loudnessNormalization.load(url)
-                        let duration = Double(file.length) / file.fileFormat.sampleRate
-                        self.setCachedDuration(duration)
-                        let bitrateKbps = Self.estimatedBitrateKbps(url: url, duration: duration)
-                        let formatInfo = MediaFormatInfo(
-                            sampleRateHz: file.fileFormat.sampleRate,
-                            bitrateKbps: bitrateKbps > 0 ? bitrateKbps : nil
-                        )
-                        Task { @MainActor in
-                            guard self.isActiveLoad(requestID) else { return }
-                            self.onFormatLoaded?(duration, formatInfo)
-                        }
-                        self.performPendingSeek(for: requestID)
-                        if self.playWhenReady {
-                            self.playWhenReady = false
-                            self.performPlay()
-                        }
-                    }
-                } catch is CancellationError {
-                    return
-                } catch {
-                    self.controlQueue.async {
-                        guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
-                        self.preparationTask = nil
-                        self.loudnessNormalization.load(nil)
-                        self.setCachedDuration(0)
-                        self.reportError(error, for: requestID)
-                    }
-                }
+                self.prepareAudio(url: url, generation: generation, requestID: requestID)
             }
         }
+    }
+
+    private func prepareAudio(url: URL, generation: Int, requestID: UUID) {
+        do {
+            let readableFile = try ExtendedAudioSource.readableFile(for: url)
+            do {
+                try Task.checkCancellation()
+                let file = try AVAudioFile(forReading: readableFile.url)
+                try Task.checkCancellation()
+                controlQueue.async {
+                    self.acceptPreparedAudio(file, readableFile: readableFile, url: url,
+                                             generation: generation, requestID: requestID)
+                }
+            } catch {
+                readableFile.release()
+                throw error
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            controlQueue.async {
+                guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
+                self.preparationTask = nil
+                self.loudnessNormalization.load(nil)
+                self.setCachedDuration(0)
+                self.reportError(error, for: requestID)
+            }
+        }
+    }
+
+    private func acceptPreparedAudio(
+        _ file: AVAudioFile, readableFile: ExtendedAudioCache.ReadableFile,
+        url: URL, generation: Int, requestID: UUID
+    ) {
+        guard generation == loadGeneration, isActiveLoad(requestID) else {
+            readableFile.release()
+            return
+        }
+        preparationTask = nil
+        currentReadableFile = readableFile
+        audioFile = file
+        sampleRate = file.fileFormat.sampleRate
+        loudnessNormalization.load(url)
+        let duration = Double(file.length) / file.fileFormat.sampleRate
+        setCachedDuration(duration)
+        let bitrateKbps = Self.estimatedBitrateKbps(url: url, duration: duration)
+        let formatInfo = MediaFormatInfo(
+            sampleRateHz: file.fileFormat.sampleRate,
+            bitrateKbps: bitrateKbps > 0 ? bitrateKbps : nil
+        )
+        Task { @MainActor in
+            guard self.isActiveLoad(requestID) else { return }
+            self.onFormatLoaded?(duration, formatInfo)
+        }
+        performPendingSeek(for: requestID)
+        if playWhenReady {
+            playWhenReady = false
+            performPlay()
+        }
+    }
+
+    private func releaseLoadedAudio() {
+        audioFile = nil
+        currentReadableFile?.release()
+        currentReadableFile = nil
+        currentURL = nil
     }
 
     func play() {
@@ -248,7 +275,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     }
 
     // 動画への切り替えでは旧音声の残響を待たずにエンジンを停止する。
-    // 音声再生へ戻るときは performPlay で再始動する。
+    // 旧音声のファイルも解放し、次の load / play で再生を開始する。
     func suspend() {
         stateLock.lock()
         pendingSeek = nil
@@ -264,6 +291,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
             self.idleSuspension.cancel()
             self.engine.stop()
             self.reverb.reset()
+            self.releaseLoadedAudio()
+            self.loudnessNormalization.load(nil)
         }
     }
 
@@ -308,7 +337,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         applyLoudnessGain(loudnessNormalization.gainForPlayback)
 
         // ファイルの読み取り状態も含めて作り直す(失敗時は既存のファイルを使い続ける)
-        if let url = currentAudioURL, let freshFile = try? AVAudioFile(forReading: url) {
+        if let url = currentReadableFile?.url, let freshFile = try? AVAudioFile(forReading: url) {
             audioFile = freshFile
         }
         seekFrame = frame(for: resumeTime)

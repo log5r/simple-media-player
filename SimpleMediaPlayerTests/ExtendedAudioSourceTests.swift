@@ -38,9 +38,13 @@ struct ExtendedAudioSourceTests {
             #expect(info.lyrics == "Fixture lyrics")
         }
 
-        let cacheURL = try ExtendedAudioSource.readableURL(for: source)
+        let cached = try ExtendedAudioSource.readableFile(for: source)
+        defer { cached.release() }
+        let cacheURL = cached.url
         #expect(cacheURL.pathExtension == "caf")
-        #expect(try ExtendedAudioSource.readableURL(for: source) == cacheURL)
+        let reused = try ExtendedAudioSource.readableFile(for: source)
+        defer { reused.release() }
+        #expect(reused.url == cacheURL)
         let audio = try AVAudioFile(forReading: cacheURL)
         #expect(audio.length > 40_000)
         #expect(try Data(contentsOf: source) == original)
@@ -48,10 +52,14 @@ struct ExtendedAudioSourceTests {
         try FileManager.default.setAttributes(
             [.modificationDate: Date(timeIntervalSinceNow: 10)], ofItemAtPath: source.path
         )
-        let refreshedURL = try ExtendedAudioSource.readableURL(for: source)
+        let refreshed = try ExtendedAudioSource.readableFile(for: source)
+        defer { refreshed.release() }
+        let refreshedURL = refreshed.url
         #expect(refreshedURL != cacheURL)
         #expect(try AVAudioFile(forReading: refreshedURL).length > 40_000)
         ExtendedAudioSource.removeCache(for: source)
+        cached.release()
+        reused.release()
         try? FileManager.default.removeItem(at: cacheURL)
     }
 
@@ -60,8 +68,9 @@ struct ExtendedAudioSourceTests {
         defer { ExtendedAudioSource.removeCache(for: source) }
         #expect(try ExtendedAudioSource.kind(for: source) == .wma)
         try ExtendedAudioSource.validate(for: source)
-        let cacheURL = try ExtendedAudioSource.readableURL(for: source)
-        #expect(try AVAudioFile(forReading: cacheURL).length > 0)
+        let cached = try ExtendedAudioSource.readableFile(for: source)
+        defer { cached.release() }
+        #expect(try AVAudioFile(forReading: cached.url).length > 0)
     }
 
     @Test func refusesMismatchedHeaderAndCleansCancelledWork() async throws {
@@ -77,7 +86,7 @@ struct ExtendedAudioSourceTests {
         defer { ExtendedAudioSource.removeCache(for: source) }
         let task = Task.detached {
             withUnsafeCurrentTask { $0?.cancel() }
-            return try ExtendedAudioSource.readableURL(for: source)
+            return try ExtendedAudioSource.readableFile(for: source)
         }
         await #expect(throws: CancellationError.self) { try await task.value }
     }
@@ -87,9 +96,10 @@ struct ExtendedAudioSourceTests {
         #expect(try ExtendedAudioSource.kind(for: source) == .monkeysAudio)
         let info = try ExtendedAudioSource.info(for: source, kind: .monkeysAudio)
         #expect(info.duration > 0)
-        let cacheURL = try ExtendedAudioSource.readableURL(for: source)
         defer { ExtendedAudioSource.removeCache(for: source) }
-        let audio = try AVAudioFile(forReading: cacheURL)
+        let cached = try ExtendedAudioSource.readableFile(for: source)
+        defer { cached.release() }
+        let audio = try AVAudioFile(forReading: cached.url)
         #expect(audio.length > 0)
     }
 
@@ -105,8 +115,9 @@ struct ExtendedAudioSourceTests {
         #expect(try ExtendedAudioSource.kind(for: source) == .musepack)
         let info = try ExtendedAudioSource.info(for: source, kind: .musepack)
         #expect(info.duration > 0)
-        let cacheURL = try ExtendedAudioSource.readableURL(for: source)
-        let audio = try AVAudioFile(forReading: cacheURL)
+        let cached = try ExtendedAudioSource.readableFile(for: source)
+        defer { cached.release() }
+        let audio = try AVAudioFile(forReading: cached.url)
         #expect(audio.length > 0)
     }
 
@@ -129,8 +140,9 @@ struct ExtendedAudioSourceTests {
             #expect(try ExtendedAudioSource.kind(for: source) == kind)
             let info = try ExtendedAudioSource.info(for: source, kind: kind)
             #expect(info.duration > 0)
-            let cacheURL = try ExtendedAudioSource.readableURL(for: source)
-            #expect(try AVAudioFile(forReading: cacheURL).length > 0)
+            let cached = try ExtendedAudioSource.readableFile(for: source)
+            defer { cached.release() }
+            #expect(try AVAudioFile(forReading: cached.url).length > 0)
         }
     }
 

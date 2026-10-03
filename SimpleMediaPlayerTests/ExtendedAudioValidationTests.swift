@@ -32,7 +32,7 @@ struct ExtendedAudioValidationTests {
         }
         #expect(try AVAudioFile(forReading: partialOutput).length > 0)
         #expect(throws: (any Error).self) { try ExtendedAudioSource.validate(for: source) }
-        #expect(throws: (any Error).self) { try ExtendedAudioSource.readableURL(for: source) }
+        #expect(throws: (any Error).self) { try ExtendedAudioSource.readableFile(for: source) }
         let cache = try #require(ExtendedAudioSource.cacheURL(for: source))
         #expect(FileManager.default.fileExists(atPath: cache.path) == false)
     }
@@ -112,7 +112,7 @@ struct ExtendedAudioValidationTests {
         #expect(buffer.frameLength > 0)
         #expect(decoder.length == 44_100)
         #expect(throws: (any Error).self) { try ExtendedAudioSource.validate(for: source) }
-        #expect(throws: (any Error).self) { try ExtendedAudioSource.readableURL(for: source) }
+        #expect(throws: (any Error).self) { try ExtendedAudioSource.readableFile(for: source) }
         let cache = try #require(ExtendedAudioSource.cacheURL(for: source))
         #expect(FileManager.default.fileExists(atPath: cache.path) == false)
     }

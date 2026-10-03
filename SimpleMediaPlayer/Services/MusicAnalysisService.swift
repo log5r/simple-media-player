@@ -119,8 +119,9 @@ actor MusicAnalysisService {
 
         logger.info("Cache miss")
         let wholeSongStarted = ContinuousClock.now
-        let analysisURL = try ExtendedAudioSource.readableURL(for: url)
-        let asset = AVURLAsset(url: analysisURL, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let source = try ExtendedAudioSource.readableFile(for: url)
+        defer { source.release() }
+        let asset = AVURLAsset(url: source.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else { throw MusicUnderstandingError.invalidAsset }
         let session = try await MusicUnderstandingSession(asset: asset)

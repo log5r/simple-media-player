@@ -144,13 +144,13 @@ nonisolated enum ExtendedAudioSource {
         try Task.checkCancellation()
     }
 
-    static func readableURL(for url: URL) throws -> URL {
+    static func readableFile(for url: URL) throws -> ExtendedAudioCache.ReadableFile {
         try Task.checkCancellation()
-        guard let kind = try kind(for: url) else { return url }
+        guard let kind = try kind(for: url) else { return ExtendedAudioCache.ReadableFile(url: url) }
         let key = try cacheKey(for: url)
         let directory = try cacheDirectory()
         let destination = directory.appendingPathComponent(key).appendingPathExtension("caf")
-        return try cache.readableURL(at: destination, create: { temporary, shouldCancel in
+        return try cache.acquireReadableFile(at: destination, create: { temporary, shouldCancel in
             try checkDecodedSize(for: url, kind: kind)
             try decode(url, kind: kind, to: temporary, shouldCancel: shouldCancel)
             let byteCount = try FileManager.default.attributesOfItem(atPath: temporary.path)[.size] as? Int64 ?? 0
@@ -201,8 +201,7 @@ nonisolated enum ExtendedAudioSource {
     }
 
     static func removeCacheInBackground(at cacheURL: URL) {
-        cache.invalidate(at: cacheURL)
-        _ = Task.detached(priority: .utility) { removeCache(at: cacheURL) }
+        cache.removeInBackground(at: cacheURL)
     }
 
     private static func removeCache(at cacheURL: URL) {
