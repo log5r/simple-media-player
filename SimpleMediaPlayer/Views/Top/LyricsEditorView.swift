@@ -8,6 +8,7 @@ struct LyricsEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var lyrics: String
     @State private var saveLocation = LyricsSaveLocation.applicationOnly
     @State private var isSaving = false
@@ -30,38 +31,12 @@ struct LyricsEditorView: View {
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Save Location")
-                        .font(.headline)
-
-                    Picker("Save Location", selection: $saveLocation) {
-                        Text("App Only")
-                            .tag(LyricsSaveLocation.applicationOnly)
-                        Text("Embed in File")
-                            .tag(LyricsSaveLocation.embeddedTag)
-                            .disabled(canEmbedLyrics == false)
-                    }
-                    .pickerStyle(.segmented)
-
-                    Text(saveLocation.explanation)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if canEmbedLyrics == false {
-                        Label("This file format does not support embedded lyrics editing.", systemImage: "lock")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let saveError {
-                        Label(saveError, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .textSelection(.enabled)
-                    }
+                if dynamicTypeSize.isAccessibilitySize {
+                    ScrollView { saveOptions }
+                        .background(.bar)
+                } else {
+                    saveOptions
                 }
-                .padding(14)
-                .background(.bar)
             }
             .navigationTitle(
                 item.lyricsRaw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
@@ -95,6 +70,43 @@ struct LyricsEditorView: View {
             minHeight: usesPhoneLayout ? nil : 400,
             idealHeight: usesPhoneLayout ? nil : 520
         )
+    }
+
+    private var saveOptions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !usesPhoneLayout && !dynamicTypeSize.isAccessibilitySize {
+                Text("Save Location")
+                    .font(.headline)
+            }
+
+            AdaptiveSettingsPicker(
+                title: "Save Location", selection: $saveLocation,
+                options: [
+                    .init(value: .applicationOnly, title: L10n.string("App Only")),
+                    .init(value: .embeddedTag, title: L10n.string("Embed in File"), isEnabled: canEmbedLyrics)
+                ],
+                identifier: "lyricsSaveLocation"
+            )
+
+            Text(saveLocation.explanation)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if canEmbedLyrics == false {
+                Label("This file format does not support embedded lyrics editing.", systemImage: "lock")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let saveError {
+                Label(saveError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(14)
+        .background(.bar)
     }
 
     private var canEmbedLyrics: Bool {

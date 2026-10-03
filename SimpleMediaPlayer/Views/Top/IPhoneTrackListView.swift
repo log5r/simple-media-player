@@ -106,6 +106,11 @@ struct IPhoneTrackListView: View {
         playlist == nil ? sortField.sorted(items, direction: sortDirection) : items
     }
 
+    private var trackPlaybackState: String {
+        if player.isPlaying { return L10n.string("Playing") }
+        return player.isPaused ? L10n.string("Paused") : L10n.string("Stopped")
+    }
+
     private var trackList: some View {
         List {
             ForEach(orderedItems) { item in
@@ -127,7 +132,7 @@ struct IPhoneTrackListView: View {
                         }
                         Spacer(minLength: 0)
                         if player.currentItem?.id == item.id {
-                            Image(systemName: "speaker.wave.2.fill").accessibilityLabel("Playing")
+                            Image(systemName: "speaker.wave.2.fill").accessibilityHidden(true)
                         }
                     }
                     .frame(minHeight: 44)
@@ -135,6 +140,7 @@ struct IPhoneTrackListView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("phoneTrack.\(item.id)")
+                .accessibilityValue(player.currentItem?.id == item.id ? trackPlaybackState : "")
                 .accessibilityAddTraits(selection.contains(item.id) ? .isSelected : [])
                 .contextMenu { trackMenu(item) }
                 .swipeActions {

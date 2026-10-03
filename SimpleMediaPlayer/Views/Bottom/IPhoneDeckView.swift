@@ -21,6 +21,7 @@ struct IPhoneDeckView: View {
     @Binding var showsAACResult: Bool
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var page = IPhoneDeckPage.display
     @State private var showsAdjustments = false
     @State private var infoItem: MediaItem?
@@ -95,6 +96,42 @@ struct IPhoneDeckView: View {
     }
 
     private var pageSwitcher: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                Menu {
+                    ForEach(IPhoneDeckPage.allCases, id: \.self) { target in
+                        Button {
+                            page = target
+                        } label: {
+                            if page == target {
+                                Label(L10n.string(String.LocalizationValue(target.rawValue)), systemImage: "checkmark")
+                            } else {
+                                Text(L10n.string(String.LocalizationValue(target.rawValue)))
+                            }
+                        }
+                        .accessibilityIdentifier("phonePage.\(target.rawValue)")
+                        .accessibilityAddTraits(page == target ? .isSelected : [])
+                    }
+                } label: {
+                    Label(L10n.string(String.LocalizationValue(page.rawValue)), systemImage: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Panel Content")
+                .accessibilityValue(L10n.string(String.LocalizationValue(page.rawValue)))
+                .accessibilityIdentifier("phonePageMenu")
+            } else {
+                pageButtons
+            }
+        }
+        .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 16).padding(.bottom, 8)
+    }
+
+    private var pageButtons: some View {
         HStack(spacing: 0) {
             ForEach(IPhoneDeckPage.allCases, id: \.self) { target in
                 Button { page = target } label: {
@@ -111,8 +148,6 @@ struct IPhoneDeckView: View {
                 .accessibilityIdentifier("phonePage.\(target.rawValue)")
             }
         }
-        .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 16).padding(.bottom, 8)
     }
 
     @ToolbarContentBuilder private var deckToolbar: some ToolbarContent {

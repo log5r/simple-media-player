@@ -22,6 +22,7 @@ enum PhoneLayoutUITestFixture {
     }
 
     static func insert(into context: ModelContext) throws {
+        resetLEDSettingsIfRequested()
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000) else { return }
         buffer.frameLength = buffer.frameCapacity
@@ -52,6 +53,23 @@ enum PhoneLayoutUITestFixture {
             context.insert(entry)
         }
         try context.save()
+    }
+
+    private static func resetLEDSettingsIfRequested() {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-testing-reset-led-settings") else { return }
+        // Launch-argument defaults override writes, so mutable settings need persistent initial values.
+        let defaults: [(String, String)] = [
+            (AppSettingsKey.bottomPanelLayout, AppSettingsDefault.bottomPanelLayout),
+            (AppSettingsKey.ledDisplayStyle, AppSettingsDefault.ledDisplayStyle),
+            (AppSettingsKey.ledColorHex, AppSettingsDefault.ledColorHex),
+            (AppSettingsKey.timeDisplayStyle, AppSettingsDefault.timeDisplayStyle),
+            (AppSettingsKey.mediaInfoDisplayStyle, AppSettingsDefault.mediaInfoDisplayStyle),
+            (AppSettingsKey.ledGlassStyle, AppSettingsDefault.ledGlassStyle),
+            (AppSettingsKey.visualizerResponseMode, AppSettingsDefault.visualizerResponseMode)
+        ]
+        for (key, value) in defaults {
+            UserDefaults.standard.set(value, forKey: key)
+        }
     }
 }
 

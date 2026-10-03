@@ -248,7 +248,8 @@ private extension LyricsPanelView {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 13))
+                .font(usesPhoneLayout ? .body : .system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -283,7 +284,8 @@ private extension LyricsPanelView {
                 #endif
             } else {
                 Label("No artwork available", systemImage: "photo")
-                    .font(.system(size: 13))
+                    .font(usesPhoneLayout ? .body : .system(size: 13))
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(.secondary)
             }
         }

@@ -135,6 +135,21 @@ final class IPhoneLayoutUITests: XCTestCase {
         XCTAssertEqual(queuedTrack.value as? String, language == "ja" ? "停止中" : "Stopped")
         app.buttons["phoneDeckClose"].tap()
         XCTAssertTrue(dock.waitForExistence(timeout: 5))
+        verifyTrackAccessibility(in: app, language: language)
+    }
+
+    @MainActor private func verifyTrackAccessibility(in app: XCUIApplication, language: String) {
+        let track = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'"))
+            .containing(.staticText, identifier: "Layout Track 3").firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        XCTAssertTrue(track.label.contains("Layout Track 3"), "VoiceOver needs the complete track title")
+        XCTAssertTrue(track.label.contains("Layout Artist"), "VoiceOver needs the artist")
+        XCTAssertEqual(track.value as? String, language == "ja" ? "停止中" : "Stopped")
+        let play = app.buttons["phoneDockPlayPause"]
+        play.tap()
+        XCTAssertEqual(track.value as? String, language == "ja" ? "再生中" : "Playing")
+        play.tap()
+        XCTAssertEqual(track.value as? String, language == "ja" ? "一時停止中" : "Paused")
     }
 
     @MainActor private func assertTouchTarget(_ element: XCUIElement, in app: XCUIApplication) {

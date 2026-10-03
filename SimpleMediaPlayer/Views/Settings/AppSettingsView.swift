@@ -132,64 +132,59 @@ private struct LEDSettingsSection: View {
     var body: some View {
         Section("LED") {
             if !usesPhoneLayout {
-            Picker("Panel Layout", selection: $bottomPanelLayoutRaw) {
-                ForEach(BottomPanelLayout.allCases) { layout in
-                    Text(layout.label).tag(layout.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            if bottomPanelLayout == .ledHalf {
-                Picker("LED Position", selection: $ledPanelSideRaw) {
-                    ForEach(LEDPanelSide.allCases) { side in
-                        Text(side.label).tag(side.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Picker("LED Corners", selection: $ledPanelCornerRaw) {
-                    ForEach(LEDPanelCorner.allCases) { corner in
-                        Text(corner.label).tag(corner.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                LEDColorEditor(
-                    title: "VU Meter Face",
-                    selection: $vuMeterFaceColorHex,
-                    presets: AppSettingsDefault.vuMeterFacePresets
-                )
-                .id("vuFace-\(colorEditorResetID)")
-
-                LEDColorEditor(
-                    title: "VU Meter Lamp",
-                    selection: $vuMeterLampColorHex,
-                    presets: AppSettingsDefault.vuMeterLampPresets
-                )
-                .id("vuLamp-\(colorEditorResetID)")
-
-                IntensitySlider(
-                    title: "VU Shadow Opacity",
-                    value: vuMeterShadowOpacityBinding,
-                    range: AppSettingsDefault.vuMeterShadowOpacityRange,
-                    step: AppSettingsDefault.vuMeterShadowOpacityStep
+                AdaptiveSettingsPicker(
+                    title: "Panel Layout", selection: $bottomPanelLayoutRaw,
+                    options: BottomPanelLayout.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                    identifier: "ledPicker.bottomPanelLayout"
                 )
 
-                IntensitySlider(
-                    title: "VU Shadow Extent",
-                    value: vuMeterShadowExtentBinding,
-                    range: AppSettingsDefault.vuMeterShadowExtentRange,
-                    step: AppSettingsDefault.vuMeterShadowExtentStep
-                )
-            }
+                if bottomPanelLayout == .ledHalf {
+                    AdaptiveSettingsPicker(
+                        title: "LED Position", selection: $ledPanelSideRaw,
+                        options: LEDPanelSide.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                        identifier: "ledPicker.ledPanelSide"
+                    )
 
-            }
-            Picker("Display Style", selection: $ledDisplayStyleRaw) {
-                ForEach(LEDDisplayStyle.allCases) { style in
-                    Text(style.label).tag(style.rawValue)
+                    AdaptiveSettingsPicker(
+                        title: "LED Corners", selection: $ledPanelCornerRaw,
+                        options: LEDPanelCorner.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                        identifier: "ledPicker.ledPanelCorner"
+                    )
+
+                    LEDColorEditor(
+                        title: "VU Meter Face",
+                        selection: $vuMeterFaceColorHex,
+                        presets: AppSettingsDefault.vuMeterFacePresets
+                    )
+                    .id("vuFace-\(colorEditorResetID)")
+
+                    LEDColorEditor(
+                        title: "VU Meter Lamp",
+                        selection: $vuMeterLampColorHex,
+                        presets: AppSettingsDefault.vuMeterLampPresets
+                    )
+                    .id("vuLamp-\(colorEditorResetID)")
+
+                    IntensitySlider(
+                        title: "VU Shadow Opacity",
+                        value: vuMeterShadowOpacityBinding,
+                        range: AppSettingsDefault.vuMeterShadowOpacityRange,
+                        step: AppSettingsDefault.vuMeterShadowOpacityStep
+                    )
+
+                    IntensitySlider(
+                        title: "VU Shadow Extent",
+                        value: vuMeterShadowExtentBinding,
+                        range: AppSettingsDefault.vuMeterShadowExtentRange,
+                        step: AppSettingsDefault.vuMeterShadowExtentStep
+                    )
                 }
             }
-            .pickerStyle(.segmented)
+            AdaptiveSettingsPicker(
+                title: "Display Style", selection: $ledDisplayStyleRaw,
+                options: LEDDisplayStyle.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                identifier: "ledPicker.ledDisplayStyle"
+            )
 
             switch ledDisplayStyle {
             case .dark:
@@ -225,26 +220,23 @@ private struct LEDSettingsSection: View {
             }
             #endif
 
-            Picker("Time Display", selection: $timeDisplayStyleRaw) {
-                ForEach(TimeDisplayStyle.allCases) { style in
-                    Text(style.label).tag(style.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
+            AdaptiveSettingsPicker(
+                title: "Time Display", selection: $timeDisplayStyleRaw,
+                options: TimeDisplayStyle.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                identifier: "ledPicker.timeDisplayStyle"
+            )
 
-            Picker("Media Info", selection: $mediaInfoDisplayStyleRaw) {
-                ForEach(MediaInfoDisplayStyle.allCases) { style in
-                    Text(style.label).tag(style.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
+            AdaptiveSettingsPicker(
+                title: "Media Info", selection: $mediaInfoDisplayStyleRaw,
+                options: MediaInfoDisplayStyle.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                identifier: "ledPicker.mediaInfoDisplayStyle"
+            )
 
-            Picker("Glass Effect", selection: $ledGlassStyleRaw) {
-                ForEach(LEDGlassStyle.allCases) { style in
-                    Text(style.label).tag(style.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
+            AdaptiveSettingsPicker(
+                title: "Glass Effect", selection: $ledGlassStyleRaw,
+                options: LEDGlassStyle.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                identifier: "ledPicker.ledGlassStyle"
+            )
 
             if ledDisplayStyle == .backlit, ledGlassStyle != .off {
                 IntensitySlider(
@@ -256,12 +248,11 @@ private struct LEDSettingsSection: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Picker("Spectrum Response", selection: $visualizerResponseModeRaw) {
-                    ForEach(VisualizerResponseMode.allCases) { mode in
-                        Text(mode.label).tag(mode.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
+                AdaptiveSettingsPicker(
+                    title: "Spectrum Response", selection: $visualizerResponseModeRaw,
+                    options: VisualizerResponseMode.allCases.map { .init(value: $0.rawValue, title: $0.label) },
+                    identifier: "ledPicker.visualizerResponseMode"
+                )
 
                 Text("Slow uses 10 fps, Normal 30 fps, Fast 60 fps.")
                     .font(.caption)
