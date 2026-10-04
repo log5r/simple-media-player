@@ -60,6 +60,7 @@ struct MainView: View {
     @State var showsExportErrorsAfterSharing = false
     @State var isPhoneDeckPresented = false
     @State var showsPortraitLibrary = false
+    @State private var keyboardIndependentSize = CGSize.zero
     #endif
 
     @State var browsingState = LibraryBrowsingState()
@@ -71,7 +72,7 @@ struct MainView: View {
             #if os(iOS)
             let hasDisplayDivision = DeckReservedRegions.hasDisplayDivision(in: proxy)
             let portraitPlayer = DuoPortraitPlayerLayout.isPreferred(
-                size: proxy.size, compact: compact,
+                size: keyboardIndependentSize == .zero ? proxy.size : keyboardIndependentSize, compact: compact,
                 hasDisplayDivision: hasDisplayDivision
             )
             #else
@@ -90,6 +91,18 @@ struct MainView: View {
                 .modifier(DuoBrowsingDiagnostics(browsingState: browsingState))
                 #endif
         }
+        #if os(iOS)
+        .background {
+            // Measure posture independently; the foreground still avoids the keyboard.
+            GeometryReader { _ in
+                Color.clear
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { keyboardIndependentSize = $0 }
+            }
+            .ignoresSafeArea(.keyboard)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        #endif
         .onChange(of: items.map(\.id)) { _, ids in
             browsingState.retainItems(ids: Set(ids))
         }
