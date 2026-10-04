@@ -25,8 +25,11 @@ struct IOSLibraryPresentations: ViewModifier {
                 LyricsPanelView(
                     item: player.currentItem,
                     listIndex: player.queue.firstIndex { $0.id == player.currentItem?.id }.map { $0 + 1 },
-                    libraryService: libraryService
+                    libraryService: libraryService,
+                    contentSelection: $browsingState.panelContent
                 )
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("libraryDetailsSheet")
             }
             .sheet(isPresented: $browsingState.showsEqualizer) {
                 NavigationStack {

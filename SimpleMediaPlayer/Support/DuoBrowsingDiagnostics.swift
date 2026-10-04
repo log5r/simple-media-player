@@ -55,6 +55,8 @@ struct DuoBrowsingDiagnostics: ViewModifier {
                 "albumScrollID": state.albumScrollID ?? ""
             ]),
             Diagnostic(identifier: "duoSessionMetrics", values: [
+                "panelContent": state.panelContent == .information ? "information" : "lyrics",
+                "showsDetails": state.showsDetails,
                 "infoItemID": state.infoItem?.id.uuidString ?? "",
                 "lyricsItemID": state.lyricsItem?.id.uuidString ?? "",
                 "bulkSessionID": state.bulkEditSession?.id.uuidString ?? "",

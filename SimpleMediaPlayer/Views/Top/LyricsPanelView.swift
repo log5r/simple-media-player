@@ -8,6 +8,8 @@ struct LyricsPanelView: View {
     var page: PanelContent?
     var playbackTime: TimeInterval?
     var browsingState: LibraryBrowsingState?
+    /// Sheets can share page selection while keeping their nested editors locally presented.
+    var contentSelection: Binding<PanelContent>?
     @Environment(\.usesTouchControls) var usesTouchControls
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) var modelContext
@@ -36,13 +38,14 @@ struct LyricsPanelView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .accessibilityIdentifier("lyricsPanelContentPicker")
                 .labelsHidden()
                 .controlSize(.small)
                 .padding(.horizontal, 14)
                 .frame(height: 44)
                 .background(.bar)
             }
-            switch page ?? browsingState?.panelContent ?? selectedContent {
+            switch page ?? selectedContentBinding.wrappedValue {
             case .lyrics:
                 lyricsContent
                     .task(id: item?.id) {
@@ -82,7 +85,8 @@ struct LyricsPanelView: View {
     }
 
     private var selectedContentBinding: Binding<PanelContent> {
-        Binding {
+        if let contentSelection { return contentSelection }
+        return Binding {
             browsingState?.panelContent ?? selectedContent
         } set: { content in
             if let browsingState {
