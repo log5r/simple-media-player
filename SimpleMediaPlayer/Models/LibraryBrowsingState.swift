@@ -97,8 +97,7 @@ final class LibraryBrowsingState {
         case 0:
             applyLibraryPath()
         case 1:
-            group = nil
-            if let id = playlistPath.last { selection = .playlist(id) }
+            applyPlaylistPath()
         case 2:
             selection = .library(.allVideos)
             group = nil
@@ -121,8 +120,7 @@ final class LibraryBrowsingState {
         guard playlistPath != path else { return }
         playlistPath = path
         phoneTab = 1
-        group = nil
-        if let id = path.last { selection = .playlist(id) }
+        applyPlaylistPath()
         resetListInteraction()
     }
 
@@ -178,7 +176,7 @@ final class LibraryBrowsingState {
         if let deleteConfirmationItem, ids.contains(deleteConfirmationItem.id) == false {
             self.deleteConfirmationItem = nil
         }
-        if let bulkEditSession, bulkEditSession.items.allSatisfy({ ids.contains($0.id) == false }) {
+        if let bulkEditSession, bulkEditSession.items.contains(where: { ids.contains($0.id) == false }) {
             self.bulkEditSession = nil
         }
         if ids.isEmpty { isBulkEditMode = false }
@@ -197,6 +195,11 @@ final class LibraryBrowsingState {
             selection = .library(destination.section)
             group = destination
         }
+    }
+
+    private func applyPlaylistPath() {
+        group = nil
+        selection = playlistPath.last.map(SidebarSelection.playlist) ?? .library(.allSongs)
     }
 
     private func resetListInteraction() {

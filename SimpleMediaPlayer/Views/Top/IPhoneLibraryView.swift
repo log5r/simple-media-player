@@ -76,7 +76,7 @@ struct IPhoneLibraryView: View {
             }
             Tab("Search", systemImage: "magnifyingglass", value: 3, role: .search) {
                 NavigationStack {
-                    trackList(section: nil, title: L10n.string("Search"))
+                    trackList(section: nil, title: L10n.string("Search"), isSearch: true)
                         .searchable(text: $browsingState.searchText, prompt: "Search")
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
@@ -144,7 +144,7 @@ struct IPhoneLibraryView: View {
 
     private func trackList(
         section: LibrarySection?, playlist: Playlist? = nil, title: String,
-        group: LibraryBrowsingGroup? = nil
+        group: LibraryBrowsingGroup? = nil, isSearch: Bool = false
     ) -> some View {
         return IPhoneTrackListView(
             items: items, section: section, playlist: playlist, title: title,
@@ -155,8 +155,8 @@ struct IPhoneLibraryView: View {
                 browsingState.selectedItemID = item.id
                 player.play(item: item, in: queue)
             }, allItems: items,
-            searchText: browsingState.searchText,
-            searchFilter: browsingState.searchFilter,
+            searchText: isSearch ? browsingState.searchText : "",
+            searchFilter: isSearch ? browsingState.searchFilter : LibrarySearchFilter(),
             browsingState: browsingState, group: group
         )
     }

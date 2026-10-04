@@ -59,6 +59,47 @@ struct LibraryBrowsingStateTests {
         #expect(state.sortDirection == .descending)
     }
 
+    @Test func returningFromAPlaylistClearsItsExpandedDestinationAndListInteraction() {
+        let state = LibraryBrowsingState()
+        let playlistID = UUID()
+        let selectedID = UUID()
+        state.navigatePlaylists(to: [playlistID])
+        state.selectedItemID = selectedID
+        state.scrollItemID = selectedID
+        state.isBulkEditMode = true
+        state.bulkSelection.select([selectedID])
+
+        state.navigatePlaylists(to: [])
+
+        #expect(state.playlistPath.isEmpty)
+        #expect(state.phoneTab == 1)
+        #expect(state.selection == .library(.allSongs))
+        #expect(state.group == nil)
+        #expect(state.selectedItemID == nil)
+        #expect(state.scrollItemID == nil)
+        #expect(state.isBulkEditMode == false)
+        #expect(state.bulkSelection.ids.isEmpty)
+    }
+
+    @Test func emptyPlaylistTabUsesRootDestinationAndPreservesTheLibraryRoute() {
+        let state = LibraryBrowsingState()
+        let group = LibraryBrowsingGroup(section: .albums, name: "Album")
+        state.openGroup(section: group.section, name: group.name)
+
+        state.selectPhoneTab(1)
+
+        #expect(state.playlistPath.isEmpty)
+        #expect(state.phoneTab == 1)
+        #expect(state.selection == .library(.allSongs))
+        #expect(state.group == nil)
+
+        state.selectPhoneTab(0)
+
+        #expect(state.selection == .library(.albums))
+        #expect(state.group == group)
+        #expect(state.libraryPath == [.section(.albums), .group(group)])
+    }
+
     @Test func reselectingSidebarCategoryLeavesItsGroupAndClearsListInteraction() {
         let state = LibraryBrowsingState()
         let selectedID = UUID()
@@ -156,6 +197,21 @@ struct LibraryBrowsingStateTests {
         #expect(state.artworkPreview == nil)
         #expect(state.deleteConfirmationItem == nil)
         #expect(state.bulkEditSession == nil)
+        #expect(state.bulkSelection.ids == [remaining.id])
+    }
+
+    @Test func partialDeletionDismissesTheBulkEditorAndRetainsSurvivingSelection() {
+        let state = LibraryBrowsingState()
+        let removed = makeItem("Removed")
+        let remaining = makeItem("Remaining")
+        state.bulkEditSession = BulkMetadataEditSession(items: [removed, remaining])
+        state.isBulkEditMode = true
+        state.bulkSelection.select([removed.id, remaining.id])
+
+        state.retainItems(ids: [remaining.id])
+
+        #expect(state.bulkEditSession == nil)
+        #expect(state.isBulkEditMode)
         #expect(state.bulkSelection.ids == [remaining.id])
     }
 

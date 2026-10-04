@@ -93,7 +93,7 @@ final class DuoBrowsingUITests: XCTestCase {
         XCTAssertEqual(try metrics(playback)["itemID"] as? String, playingID)
     }
 
-    @MainActor func testFilteredCompactPlaylistMovesTheDisplayedTrack() throws {
+    @MainActor func testCompactPlaylistMovesTheDisplayedTrackAfterSearching() throws {
         let app = try launchExpanded(compact: true)
         let searchTab = tab("Search", in: app)
         XCTAssertTrue(searchTab.waitForExistence(timeout: 5), app.debugDescription)
@@ -108,6 +108,9 @@ final class DuoBrowsingUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.' AND label CONTAINS 'Layout Track 2'")
         ).firstMatch
         XCTAssertTrue(visible.waitForExistence(timeout: 10))
+        XCTAssertEqual(
+            app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'")).count, 3
+        )
         visible.press(forDuration: 1)
         app.buttons["Move Down"].tap()
 
@@ -124,6 +127,23 @@ final class DuoBrowsingUITests: XCTestCase {
         waitForLabel("Layout Track 2", in: rows.element(boundBy: 2))
     }
 
+    @MainActor func testCompactPlaylistBackClearsTheExpandedDestination() throws {
+        let app = try launchExpanded(compact: true)
+        tab("Playlists", in: app).tap()
+        app.buttons["Layout Playlist"].tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        waitForValue("\"selection\":\"playlist.", in: element("duoBrowsingMetrics", in: app))
+
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        let browsing = element("duoBrowsingMetrics", in: app)
+        waitForValue("\"selection\":\"library.allSongs\"", in: browsing)
+        XCTAssertEqual(try metrics(browsing)["playlistPath"] as? [String], [])
+        XCTAssertEqual(try metrics(browsing)["tab"] as? Int, 1)
+        XCTAssertTrue(app.buttons["Layout Playlist"].waitForExistence(timeout: 5))
+    }
+
     @MainActor private func launchExpanded(compact: Bool = false) throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
@@ -136,7 +156,7 @@ final class DuoBrowsingUITests: XCTestCase {
         app.launch()
         let layout = element("duoLayoutMetrics", in: app)
         XCTAssertTrue(layout.waitForExistence(timeout: 10))
-        rotateDuo(to: .landscapeLeft, in: app)
+        if compact == false { rotateDuo(to: .landscapeLeft, in: app) }
         let geometry = try metrics(layout)
         if compact == false {
             try XCTSkipIf(
