@@ -39,9 +39,7 @@ struct MediaListView: View {
 
     var body: some View {
         Group {
-            if items.isEmpty {
-                emptyState
-            } else if section == .albums {
+            if section == .albums, items.isEmpty == false || browsingState.group?.section == .albums {
                 albumBrowser
             } else if let group = browsingState.group, group.section == section {
                 VStack(spacing: 0) {
@@ -49,8 +47,15 @@ struct MediaListView: View {
                         .accessibilityIdentifier("libraryGroupBackButton")
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .padding(.horizontal)
-                    mediaTable
+                    if rows.isEmpty {
+                        ContentUnavailableView("No Media", systemImage: "music.note")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        mediaTable
+                    }
                 }
+            } else if items.isEmpty {
+                emptyState
             } else if section?.isGrouped == true {
                 groupedList
             } else {

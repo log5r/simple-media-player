@@ -21,14 +21,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
     @Namespace private var artworkTransition
 
     private var selectedAlbumID: String? {
-        get { browsingState.group?.section == .albums ? browsingState.group?.name : nil }
-        nonmutating set {
-            if let newValue {
-                browsingState.openGroup(section: .albums, name: newValue)
-            } else {
-                browsingState.closeGroup()
-            }
-        }
+        browsingState.group?.section == .albums ? browsingState.group?.name : nil
     }
 
     private let gridColumns = [
@@ -37,15 +30,11 @@ struct AlbumBrowserView<ItemMenu: View>: View {
 
     var body: some View {
         Group {
-            if let selectedAlbum {
-                albumDetail(selectedAlbum)
+            // Filtering changes visible tracks; the full library owner validates the saved route.
+            if let selectedAlbumID {
+                albumDetail(selectedAlbumID)
             } else {
                 albumGrid
-            }
-        }
-        .onChange(of: albums.map(\.id)) { _, albumIDs in
-            if let selectedAlbumID, albumIDs.contains(selectedAlbumID) == false {
-                self.selectedAlbumID = nil
             }
         }
     }
@@ -65,7 +54,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                 ForEach(albums) { album in
                     Button {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
-                            selectedAlbumID = album.id
+                            browsingState.openGroup(section: .albums, name: album.id)
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 8) {
@@ -98,12 +87,14 @@ struct AlbumBrowserView<ItemMenu: View>: View {
         .background(.background)
     }
 
-    private func albumDetail(_ album: LibraryAlbum) -> some View {
-        ScrollView {
+    private func albumDetail(_ albumID: String) -> some View {
+        let album = selectedAlbum
+        let tracks = album?.tracks ?? []
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 Button {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
-                        selectedAlbumID = nil
+                        browsingState.closeGroup()
                     }
                 } label: {
                     Label("Back to List", systemImage: "chevron.left")
@@ -113,17 +104,28 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 18)
 
-                albumHeader(album)
-                    .padding(.bottom, 24)
+                if let album {
+                    albumHeader(album)
+                        .padding(.bottom, 24)
+                } else {
+                    Text(albumID)
+                        .font(.largeTitle.bold())
+                        .textSelection(.enabled)
+                        .padding(.bottom, 24)
+                }
 
                 Divider()
 
-                ForEach(Array(album.tracks.enumerated()), id: \.element.id) { offset, item in
-                    albumTrackRow(item, fallbackNumber: offset + 1, tracks: album.tracks)
+                if tracks.isEmpty {
+                    ContentUnavailableView("No Media", systemImage: "music.note")
+                }
+
+                ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, item in
+                    albumTrackRow(item, fallbackNumber: offset + 1, tracks: tracks)
                         .id(item.id)
                         .modifier(LibraryScrollAnchorRow(id: item.id))
 
-                    if offset < album.tracks.count - 1 {
+                    if offset < tracks.count - 1 {
                         Divider()
                             .padding(.leading, 50)
                     }
@@ -131,7 +133,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
             }
             .padding(24)
         }
-        .modifier(LibraryScrollAnchor(itemIDs: album.tracks.map(\.id), browsingState: browsingState))
+        .modifier(LibraryScrollAnchor(itemIDs: tracks.map(\.id), browsingState: browsingState))
         .background(.background)
     }
 

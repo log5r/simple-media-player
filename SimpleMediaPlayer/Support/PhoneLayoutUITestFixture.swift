@@ -54,8 +54,12 @@ enum PhoneLayoutUITestFixture {
             let title = usesLongTitle
                 ? "とても長い曲名の表示確認 — A Very Long Track Name for Checking the Compact Playback Panel"
                 : "Layout Track \(index)"
+            let usesOtherGroup = index == 3
+                && ProcessInfo.processInfo.arguments.contains("--ui-testing-multiple-albums")
             let item = MediaItem(
-                title: title, artist: "Layout Artist", album: "Layout Album",
+                title: title, artist: usesOtherGroup ? "Other Artist" : "Layout Artist",
+                album: usesOtherGroup ? "Other Album" : "Layout Album",
+                genre: usesOtherGroup ? "Other Genre" : nil,
                 duration: TimeInterval(duration), isVideo: false,
                 lyricsRaw: "[00:00.00]First lyric\n[00:20.00]Second lyric\n[00:40.00]Third lyric",
                 bookmarkData: bookmark, fileName: url.lastPathComponent
