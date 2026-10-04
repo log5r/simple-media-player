@@ -77,6 +77,7 @@ final class LibraryBrowsingState {
     /// Used by the sidebar and commands. Re-selecting the category returns to its root.
     func select(_ destination: SidebarSelection) {
         let changed = selection != destination || group != nil
+        let previousPhoneTab = phoneTab
         selection = destination
         group = nil
         switch destination {
@@ -87,7 +88,7 @@ final class LibraryBrowsingState {
             phoneTab = 1
             playlistPath = [id]
         }
-        if changed { resetListInteraction() }
+        if changed || phoneTab != previousPhoneTab { resetListInteraction() }
     }
 
     func selectPhoneTab(_ tab: Int) {
@@ -139,12 +140,31 @@ final class LibraryBrowsingState {
         select(.library(group.section))
     }
 
+    /// Validate the saved route against the full library, never a filtered projection.
+    func missingLibraryGroup(in items: [MediaItem]) -> LibraryBrowsingGroup? {
+        guard case let .group(group)? = libraryPath.last,
+              items.contains(where: { $0.isVideo == false && group.contains($0) }) == false else { return nil }
+        return group
+    }
+
+    func removeLibraryGroup(_ removedGroup: LibraryBrowsingGroup) {
+        guard let index = libraryPath.firstIndex(of: .group(removedGroup)) else { return }
+        libraryPath.removeSubrange(index...)
+        if group == removedGroup {
+            selection = .library(removedGroup.section)
+            group = nil
+            resetListInteraction()
+        }
+    }
+
     func removePlaylist(_ id: UUID) {
         let staysOnPlaylistTab = phoneTab == 1
         playlistPath.removeAll { $0 == id }
         if selection == .playlist(id) {
-            select(.library(.allSongs))
-            if staysOnPlaylistTab { phoneTab = 1 }
+            selection = .library(.allSongs)
+            group = nil
+            phoneTab = staysOnPlaylistTab ? 1 : 0
+            resetListInteraction()
         }
     }
 

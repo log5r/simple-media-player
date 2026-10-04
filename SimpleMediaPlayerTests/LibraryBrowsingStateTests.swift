@@ -277,3 +277,51 @@ struct LibraryBrowsingStateTests {
         MediaItem(title: title, duration: 120, isVideo: false, bookmarkData: Data(), fileName: "song.wav")
     }
 }
+
+extension LibraryBrowsingStateTests {
+    @Test(arguments: [1, 3])
+    func selectingAllSongsLeavesNeutralPhoneRootsAndClearsListInteraction(tab: Int) {
+        let state = LibraryBrowsingState()
+        let selectedID = UUID()
+        state.selectPhoneTab(tab)
+        state.selectedItemID = selectedID
+        state.scrollItemID = selectedID
+        state.isBulkEditMode = true
+        state.bulkSelection.select([selectedID])
+
+        state.select(.library(.allSongs))
+
+        #expect(state.phoneTab == 0)
+        #expect(state.libraryPath == [.section(.allSongs)])
+        #expect(state.selection == .library(.allSongs))
+        #expect(state.selectedItemID == nil)
+        #expect(state.scrollItemID == nil)
+        #expect(state.isBulkEditMode == false)
+        #expect(state.bulkSelection.ids.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    func deletingTheBrowsedPlaylistPreservesTheSavedLibraryRoute(isQueryDeletion: Bool) {
+        let state = LibraryBrowsingState()
+        let playlist = Playlist(name: "Playlist")
+        let group = LibraryBrowsingGroup(section: .artists, name: "Artist")
+        state.openGroup(section: group.section, name: group.name)
+        state.navigatePlaylists(to: [playlist.id])
+
+        if isQueryDeletion {
+            state.retainPlaylists(ids: [])
+        } else {
+            state.removePlaylist(playlist.id)
+        }
+
+        #expect(state.playlistPath.isEmpty)
+        #expect(state.phoneTab == 1)
+        #expect(state.selection == .library(.allSongs))
+        #expect(state.libraryPath == [.section(.artists), .group(group)])
+
+        state.selectPhoneTab(0)
+
+        #expect(state.selection == .library(.artists))
+        #expect(state.group == group)
+    }
+}

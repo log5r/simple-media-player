@@ -144,6 +144,42 @@ final class DuoBrowsingUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Layout Playlist"].waitForExistence(timeout: 5))
     }
 
+    @MainActor func testCompactDeletingTheLastAlbumTrackReturnsToAlbums() throws {
+        let app = try launchExpanded(compact: true)
+        tab("Library", in: app).tap()
+        app.buttons["Albums"].tap()
+        let album = app.buttons["libraryGroup.albums.Layout Album"]
+        XCTAssertTrue(album.waitForExistence(timeout: 10))
+        album.tap()
+        let browsing = element("duoBrowsingMetrics", in: app)
+        waitForValue("\"groupName\":\"Layout Album\"", in: browsing)
+
+        for number in 1...3 {
+            let row = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'phoneTrack.' AND label CONTAINS %@", "Layout Track \(number)"
+            )).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 10))
+            row.press(forDuration: 1)
+            let remove = app.buttons["Delete from Library"]
+            XCTAssertTrue(remove.waitForExistence(timeout: 5))
+            remove.tap()
+            let confirm = app.alerts.buttons["Delete"]
+            XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+            confirm.tap()
+            let disappearance = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: row
+            )
+            wait(for: [disappearance], timeout: 10)
+        }
+
+        waitForValue("\"groupName\":\"\"", in: browsing)
+        let current = try metrics(browsing)
+        XCTAssertEqual(current["libraryPath"] as? [String], ["section.albums"])
+        XCTAssertEqual(current["selection"] as? String, "library.albums")
+        XCTAssertEqual(current["tab"] as? Int, 0)
+        XCTAssertTrue(app.navigationBars["Albums"].waitForExistence(timeout: 5))
+    }
+
     @MainActor private func launchExpanded(compact: Bool = false) throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()

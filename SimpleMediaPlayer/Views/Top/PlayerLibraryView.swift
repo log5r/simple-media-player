@@ -96,6 +96,9 @@ struct MainView: View {
         .onChange(of: playlists.map(\.id)) { _, ids in
             browsingState.retainPlaylists(ids: Set(ids))
         }
+        .onChange(of: browsingState.missingLibraryGroup(in: items), initial: true) { _, group in
+            if let group { browsingState.removeLibraryGroup(group) }
+        }
     }
 
     @ViewBuilder

@@ -88,8 +88,7 @@ final class IPhoneSearchScopeUITests: XCTestCase {
     }
 
     @MainActor private func dismissSearchKeyboard(in app: XCUIApplication) {
-        let submit = app.keyboards.buttons["search"]
-        if submit.exists { submit.tap() }
+        app.searchFields.firstMatch.typeText("\n")
     }
 
     @MainActor private func launch() -> XCUIApplication {

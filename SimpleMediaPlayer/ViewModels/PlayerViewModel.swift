@@ -183,12 +183,13 @@ final class PlayerViewModel {
             self?.formatInfo = formatInfo
         }
         audioEngine.onError = { [weak self] message in
-            self?.playbackGeneration &+= 1
-            self?.errorMessage = message
-            self?.isPaused = false
-            self?.isPlaying = false
-            self?.formatInfo = .empty
-            self?.resetSpectrumFrameRate()
+            guard let self, !self.isVideoMode else { return }
+            self.playbackGeneration &+= 1
+            self.errorMessage = message
+            self.isPaused = false
+            self.isPlaying = false
+            self.formatInfo = .empty
+            self.resetSpectrumFrameRate()
         }
         audioEngine.onFormatLoaded = { [weak self] duration, formatInfo in
             self?.duration = duration
