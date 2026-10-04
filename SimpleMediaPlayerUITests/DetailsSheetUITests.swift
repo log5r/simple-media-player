@@ -61,6 +61,78 @@ final class DetailsSheetUITests: XCTestCase {
         XCTAssertTrue(lyrics.waitForExistence(timeout: 5))
     }
 
+    @MainActor func testDetailsCommandsToggleSheetAtAccessibilityTextSize() throws {
+        try requireIPadCommandDelivery()
+        let app = try launchExpanded()
+        showLibraryForCommands(in: app)
+        for _ in 0..<2 {
+            app.typeKey("l", modifierFlags: [.command, .option])
+            let sheet = duoDiagnostic("libraryDetailsSheet", in: app)
+            XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+            app.typeKey("l", modifierFlags: [.command, .option])
+            waitForDisappearance(sheet)
+        }
+    }
+
+    @MainActor func testEqualizerCommandsToggleSheetAtAccessibilityTextSize() throws {
+        try requireIPadCommandDelivery()
+        let app = try launchExpanded()
+        showLibraryForCommands(in: app)
+        for _ in 0..<2 {
+            app.typeKey("e", modifierFlags: [.command, .option])
+            let sheet = app.navigationBars["Equalizer"]
+            XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+            app.typeKey("e", modifierFlags: [.command, .option])
+            waitForDisappearance(sheet)
+        }
+    }
+
+    @MainActor func testDetailsToolbarReopensSheetAtAccessibilityTextSize() throws {
+        let app = try launchExpanded()
+        showLibraryForCommands(in: app)
+        for _ in 0..<2 {
+            let sheet = openDetails(in: app)
+            dismissDetails(sheet, in: app)
+            waitForDisappearance(sheet)
+        }
+    }
+
+    @MainActor func testEqualizerToolbarReopensSheetAtAccessibilityTextSize() throws {
+        let app = try launchExpanded()
+        showLibraryForCommands(in: app)
+        for _ in 0..<2 {
+            let button = app.buttons["equalizerButton"].firstMatch
+            if button.exists && button.isHittable {
+                button.tap()
+            } else {
+                let overflow = app.buttons["BottomOverflowBarButtonItem"]
+                XCTAssertTrue(overflow.waitForExistence(timeout: 5))
+                overflow.tap()
+                app.buttons["Equalizer"].firstMatch.tap()
+            }
+            let sheet = app.navigationBars["Equalizer"]
+            XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+            sheet.buttons["Close"].tap()
+            waitForDisappearance(sheet)
+        }
+    }
+
+    @MainActor private func requireIPadCommandDelivery() throws {
+        try XCTSkipIf(
+            UIDevice.current.userInterfaceIdiom != .pad,
+            "Shortcut UI is verified on iPad. Phone simulator did not deliver existing Import or Mute commands."
+        )
+    }
+
+    @MainActor private func showLibraryForCommands(in app: XCUIApplication) {
+        let library = app.buttons["duoShowLibrary"]
+        if library.exists { library.tap() }
+        let track = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH 'libraryTrack.'")
+        ).firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 10))
+    }
+
     @MainActor private func launchExpanded() throws -> XCUIApplication {
         if ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] != "1" {
             XCUIDevice.shared.orientation = .landscapeLeft

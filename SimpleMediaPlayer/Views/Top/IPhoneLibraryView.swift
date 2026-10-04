@@ -17,6 +17,7 @@ struct IPhoneLibraryActions {
     let exportItems: ([MediaItem]) -> Void
     let deleteItem: (MediaItem) -> Void
     let showAddTracks: (Playlist) -> Void
+    let requestSaveCopy: (MediaItem) -> Void
 }
 
 struct IPhoneLibraryView: View {
@@ -96,6 +97,11 @@ struct IPhoneLibraryView: View {
             IPhoneLEDDock(player: player) { showsDeck = true }
         }
         .overlay(alignment: .top) { progressPanel }
+        .background {
+            if compactCommandDestination.isRoot {
+                CompactLibraryCommandValues(actions: compactRootCommands.appMenuActions)
+            }
+        }
         .onChange(of: player.currentItem?.id) { _, id in
             if id == nil { showsDeck = false }
         }
@@ -157,7 +163,7 @@ struct IPhoneLibraryView: View {
             }, allItems: items,
             searchText: isSearch ? browsingState.searchText : "",
             searchFilter: isSearch ? browsingState.searchFilter : LibrarySearchFilter(),
-            browsingState: browsingState, group: group
+            browsingState: browsingState, group: group, showsDeck: $showsDeck
         )
     }
 

@@ -291,7 +291,8 @@ extension MainView {
                 createAACVersion: createAACVersion,
                 exportItems: startExport,
                 deleteItem: deleteLibraryItem,
-                showAddTracks: { addToPlaylistTarget = $0 }
+                showAddTracks: { addToPlaylistTarget = $0 },
+                requestSaveCopy: { saveCopyTarget = $0 }
             ),
             browsingState: browsingState
         )

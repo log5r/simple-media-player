@@ -84,13 +84,15 @@ extension DetailAreaView {
                 cancelBulkEditMode()
             },
             toggleLyrics: AppMenuAction(isEnabled: player.currentItem?.isVideo != true) {
-                showLyricsPanel.toggle()
+                toggleDetails()
             },
             toggleEqualizer: AppMenuAction(isEnabled: isBulkEditMode == false) {
-                showEqualizerPanel.toggle()
+                toggleEqualizer()
             },
             toggleVideoArea: AppMenuAction(isEnabled: canShowMediaList) {
-                player.showVideoArea.toggle()
+                let isVisible = player.showVideoArea || browsingState.showsVideoFullScreen
+                browsingState.showsVideoFullScreen = false
+                player.showVideoArea = !isVisible
             },
             playPause: AppMenuAction(isEnabled: canPlay) {
                 playOrPauseSelectedItem()
@@ -101,9 +103,10 @@ extension DetailAreaView {
             nextTrack: AppMenuAction(isEnabled: canSkipToNext) {
                 skipToNext()
             },
-            lyricsAreVisible: shouldShowLyricsPanel,
-            equalizerIsVisible: shouldShowEqualizerPanel,
-            videoAreaIsVisible: player.showVideoArea && player.currentItem?.isVideo == true
+            lyricsAreVisible: shouldShowLyricsPanel || browsingState.showsDetails,
+            equalizerIsVisible: shouldShowEqualizerPanel || browsingState.showsEqualizer,
+            videoAreaIsVisible: (player.showVideoArea || browsingState.showsVideoFullScreen)
+                && player.currentItem?.isVideo == true
         )
     }
 
@@ -299,6 +302,7 @@ extension DetailAreaView {
 
     func toggleDetails() {
         #if os(iOS)
+        if browsingState.showsDetails { browsingState.showsDetails = false; return }
         if !permitsInlineDetails { browsingState.showsDetails = true; return }
         #endif
         showLyricsPanel.toggle()
@@ -306,6 +310,7 @@ extension DetailAreaView {
 
     func toggleEqualizer() {
         #if os(iOS)
+        if browsingState.showsEqualizer { browsingState.showsEqualizer = false; return }
         if !permitsInlineEqualizer { browsingState.showsEqualizer = true; return }
         #endif
         showEqualizerPanel.toggle()

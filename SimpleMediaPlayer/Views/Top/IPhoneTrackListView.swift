@@ -17,8 +17,9 @@ struct IPhoneTrackListView: View {
     var searchFilter = LibrarySearchFilter()
     @Bindable var browsingState: LibraryBrowsingState
     var group: LibraryBrowsingGroup?
+    @Binding var showsDeck: Bool
 
-    @State private var listProjection = LibraryListProjection()
+    @State var listProjection = LibraryListProjection()
 
     var body: some View {
         Group {
@@ -91,13 +92,21 @@ struct IPhoneTrackListView: View {
         .onChange(of: items.map(\.id)) { _, ids in
             browsingState.bulkSelection.retain(ids: Set(ids))
         }
+        .background {
+            if isCompactCommandDestination {
+                CompactLibraryCommandValues(
+                    actions: compactCommands.appMenuActions,
+                    info: selectedInfoCommandAction, aac: selectedAACVersionCommandAction
+                )
+            }
+        }
     }
 
-    private var isCategoryBrowser: Bool {
+    var isCategoryBrowser: Bool {
         group == nil && (section.map { [LibrarySection.albums, .artists, .genres].contains($0) } ?? false)
     }
 
-    private var orderedItems: [MediaItem] {
+    var orderedItems: [MediaItem] {
         if let group { return group.playbackQueue(from: listProjection.items) }
         return listProjection.items
     }
