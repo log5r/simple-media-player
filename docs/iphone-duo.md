@@ -14,7 +14,7 @@ The expanded iOS sidebar is 180–240pt, ideally 200pt. The list-and-details reg
 
 ## Playback and Partial Folding
 
-In Duo landscape, the LED region occupies the right half of the playback panel and compact controls occupy the left half. Volume uses a horizontal row at most 188pt wide and 44pt tall. Playback, volume, and adjustment buttons retain touch targets of at least 44pt; smaller regions change rows and can scroll the controls. Expanded controls also retain Mute/Unmute and Output Device (AirPlay).
+In Duo landscape, the LED region occupies the right half of the playback panel and compact controls occupy the left half. Volume uses a 44pt-tall horizontal row, extending the bar across the remaining width beside Mute/Unmute and Output Device. Playback, volume, and adjustment buttons retain touch targets of at least 44pt; smaller regions change rows and can scroll the controls. Expanded Mute/Unmute and Output Device (AirPlay) controls use the same rectangular background, border, and shadow as the playback buttons.
 
 In Duo portrait, the upper half of the player is divided into two full-width rows: LED above, meters and lamps below. The lower half contains seeking, playback, volume, adjustment, and navigation controls. Library opens the library in the same view; Close returns to the player. This arrangement applies in Open and Book postures. The expanded Duo layout takes precedence over stored Classic and left-side LED preferences; iPad and macOS continue to use those preferences.
 

@@ -43,7 +43,7 @@ struct AdaptiveBottomControlsView: View {
             }
             HStack(spacing: AdaptiveBottomPanelMetrics.compactSpacing) {
                 if !combinesAdjustmentAndTransport { adjustments }
-                horizontalVolume.frame(width: compactVolumeWidth)
+                horizontalVolume.frame(maxWidth: .infinity)
                 if showsOutputControls && combinesAdjustmentAndTransport { outputControls }
             }
             .frame(maxWidth: .infinity)
@@ -52,20 +52,23 @@ struct AdaptiveBottomControlsView: View {
         }
     }
 
-    private var compactVolumeWidth: CGFloat {
-        if combinesAdjustmentAndTransport { return min(188, width - 16) }
-        return width - 16 - BottomPanelMetrics.adjustmentWidth - AdaptiveBottomPanelMetrics.compactSpacing
-    }
-
     private var outputControls: some View {
         HStack(spacing: AdaptiveBottomPanelMetrics.compactSpacing) {
-            IPhoneTransportButton(
-                title: player.isMuted ? "Unmute" : "Mute",
+            squareButton(
+                label: player.isMuted ? "Unmute" : "Mute",
                 symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill", identifier: "phoneMute"
             ) { player.toggleMuted() }
             IPhoneRoutePicker().frame(width: 44, height: 44)
+                .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 3))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 3).stroke(palette.controlStroke, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .shadow(color: palette.buttonShadow, radius: 2, y: 1)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("phoneRoutePicker")
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var inlineControls: some View {
@@ -128,16 +131,27 @@ struct AdaptiveBottomControlsView: View {
     private func volumeButton(
         label: LocalizedStringKey, symbol: String, identifier: String, action: @escaping () -> Void
     ) -> some View {
+        squareButton(label: label, symbol: symbol, identifier: identifier, action: action)
+            .buttonRepeatBehavior(.enabled)
+            .accessibilityValue(L10n.format("%d percent", Int(player.volume * 100)))
+    }
+
+    private func squareButton(
+        label: LocalizedStringKey, symbol: String, identifier: String, action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 12, weight: .black))
                 .foregroundStyle(palette.enabledIcon)
                 .frame(width: 44, height: 44)
                 .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 3))
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(palette.controlStroke, lineWidth: 1))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 3).stroke(palette.controlStroke, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .shadow(color: palette.buttonShadow, radius: 2, y: 1)
         }
-        .buttonStyle(.plain).buttonRepeatBehavior(.enabled)
+        .buttonStyle(.plain)
         .accessibilityLabel(label).accessibilityIdentifier(identifier)
-        .accessibilityValue(L10n.format("%d percent", Int(player.volume * 100)))
     }
 }
 #endif

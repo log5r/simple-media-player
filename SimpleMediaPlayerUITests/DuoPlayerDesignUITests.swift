@@ -24,8 +24,7 @@ final class DuoPlayerDesignUITests: XCTestCase {
         XCTAssertEqual(led.minY, controls.minY, accuracy: 2)
         XCTAssertEqual(led.height, controls.height, accuracy: 2)
         assertPlaybackTargets(in: app, containedIn: controls)
-        let volume = element("volumeControl", in: app)
-        XCTAssertLessThanOrEqual(volume.frame.width, 190)
+        assertVolumeRowFillsControls(in: app, controls: controls, inset: 8)
         attach(app, name: "Duo Open landscape LED right half")
     }
 
@@ -41,6 +40,7 @@ final class DuoPlayerDesignUITests: XCTestCase {
         XCTAssertTrue(lamp.exists)
         XCTAssertTrue(meters.insetBy(dx: -2, dy: -2).contains(lamp.frame))
         assertPlaybackTargets(in: app, containedIn: controls)
+        assertVolumeRowFillsControls(in: app, controls: controls, inset: 20)
         attach(app, name: "Duo portrait LED above meters and controls")
 
         let library = app.buttons["duoShowLibrary"]
@@ -127,12 +127,29 @@ final class DuoPlayerDesignUITests: XCTestCase {
         }
     }
 
+    @MainActor private func assertVolumeRowFillsControls(in app: XCUIApplication, controls: CGRect, inset: CGFloat) {
+        let volume = element("volumeControl", in: app)
+        let mute = app.buttons["phoneMute"]
+        let route = element("phoneRoutePicker", in: app)
+        let slider = element("volumeLevel", in: app)
+        XCTAssertTrue(volume.exists)
+        assertTouchTarget(route, in: app, containedIn: controls)
+        XCTAssertEqual(volume.frame.minX, controls.minX + inset, accuracy: 2)
+        XCTAssertEqual(volume.frame.maxX + 8, mute.frame.minX, accuracy: 2)
+        XCTAssertEqual(mute.frame.maxX + 8, route.frame.minX, accuracy: 2)
+        XCTAssertEqual(route.frame.maxX, controls.maxX - inset, accuracy: 2)
+        XCTAssertGreaterThanOrEqual(slider.frame.width + 0.001, 44)
+        XCTAssertEqual(slider.frame.minX, app.buttons["volumeDownButton"].frame.maxX + 6, accuracy: 2)
+        XCTAssertEqual(slider.frame.maxX, app.buttons["volumeUpButton"].frame.minX - 6, accuracy: 2)
+    }
+
     @MainActor private func assertTouchTarget(
         _ element: XCUIElement, in app: XCUIApplication, containedIn frame: CGRect? = nil
     ) {
         XCTAssertTrue(element.exists, element.identifier)
-        XCTAssertGreaterThanOrEqual(element.frame.width, 44, element.identifier)
-        XCTAssertGreaterThanOrEqual(element.frame.height, 44, element.identifier)
+        // Ignore subpixel floating-point roundoff at fractional Book coordinates.
+        XCTAssertGreaterThanOrEqual(element.frame.width + 0.001, 44, element.identifier)
+        XCTAssertGreaterThanOrEqual(element.frame.height + 0.001, 44, element.identifier)
         XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(element.frame), element.identifier)
         if let frame {
             XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(element.frame), element.identifier)
