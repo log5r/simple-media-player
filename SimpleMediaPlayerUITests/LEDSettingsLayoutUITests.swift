@@ -41,7 +41,7 @@ final class LEDSettingsLayoutUITests: XCTestCase {
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-testing-phone-layout", "--ui-testing-reset-led-settings",
+            "--ui-testing-phone-layout", "--ui-testing-compact-layout", "--ui-testing-reset-led-settings",
             "-UIPreferredContentSizeCategoryName",
             usesAccessibilitySize ? "UICTContentSizeCategoryAccessibilityXXXL" : "UICTContentSizeCategoryL",
             "-AppleLanguages", "(\(language))", "-AppleLocale", language,

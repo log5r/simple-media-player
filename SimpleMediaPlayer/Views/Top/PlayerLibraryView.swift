@@ -15,14 +15,32 @@ struct MainView: View {
     let player: PlayerViewModel
     @Binding var isImporterPresented: Bool
 
-    @State var selection: SidebarSelection = .library(.allSongs)
-    @State var searchText = LibraryListUITestFixture.searchText
-    @State var searchFilter = LibrarySearchFilter()
+    var selection: SidebarSelection {
+        get { browsingState.selection }
+        nonmutating set { browsingState.select(newValue) }
+    }
+    var searchText: String {
+        get { browsingState.searchText }
+        nonmutating set { browsingState.searchText = newValue }
+    }
+    var searchFilter: LibrarySearchFilter {
+        get { browsingState.searchFilter }
+        nonmutating set { browsingState.searchFilter = newValue }
+    }
     @State var importErrorPresented = false
     @State var addToPlaylistTarget: Playlist?
-    @State var selectedItemID: UUID?
-    @State var librarySortField: LibrarySortField = .dateAdded
-    @State var librarySortDirection: LibrarySortDirection = .ascending
+    var selectedItemID: UUID? {
+        get { browsingState.selectedItemID }
+        nonmutating set { browsingState.selectedItemID = newValue }
+    }
+    var librarySortField: LibrarySortField {
+        get { browsingState.sortField }
+        nonmutating set { browsingState.sortField = newValue }
+    }
+    var librarySortDirection: LibrarySortDirection {
+        get { browsingState.sortDirection }
+        nonmutating set { browsingState.sortDirection = newValue }
+    }
     @State var listProjection = LibraryListProjection()
     @State var isPreparingExport = false
     @State var pendingExportPlan: MediaExportPlan?
@@ -38,101 +56,92 @@ struct MainView: View {
 
     #if os(iOS)
     @State var phoneExportSheet: IPhoneExportSheet?
+    @State var sharedExportSession: SharedExportSession?
     @State var showsExportErrorsAfterSharing = false
     @State var isPhoneDeckPresented = false
+    @State var showsPortraitLibrary = false
+    @State private var keyboardIndependentSize = CGSize.zero
     #endif
 
+    @State var browsingState = LibraryBrowsingState()
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     var body: some View {
-        Group {
+        GeometryReader { proxy in
+            let compact = usesCompactLayout(width: proxy.size.width)
             #if os(iOS)
-            if UIDevice.current.userInterfaceIdiom == .phone {
-                phoneView
-                    .environment(\.usesPhoneLayout, true)
-            } else {
-                desktopView
-            }
+            let hasDisplayDivision = DeckReservedRegions.hasDisplayDivision(in: proxy)
+            let portraitPlayer = DuoPortraitPlayerLayout.isPreferred(
+                size: keyboardIndependentSize == .zero ? proxy.size : keyboardIndependentSize, compact: compact,
+                hasDisplayDivision: hasDisplayDivision
+            )
             #else
-            desktopView
+            let portraitPlayer = false
             #endif
-        }
-        .fileImporter(
-            isPresented: $isImporterPresented, allowedContentTypes: [.movie, .data], allowsMultipleSelection: true
-        ) { result in
-            switch result {
-            case let .success(urls):
-                startImport(urls)
-            case let .failure(error):
-                libraryService.lastImportErrors = [error.localizedDescription]
-                importErrorPresented = true
-            }
-        }
-        .dropDestination(for: URL.self) { urls, _ in
-            startImport(urls, retainingSecurityScopedAccess: true)
-            return true
-        }
-        .alert("Import Error", isPresented: $importErrorPresented) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(libraryService.lastImportErrors.joined(separator: "\n"))
-        }
-        .alert("Playback Error", isPresented: Binding(
-            get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(player.errorMessage ?? "")
-        }
-        .alert(
-            usesPhoneLayout ? L10n.string("Export") : L10n.string("Export to Finder"),
-            isPresented: $exportResultPresented
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(exportResultMessage)
-        }
-        .alert("Create AAC Version", isPresented: aacResultPresentation) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(aacVersionResultMessage)
+            withLibraryPresentations(libraryContent(compact: compact, size: proxy.size, portraitPlayer: portraitPlayer))
+                .environment(\.usesPhoneLayout, compact)
+                #if os(iOS)
+                .environment(\.usesDividedDisplay, !compact && hasDisplayDivision)
+                .onChange(of: portraitPlayer) { _, _ in showsPortraitLibrary = false }
+                #endif
+                #if DEBUG && os(iOS)
+                .modifier(DuoLayoutDiagnostics(
+                    layoutName: compact ? "compact" : "expanded", player: player, autoplayItems: items
+                ))
+                .modifier(DuoBrowsingDiagnostics(browsingState: browsingState))
+                #endif
         }
         #if os(iOS)
-        .sheet(item: $phoneExportSheet, onDismiss: finishExportSheet) { sheet in
-            switch sheet {
-            case let .names(plan):
-                exportNamesView(plan)
-            case let .share(export):
-                IPhoneShareSheet(export: export)
+        .background {
+            // Measure posture independently; the foreground still avoids the keyboard.
+            GeometryReader { _ in
+                Color.clear
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { keyboardIndependentSize = $0 }
             }
+            .ignoresSafeArea(.keyboard)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         #endif
-        .sheet(item: $addToPlaylistTarget) { playlist in
-            PlaylistAddItemsView(playlist: playlist, items: items) { selectedItems in
-                add(selectedItems, to: playlist)
-            }
+        .onChange(of: items.map(\.id)) { _, ids in
+            browsingState.retainItems(ids: Set(ids))
         }
-        #if os(macOS)
-        .sheet(item: $pendingExportPlan, onDismiss: finishExportSheet) { plan in
-            exportNamesView(plan)
+        .onChange(of: playlists.map(\.id)) { _, ids in
+            browsingState.retainPlaylists(ids: Set(ids))
         }
-        #endif
-        .sheet(item: $saveCopyTarget) { item in
-            SaveTransformedCopyView(
-                item: item,
-                player: player,
-                libraryService: libraryService,
-                modelContext: modelContext,
-                onComplete: { _ in
-                    saveCopyTarget = nil
-                },
-                onCancel: {
-                    saveCopyTarget = nil
-                }
-            )
+        .onChange(of: browsingState.missingLibraryGroup(in: items), initial: true) { _, group in
+            if let group { browsingState.removeLibraryGroup(group) }
         }
-        .environment(\.usesPhoneLayout, usesPhoneLayout)
     }
 
-    private func exportNamesView(_ plan: MediaExportPlan) -> some View {
+    @ViewBuilder
+    private func libraryContent(compact: Bool, size: CGSize, portraitPlayer: Bool) -> some View {
+        #if os(iOS)
+        if compact {
+            phoneView
+        } else {
+            expandedIOSView(size: size, portraitPlayer: portraitPlayer)
+                // A disappearing orientation branch must not cancel the new branch's shared projection.
+                .modifier(libraryListUpdates)
+        }
+        #else
+        desktopView(availableWidth: size.width)
+            .modifier(libraryListUpdates)
+        #endif
+    }
+
+    private func usesCompactLayout(width: CGFloat) -> Bool {
+        #if os(iOS)
+        #if DEBUG
+        if let override = PhoneLayoutUITestFixture.layoutOverride { return override }
+        #endif
+        return LibraryLayoutPolicy.usesCompactLayout(horizontalSizeClass: horizontalSizeClass, width: width)
+        #else
+        return false
+        #endif
+    }
+
+    func exportNamesView(_ plan: MediaExportPlan) -> some View {
         ExportMissingTitlesView(plan: plan) { names in
             namedExportRequest = (plan, names)
             closeExportNames()
@@ -142,7 +151,7 @@ struct MainView: View {
         }
     }
 
-    private func closeExportNames() {
+    func closeExportNames() {
         #if os(iOS)
         phoneExportSheet = nil
         #else
@@ -150,12 +159,13 @@ struct MainView: View {
         #endif
     }
 
-    private func finishExportSheet() {
+    func finishExportSheet() {
         if let request = namedExportRequest {
             namedExportRequest = nil
             continueFinderExport(plan: request.plan, nameOverrides: request.names)
         } else {
             #if os(iOS)
+            if sharedExportSession?.isCompleted == false { return }
             if showsExportErrorsAfterSharing {
                 showsExportErrorsAfterSharing = false
                 exportResultPresented = true
@@ -164,41 +174,86 @@ struct MainView: View {
         }
     }
 
-    private var usesPhoneLayout: Bool {
+    var exportAlertTitle: String {
         #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .phone
+        L10n.string("Export")
         #else
-        false
+        L10n.string("Export to Finder")
         #endif
     }
 
 }
 
 extension MainView {
-    var desktopView: some View {
+    func desktopView(availableWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
+            libraryNavigation
+
+            SeekBarView(player: player)
+            BottomPanelView(
+                player: player,
+                selectedItem: selectedItem,
+                queue: browsingPlaybackQueue,
+                playItem: playBrowsingItem,
+                requestSaveCopy: { item in
+                    saveCopyTarget = item
+                },
+                availableWidth: availableWidth
+            )
+        }
+    }
+
+    var libraryListUpdates: LibraryListUpdates {
+        LibraryListUpdates(
+            projection: listProjection,
+            items: items,
+            playlist: selectedPlaylist,
+            request: LibraryListRequest(
+                section: selectedSection,
+                searchText: searchText,
+                searchFilter: searchFilter,
+                sortField: librarySortField,
+                sortDirection: librarySortDirection
+            )
+        )
+    }
+
+    var libraryNavigation: some View {
             NavigationSplitView {
                 SidebarView(
-                    selection: $selection,
+                    selection: Binding(get: { selection }, set: { browsingState.select($0) }),
                     playlists: playlists,
                     createPlaylist: { _ = createPlaylist() },
                     renamePlaylist: renamePlaylist,
-                    deletePlaylist: deletePlaylist
+                    deletePlaylist: deletePlaylist,
+                    browsingState: browsingState
                 )
+                #if os(iOS)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+                #endif
             } detail: {
+                libraryDetail
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .minFrame()
+
+    }
+
+    var libraryDetail: some View {
                 DetailAreaView(
+                    browsingState: browsingState,
                     items: filteredItems,
-                    allQueue: filteredItems,
+                    allQueue: browsingPlaybackQueue,
                     selectedSection: selectedSection,
                     activePlaylist: selectedPlaylist,
                     title: navigationTitle,
-                    searchText: $searchText,
-                    searchFilter: $searchFilter,
-                    librarySortField: $librarySortField,
-                    librarySortDirection: $librarySortDirection,
+                    searchText: $browsingState.searchText,
+                    searchFilter: $browsingState.searchFilter,
+                    librarySortField: $browsingState.sortField,
+                    librarySortDirection: $browsingState.sortDirection,
                     showLyricsPanel: $showLyricsPanel,
                     isImporterPresented: $isImporterPresented,
-                    selectedItemID: $selectedItemID,
+                    selectedItemID: $browsingState.selectedItemID,
                     libraryService: libraryService,
                     player: player,
                     playlists: playlists,
@@ -222,37 +277,9 @@ extension MainView {
                     },
                     deleteItem: { item in
                         deleteLibraryItem(item)
-                    }
+                    },
+                    playItem: playBrowsingItem
                 )
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .minFrame()
-
-            SeekBarView(player: player)
-            BottomPanelView(
-                player: player,
-                selectedItem: selectedItem,
-                queue: filteredItems,
-                playItem: { item in
-                    player.play(item: item, in: filteredItems)
-                },
-                requestSaveCopy: { item in
-                    saveCopyTarget = item
-                }
-            )
-        }
-        .modifier(LibraryListUpdates(
-            projection: listProjection,
-            items: items,
-            playlist: selectedPlaylist,
-            request: LibraryListRequest(
-                section: selectedSection,
-                searchText: searchText,
-                searchFilter: searchFilter,
-                sortField: librarySortField,
-                sortDirection: librarySortDirection
-            )
-        ))
     }
 
     #if os(iOS)
@@ -276,15 +303,18 @@ extension MainView {
                 moveItems: move,
                 createAACVersion: createAACVersion,
                 exportItems: startExport,
-                deleteItem: deleteLibraryItem
-            )
+                deleteItem: deleteLibraryItem,
+                showAddTracks: { addToPlaylistTarget = $0 },
+                requestSaveCopy: { saveCopyTarget = $0 }
+            ),
+            browsingState: browsingState
         )
     }
     #endif
 
 }
 
-private extension MainView {
+extension MainView {
     static func makeAACVersionExporter() -> TransformedTrackExporter {
         #if DEBUG && os(iOS)
         PhoneLayoutUITestFixture.makeAACVersionExporter()

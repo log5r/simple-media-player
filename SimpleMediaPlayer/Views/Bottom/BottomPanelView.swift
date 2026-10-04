@@ -1,7 +1,22 @@
 import SwiftUI
 
 enum BottomPanelMetrics {
+    #if os(iOS)
+    static let controlHeight: CGFloat = 44
+    static let adjustmentButtonWidth: CGFloat = 44
+    static let volumeSlotWidth: CGFloat = 44
+    static let volumeStepWidth: CGFloat = 44
+    #else
     static let controlHeight: CGFloat = 34
+    static let adjustmentButtonWidth: CGFloat = 32
+    static let volumeSlotWidth: CGFloat = 17
+    static let volumeStepWidth: CGFloat = 24
+    #endif
+    #if os(iOS)
+    static let adjustmentWidth = adjustmentButtonWidth * 3 + 2
+    #else
+    static let adjustmentWidth: CGFloat = 96
+    #endif
     static let volumeHeight: CGFloat = 136
 
     static func classicColumnWidth(for panelWidth: CGFloat) -> CGFloat {
@@ -19,9 +34,22 @@ struct BottomPanelView: View {
     let queue: [MediaItem]
     let playItem: (MediaItem) -> Void
     let requestSaveCopy: (MediaItem) -> Void
+    var availableWidth: CGFloat?
     @AppStorage(AppSettingsKey.bottomPanelLayout) private var layoutRaw = AppSettingsDefault.bottomPanelLayout
+    @Environment(\.usesDividedDisplay) private var usesDividedDisplay
 
     var body: some View {
+        #if os(iOS)
+        AdaptiveBottomPanelView(
+            player: player,
+            selectedItem: selectedItem,
+            queue: queue,
+            playItem: playItem,
+            requestSaveCopy: requestSaveCopy,
+            layout: usesDividedDisplay ? .ledHalf : BottomPanelLayout(rawValue: layoutRaw) ?? .ledHalf,
+            availableWidth: availableWidth
+        )
+        #else
         switch BottomPanelLayout(rawValue: layoutRaw) ?? .ledHalf {
         case .classic:
             ClassicBottomPanelView(
@@ -40,6 +68,7 @@ struct BottomPanelView: View {
                 requestSaveCopy: requestSaveCopy
             )
         }
+        #endif
     }
 }
 
@@ -146,7 +175,7 @@ struct VolumeControlView: View {
             VolumeSlotView(value: player.volume, palette: palette) { value in
                 player.setVolume(value)
             }
-            .frame(width: 17, height: height)
+            .frame(width: BottomPanelMetrics.volumeSlotWidth, height: height)
 
             VStack(spacing: 8) {
                 stepButton(identifier: "volumeUpButton", label: "Volume Up", systemName: "plus") {
@@ -178,7 +207,7 @@ struct VolumeControlView: View {
                     .font(.system(size: 12, weight: .black))
                     .foregroundStyle(palette.enabledIcon)
             }
-            .frame(width: 24)
+            .frame(width: BottomPanelMetrics.volumeStepWidth)
             .frame(maxHeight: .infinity)
         }
         .buttonStyle(.plain)

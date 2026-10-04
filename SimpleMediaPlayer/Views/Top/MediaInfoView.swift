@@ -68,7 +68,7 @@ struct MediaInfoView: View {
                 }
                 .padding(22)
             }
-            .frame(minHeight: 420)
+            .frame(minHeight: EditorLayoutMetrics.minimumScrollHeight)
             Divider()
             HStack {
                 Spacer()

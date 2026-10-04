@@ -27,11 +27,9 @@ extension MainView {
     }
 
     var selectedSection: LibrarySection? {
-        if case let .library(section) = selection {
-            section
-        } else {
-            nil
-        }
+        if browsingState.phoneTab == 3 { return nil }
+        guard case let .library(section) = selection else { return nil }
+        return section
     }
 
     var selectedPlaylist: Playlist? {
@@ -40,7 +38,9 @@ extension MainView {
     }
 
     var navigationTitle: String {
-        switch selection {
+        if browsingState.phoneTab == 3 { return L10n.string("Search") }
+        if let group = browsingState.group { return group.name }
+        return switch selection {
         case let .library(section):
             section.title
         case let .playlist(id):
@@ -52,9 +52,23 @@ extension MainView {
         listProjection.items
     }
 
+    var browsingPlaybackQueue: [MediaItem] {
+        browsingState.playbackQueue(from: filteredItems)
+    }
+
+    func playBrowsingItem(_ item: MediaItem) {
+        let queue = browsingPlaybackQueue
+        guard item.isDeleted == false, queue.contains(where: { $0.id == item.id }) else { return }
+        browsingState.selectedItemID = item.id
+        browsingState.playingListName = navigationTitle
+        player.play(item: item, in: queue)
+    }
+
     var selectedItem: MediaItem? {
         guard let selectedItemID else { return nil }
-        return listProjection.selectedItem(id: selectedItemID)
+        guard let item = listProjection.selectedItem(id: selectedItemID),
+              browsingState.group?.contains(item) != false else { return nil }
+        return item
     }
 
     var canCreateAACVersion: Bool {
@@ -88,10 +102,16 @@ extension MainView {
     }
 
     func startFinderExport() {
-        startExport(filteredItems)
+        startExport(browsingPlaybackQueue)
     }
 
     func startExport(_ exportItems: [MediaItem]) {
+        #if os(iOS)
+        if let sharedExportSession, !sharedExportSession.isCompleted {
+            phoneExportSheet = .share(sharedExportSession)
+            return
+        }
+        #endif
         guard canCreateAACVersion else { return }
         isPreparingExport = true
         Task {
@@ -176,7 +196,9 @@ extension MainView {
             }
         }.value
         if exportedURLs.isEmpty == false {
-            phoneExportSheet = .share(IPhoneSharedExport(directory: destinationURL, urls: exportedURLs))
+            let session = SharedExportSession(directory: destinationURL, urls: exportedURLs)
+            sharedExportSession = session
+            phoneExportSheet = .share(session)
         } else {
             await Task.detached { try? FileManager.default.removeItem(at: destinationURL) }.value
         }
@@ -235,9 +257,7 @@ extension MainView {
     }
 
     func deletePlaylist(_ playlist: Playlist) {
-        if selection == .playlist(playlist.id) {
-            selection = .library(.allSongs)
-        }
+        browsingState.removePlaylist(playlist.id)
         modelContext.delete(playlist)
         save()
     }

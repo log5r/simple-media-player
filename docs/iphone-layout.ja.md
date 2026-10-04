@@ -3,8 +3,9 @@
 [English](iphone-layout.md) | **日本語**
 
 iPhoneで使うときの画面構成を定める設計書です。
-対象は幅がcompactになるiPhoneの縦向き表示で、iPhone Duoは扱いません。
-iPadとmacOSの画面は、現在の構成を維持します。
+対象は幅がcompactになるiPhoneの縦向き表示です。
+[iPhone Duo](iphone-duo.ja.md)では、幅がcompactになる外側の画面でこの構成を使い、幅がregularになる内側の画面ではmacOSに近い共通レイアウトを使います。
+macOSの構成は維持し、iPadではタッチ操作に対応した共通の広い画面を使います。
 モックアップは[デザイン案のキャンバス](https://claude.ai/artifact/TVYKLHj5PkKKAhv8iCYpNL)にあります（閲覧には共有設定が必要です）。
 
 ## 現状の問題

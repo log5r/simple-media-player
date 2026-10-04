@@ -14,39 +14,45 @@ enum IPhoneExportSheet: Identifiable {
     }
 }
 
-final class IPhoneSharedExport: Identifiable {
-    let id = UUID()
-    let directory: URL
-    let urls: [URL]
-
-    init(directory: URL, urls: [URL]) {
-        self.directory = directory
-        self.urls = urls
-    }
-
-    func cleanup() {
-        let directory = directory
-        Task.detached { try? FileManager.default.removeItem(at: directory) }
-    }
-}
+typealias IPhoneSharedExport = SharedExportSession
 
 struct IPhoneShareSheet: UIViewControllerRepresentable {
     let export: IPhoneSharedExport
+    var onCompletion: (UUID) -> Void = { _ in }
 
     final class Coordinator {
         let export: IPhoneSharedExport
-        init(export: IPhoneSharedExport) { self.export = export }
+        let presentationID: UUID?
+        private let onCompletion: (UUID) -> Void
+
+        init(export: IPhoneSharedExport, onCompletion: @escaping (UUID) -> Void = { _ in }) {
+            self.export = export
+            self.onCompletion = onCompletion
+            presentationID = export.beginPresentation()
+        }
+
+        func detach() {
+            guard let presentationID else { return }
+            export.detachPresentation(presentationID)
+        }
+
+        func complete() {
+            guard let presentationID, export.completePresentation(presentationID) else { return }
+            onCompletion(export.id)
+        }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(export: export) }
+    func makeCoordinator() -> Coordinator { Coordinator(export: export, onCompletion: onCompletion) }
 
     static func dismantleUIViewController(_ uiViewController: UIActivityViewController, coordinator: Coordinator) {
-        coordinator.export.cleanup()
+        uiViewController.completionWithItemsHandler = nil
+        coordinator.detach()
     }
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: export.urls, applicationActivities: nil)
-        controller.completionWithItemsHandler = { _, _, _, _ in export.cleanup() }
+        let coordinator = context.coordinator
+        controller.completionWithItemsHandler = { _, _, _, _ in coordinator.complete() }
         return controller
     }
 

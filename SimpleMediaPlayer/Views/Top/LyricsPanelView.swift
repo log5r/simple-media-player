@@ -7,41 +7,45 @@ struct LyricsPanelView: View {
     let libraryService: LibraryService
     var page: PanelContent?
     var playbackTime: TimeInterval?
-    @Environment(\.usesPhoneLayout) private var usesPhoneLayout
+    var browsingState: LibraryBrowsingState?
+    /// Sheets can share page selection while keeping their nested editors locally presented.
+    var contentSelection: Binding<PanelContent>?
+    @Environment(\.usesTouchControls) var usesTouchControls
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) var modelContext
     #if os(macOS)
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openWindow) var openWindow
     #endif
     @State private var parsed = ParsedLyrics(lines: [], hasTimeTags: false)
     @State private var selectedContent = PanelContent.lyrics
     #if !os(macOS)
-    @State private var isArtworkPreviewPresented = false
+    @State var isArtworkPreviewPresented = false
     #endif
     @State private var infoItem: MediaItem?
     @State private var lyricsItem: MediaItem?
-    @State private var informationDraft: MediaMetadataEditDraft?
-    @State private var informationDraftItemID: UUID?
-    @State private var informationDraftArtworkID: UUID?
-    @State private var informationLoadRequestID = UUID()
+    @State var informationDraft: MediaMetadataEditDraft?
+    @State var informationDraftItemID: UUID?
+    @State var informationDraftArtworkID: UUID?
+    @State var informationLoadRequestID = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if page == nil {
-                Picker("Panel Content", selection: $selectedContent) {
+                Picker("Panel Content", selection: selectedContentBinding) {
                     ForEach(PanelContent.allCases) { content in
                         Label(content.title, systemImage: content.systemImage)
                             .tag(content)
                     }
                 }
                 .pickerStyle(.segmented)
+                .accessibilityIdentifier("lyricsPanelContentPicker")
                 .labelsHidden()
                 .controlSize(.small)
                 .padding(.horizontal, 14)
                 .frame(height: 44)
                 .background(.bar)
             }
-            switch page ?? selectedContent {
+            switch page ?? selectedContentBinding.wrappedValue {
             case .lyrics:
                 lyricsContent
                     .task(id: item?.id) {
@@ -57,6 +61,9 @@ struct LyricsPanelView: View {
         }
         .background(.background)
         .onChange(of: item?.lyricsRaw, initial: true) { _, raw in parsed = LyricsParser.parse(raw) }
+        .onChange(of: browsingState?.infoItem?.id) { oldID, newID in
+            if newID == nil, oldID == item?.id { Task { await reloadInformation() } }
+        }
         .sheet(isPresented: Binding(
             get: { infoItem != nil },
             set: { if $0 == false { infoItem = nil } }
@@ -77,6 +84,19 @@ struct LyricsPanelView: View {
         }
     }
 
+    private var selectedContentBinding: Binding<PanelContent> {
+        if let contentSelection { return contentSelection }
+        return Binding {
+            browsingState?.panelContent ?? selectedContent
+        } set: { content in
+            if let browsingState {
+                browsingState.panelContent = content
+            } else {
+                selectedContent = content
+            }
+        }
+    }
+
     private var lyricsContent: some View {
         let activeIndex = activeLyricIndex
         return VStack(spacing: 0) {
@@ -91,7 +111,7 @@ struct LyricsPanelView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(Array(parsed.lines.enumerated()), id: \.offset) { index, line in
                                 Text(line.text.isEmpty ? " " : line.text)
-                                    .font(usesPhoneLayout ? .title3 : .system(size: 13))
+                                    .font(usesTouchControls ? .title3 : .system(size: 13))
                                     .fontWeight(activeIndex == index ? .bold : .regular)
                                     .foregroundStyle(activeIndex == index ? Color.accentColor : Color.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,10 +141,14 @@ struct LyricsPanelView: View {
             HStack {
                 Spacer()
                 Button {
-                    lyricsItem = item
+                    if let browsingState {
+                        browsingState.lyricsItem = item
+                    } else {
+                        lyricsItem = item
+                    }
                 } label: {
                     Label(lyricsButtonTitle, systemImage: "square.and.pencil")
-                        .frame(minHeight: usesPhoneLayout ? 44 : nil)
+                        .frame(minHeight: usesTouchControls ? 44 : nil)
                 }
                 .disabled(item == nil || item?.isVideo == true)
             }
@@ -142,28 +166,20 @@ struct LyricsPanelView: View {
         parsed.lines.isEmpty ? "Add Lyrics…" : "Edit Lyrics…"
     }
 
-    private func showArtworkPreview(for item: MediaItem) {
-        #if os(macOS)
-        openWindow(id: ArtworkPreviewWindow.sceneID, value: item.id)
-        #else
-        isArtworkPreviewPresented = true
-        #endif
-    }
-
     #if !os(macOS)
-    private func artworkPreview(_ image: Image) -> some View {
+    func artworkPreview(_ image: Image) -> some View {
         image
             .resizable()
             .scaledToFit()
             .accessibilityLabel("Artwork")
             .padding(28)
             .frame(
-                minWidth: usesPhoneLayout ? 0 : 420,
-                idealWidth: usesPhoneLayout ? nil : 520,
-                maxWidth: usesPhoneLayout ? .infinity : 640,
-                minHeight: usesPhoneLayout ? 0 : 420,
-                idealHeight: usesPhoneLayout ? nil : 520,
-                maxHeight: usesPhoneLayout ? .infinity : 640
+                minWidth: usesTouchControls ? 0 : 420,
+                idealWidth: usesTouchControls ? nil : 520,
+                maxWidth: usesTouchControls ? .infinity : 640,
+                minHeight: usesTouchControls ? 0 : 420,
+                idealHeight: usesTouchControls ? nil : 520,
+                maxHeight: usesTouchControls ? .infinity : 640
             )
             .background(.background)
             .overlay(alignment: .topTrailing) {
@@ -173,7 +189,7 @@ struct LyricsPanelView: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title2)
                         .symbolRenderingMode(.hierarchical)
-                        .frame(minWidth: usesPhoneLayout ? 44 : nil, minHeight: usesPhoneLayout ? 44 : nil)
+                        .frame(minWidth: usesTouchControls ? 44 : nil, minHeight: usesTouchControls ? 44 : nil)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")
@@ -228,157 +244,20 @@ struct LyricsPanelView: View {
             HStack {
                 Spacer()
                 Button {
-                    infoItem = item
+                    if let browsingState {
+                        browsingState.infoItem = item
+                    } else {
+                        infoItem = item
+                    }
                 } label: {
                     Label("Edit Information…", systemImage: "pencil")
-                        .frame(minHeight: usesPhoneLayout ? 44 : nil)
+                        .frame(minHeight: usesTouchControls ? 44 : nil)
                 }
                 .disabled(item == nil || informationDraftItemID != item?.id)
             }
             .padding(12)
             .background(.bar)
         }
-    }
-
-}
-
-private extension LyricsPanelView {
-    private func informationRow(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(usesPhoneLayout ? .body : .system(size: 13))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-    }
-
-    private func artworkInformationRow(item: MediaItem, artworkData: Data?) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(MediaListColumn.artwork.settingsTitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            if let artworkData,
-               let image = platformImage(data: artworkData) {
-                Button {
-                    showArtworkPreview(for: item)
-                } label: {
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Enlarge Artwork")
-                .help("Enlarge Artwork")
-                #if !os(macOS)
-                .popover(isPresented: $isArtworkPreviewPresented) {
-                    artworkPreview(image)
-                }
-                #endif
-            } else {
-                Label("No artwork available", systemImage: "photo")
-                    .font(usesPhoneLayout ? .body : .system(size: 13))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-    }
-
-    private func informationValue(for column: MediaListColumn, item: MediaItem) -> String {
-        switch column {
-        case .index:
-            listIndex.map(String.init) ?? "-"
-        case .artwork:
-            ""
-        case .title:
-            metadataText(informationDraft.map(\.title) ?? item.title, fallback: item.title)
-        case .artist:
-            metadataText(informationDraft.map(\.artist) ?? item.artist, fallback: item.displayArtist)
-        case .album:
-            metadataText(informationDraft.map(\.album) ?? item.album, fallback: item.displayAlbum)
-        case .genre:
-            metadataText(informationDraft.map(\.genre) ?? item.genre, fallback: item.displayGenre)
-        case .duration:
-            item.duration.mediaTime
-        case .trackNumber:
-            metadataText(informationDraft.map(\.trackNumber) ?? item.trackNumber)
-        case .year:
-            metadataText(informationDraft.map(\.year) ?? item.year)
-        case .albumArtist:
-            metadataText(informationDraft.map(\.albumArtist) ?? item.albumArtist)
-        case .composer:
-            metadataText(informationDraft.map(\.composer) ?? item.composer)
-        case .discNumber:
-            metadataText(informationDraft.map(\.discNumber) ?? item.discNumber)
-        case .kind:
-            if item.isVideo {
-                L10n.string("Video")
-            } else {
-                L10n.string("Audio")
-            }
-        case .contentType:
-            item.displayContentType
-        case .dateAdded:
-            item.addedAt.formatted(date: .numeric, time: .omitted)
-        case .fileName:
-            item.fileName
-        }
-    }
-
-    private func metadataText(_ value: String?, fallback: String = "-") -> String {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? fallback : trimmed
-    }
-
-    private func informationArtworkData(for item: MediaItem) -> Data? {
-        guard informationDraftItemID == item.id,
-              informationDraftArtworkID == item.artworkID else { return nil }
-        return informationDraft?.artworkData
-    }
-
-    private func reloadInformation() async {
-        let requestID = UUID()
-        informationLoadRequestID = requestID
-        informationDraftItemID = nil
-        informationDraftArtworkID = nil
-        informationDraft = nil
-
-        guard let item else {
-            informationDraft = nil
-            return
-        }
-
-        let itemID = item.id
-        let artworkID = item.artworkID
-        guard let draft = try? await libraryService.editableMetadataDraft(for: item) else { return }
-        guard Task.isCancelled == false,
-              self.item?.id == itemID,
-              self.item?.artworkID == artworkID,
-              informationLoadRequestID == requestID else { return }
-        informationDraft = draft
-        informationDraftItemID = itemID
-        informationDraftArtworkID = artworkID
-    }
-
-    private func platformImage(data: Data) -> Image? {
-        #if os(macOS)
-        guard let image = NSImage(data: data) else { return nil }
-        return Image(nsImage: image)
-        #else
-        guard let image = UIImage(data: data) else { return nil }
-        return Image(uiImage: image)
-        #endif
     }
 
 }
