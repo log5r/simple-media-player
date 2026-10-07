@@ -150,6 +150,33 @@ struct LazyLyricsLoadingTests {
         #expect(item.lyricsRaw == "Current lyrics")
     }
 
+    @Test func embeddedMetadataLyricsEditInvalidatesAnInFlightRead() async throws {
+        let probe = ControlledLyricsRead()
+        defer { Task { await probe.finishAll() } }
+        let fixture = try LyricsLoadingFixture(reader: EmbeddedLyricsReader(readAsset: { url in
+            try await probe.read(url)
+        }))
+        let item = fixture.insertItem(named: "track.mp3")
+        let url = try #require(fixture.service.resolvedURL(for: item))
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try Data([0xFF, 0xFB, 0x90, 0x64]).write(to: url)
+        try fixture.context.save()
+        let task = Task { await fixture.service.refreshMissingLyrics(for: item, in: fixture.context) }
+        try await waitForReads(1, probe: probe)
+        var draft = MediaMetadataEditDraft(item: item)
+        draft.editsTextMetadata = false
+        draft.editsLyrics = true
+
+        try await fixture.service.updateEmbeddedMetadata(for: item, draft: draft, in: fixture.context)
+        await probe.finish(1, lyrics: "Obsolete lyrics")
+        await task.value
+
+        #expect(item.lyricsRaw == nil)
+        #expect(item.hasEditedLyrics)
+        #expect(item.hasEditedTextMetadata == false)
+    }
+
     @Test func deletingTheItemDuringAReadDoesNotRestoreIt() async throws {
         let probe = ControlledLyricsRead()
         defer { Task { await probe.finishAll() } }

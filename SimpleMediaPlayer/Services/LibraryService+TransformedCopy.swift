@@ -69,7 +69,7 @@ extension LibraryService {
             artworkData: source.artworkData,
             fileName: copiedURL.lastPathComponent
         )
-        try Task.checkCancellation()
+        try source.applyEditedMetadata(to: item, title: title)
         context.insert(item)
         do {
             try context.save()

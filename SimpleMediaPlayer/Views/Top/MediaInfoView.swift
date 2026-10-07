@@ -369,7 +369,7 @@ private extension MediaInfoView {
         guard canSaveMetadata else { return }
         let itemID = item.id
         let requestID = UUID()
-        let draft = metadataDraft
+        let draft = metadataDraft.forSaving(comparedTo: originalMetadataDraft)
         metadataLoadRequestID = requestID
         artworkLoadRequestID = nil
         isSavingMetadata = true
