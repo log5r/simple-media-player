@@ -132,14 +132,13 @@ nonisolated final class MusicLibraryScriptReader: @unchecked Sendable {
 extension MusicLibraryMetadataProvider {
     // `properties of every file track` is one bulk request. Its result contains records,
     // not track references, so descriptor decoding performs no further Music requests.
+    // Keep AppleScript's standard response timeout for potentially slow whole-library reads.
     nonisolated static var appleScriptSource: String {
         """
         if application "Music" is not running then return {}
-        with timeout of 30 seconds
-            tell application "Music"
-                return properties of every file track of library playlist 1
-            end tell
-        end timeout
+        tell application "Music"
+            return properties of every file track of library playlist 1
+        end tell
         """
     }
 
