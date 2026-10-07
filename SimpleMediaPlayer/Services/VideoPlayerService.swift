@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import MediaToolbox
+import Synchronization
 
 @MainActor
 @Observable
@@ -11,6 +12,9 @@ final class VideoPlayerService {
     private var audioTapProcessor: VideoAudioTapProcessor?
     private var equalizerSettings = EqualizerSettings.flat
     private var loadGeneration = 0
+    private var playbackRequested = false
+    private var seekGeneration = 0
+    private var seekPending = false
 
     var currentTime: TimeInterval {
         let time = player.currentTime().seconds
@@ -26,6 +30,11 @@ final class VideoPlayerService {
 
     func load(url: URL) async {
         loadGeneration += 1
+        playbackRequested = false
+        seekPending = false
+        seekGeneration &+= 1
+        audioTapProcessor?.state.setActive(false)
+        player.pause()
         let generation = loadGeneration
         let asset = AVURLAsset(url: url)
         let item = AVPlayerItem(asset: asset)
@@ -54,10 +63,14 @@ final class VideoPlayerService {
     }
 
     func play() {
+        playbackRequested = true
+        audioTapProcessor?.state.setActive(!seekPending)
         player.play()
     }
 
     func pause() {
+        playbackRequested = false
+        audioTapProcessor?.state.setActive(false)
         player.pause()
     }
 
@@ -71,8 +84,8 @@ final class VideoPlayerService {
     }
 
     func stop() {
-        player.pause()
-        player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        pause()
+        seek(to: 0)
     }
 
     func close() {
@@ -88,7 +101,22 @@ final class VideoPlayerService {
     }
 
     func seek(to time: TimeInterval) {
-        player.seek(to: CMTime(seconds: time, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        let processor = audioTapProcessor
+        processor?.state.setActive(false)
+        seekGeneration &+= 1
+        seekPending = true
+        let request = seekGeneration
+        let generation = loadGeneration
+        player.seek(
+            to: CMTime(seconds: time, preferredTimescale: 600),
+            toleranceBefore: .zero, toleranceAfter: .zero
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, generation == self.loadGeneration, request == self.seekGeneration else { return }
+                self.seekPending = false
+                processor?.state.setActive(self.playbackRequested)
+            }
+        }
     }
 
     private func audioTapProcessor(for item: AVPlayerItem, asset: AVAsset) async -> VideoAudioTapProcessor? {
@@ -172,10 +200,12 @@ final class VideoPlayerService {
     }
 }
 
-private final class VideoAudioTapProcessor: @unchecked Sendable {
+nonisolated private final class VideoAudioTapProcessor: @unchecked Sendable {
     private let analyzer: SpectrumAnalyzer
     private let equalizer: VideoEqualizerProcessor
-    private var format: AVAudioFormat?
+    let state = VideoAudioTapState()
+    private var sampleRing: VideoAudioSampleRing?
+    private var supportsFloat32 = false
 
     init(analyzer: SpectrumAnalyzer, equalizerSettings: EqualizerSettings) {
         self.analyzer = analyzer
@@ -194,7 +224,7 @@ private final class VideoAudioTapProcessor: @unchecked Sendable {
             init: Self.initialize,
             finalize: Self.finalize,
             prepare: Self.prepare,
-            unprepare: nil,
+            unprepare: Self.unprepare,
             process: Self.process
         )
         var tap: MTAudioProcessingTap?
@@ -225,18 +255,35 @@ private final class VideoAudioTapProcessor: @unchecked Sendable {
         Unmanaged<VideoAudioTapProcessor>.fromOpaque(storage).release()
     }
 
-    private static let prepare: MTAudioProcessingTapPrepareCallback = { tap, _, processingFormat in
+    private static let prepare: MTAudioProcessingTapPrepareCallback = { tap, maxFrames, processingFormat in
         guard let processor = processor(from: tap),
               let format = AVAudioFormat(streamDescription: processingFormat)
         else {
             return
         }
-        processor.format = format
         processor.equalizer.prepare(format: format)
+        processor.supportsFloat32 = format.commonFormat == .pcmFormatFloat32
+        guard processor.supportsFloat32, maxFrames > 0, format.channelCount > 0,
+              format.sampleRate.isFinite, format.sampleRate > 0 else { return }
+        let ring = VideoAudioSampleRing(maxFrames: maxFrames, format: format, state: processor.state)
+        processor.sampleRing = ring
+        ring.start(analyzer: processor.analyzer)
+    }
+
+    private static let unprepare: MTAudioProcessingTapUnprepareCallback = { tap in
+        guard let processor = processor(from: tap) else { return }
+        processor.sampleRing?.stop()
+        processor.sampleRing = nil
+        processor.supportsFloat32 = false
     }
 
     private static let process: MTAudioProcessingTapProcessCallback =
     { tap, numberFrames, _, bufferListInOut, numberFramesOut, flagsOut in
+        guard let processor = processor(from: tap) else { return }
+        // Capture validity before fetching audio, so a concurrent transport change
+        // cannot assign old source audio to a new playback epoch.
+        let sourceEpoch = processor.state.epoch.load(ordering: .acquiring)
+        let analysisGeneration = processor.analyzer.realtimeVideoGeneration
         var timeRange = CMTimeRange.invalid
         let status = MTAudioProcessingTapGetSourceAudio(
             tap,
@@ -246,29 +293,19 @@ private final class VideoAudioTapProcessor: @unchecked Sendable {
             &timeRange,
             numberFramesOut
         )
-        guard status == noErr,
-              let processor = processor(from: tap),
-              let format = processor.format,
-              numberFramesOut.pointee > 0
-        else {
-            return
-        }
-
-        let bufferListPointer = UnsafePointer<AudioBufferList>(bufferListInOut)
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            bufferListNoCopy: bufferListPointer,
-            deallocator: nil
-        ) else {
-            return
-        }
-
-        buffer.frameLength = AVAudioFrameCount(numberFramesOut.pointee)
-        if flagsOut.pointee & MTAudioProcessingTapFlags(kMTAudioProcessingTapFlag_StartOfStream) != 0 {
-            processor.equalizer.reset()
-        }
-        processor.equalizer.process(buffer)
-        processor.analyzer.analyze(buffer, currentTime: timeRange.start.seconds, isPlaying: true)
+        guard status == noErr, processor.supportsFloat32, numberFramesOut.pointee > 0 else { return }
+        let startsStream = flagsOut.pointee
+            & MTAudioProcessingTapFlags(kMTAudioProcessingTapFlag_StartOfStream) != 0
+        if startsStream { processor.equalizer.reset() }
+        let frameCount = numberFramesOut.pointee
+        processor.equalizer.process(bufferListInOut, frameCount: frameCount)
+        processor.sampleRing?.enqueue(
+            bufferListInOut, frameCount: frameCount,
+            stamp: VideoAudioSampleRing.Stamp(
+                time: timeRange.start.seconds, analysisGeneration: analysisGeneration,
+                sourceEpoch: sourceEpoch, startsStream: startsStream
+            )
+        )
     }
 }
 

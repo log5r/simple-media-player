@@ -21,12 +21,18 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
         )
     }
 
+    private struct ChannelLayout {
+        let frameCount: Int
+        let stride: Int
+        let offset: Int
+    }
+
     private struct BiquadState {
         var delay1: Float = 0
         var delay2: Float = 0
     }
 
-    private final class ConfigurationBox: @unchecked Sendable {
+    private struct ConfigurationBox {
         let isEnabled: Bool
         let preampGain: Float
         let coefficients: [BiquadCoefficients]
@@ -82,26 +88,42 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
         }
     }
 
-    private struct ConfigurationState: Sendable {
+    private struct ConfigurationState: @unchecked Sendable {
         var settings: EqualizerSettings
         var sampleRate: Double
-        // 公開済みのスナップショットは audio callback が参照し得るため、
-        // processor の寿命が終わるまで保持する。
-        var retainedConfigurations: [ConfigurationBox] = []
+        // The writer retains only the current snapshot and the callback's hazard pointer.
+        // Reclamation occurs here, never on the audio callback.
+        var retainedConfigurations: [UnsafeMutablePointer<ConfigurationBox>] = []
     }
 
     private let configurationAddress = Atomic<UInt>(0)
+    private let readerAddress = Atomic<UInt>(0)
+
+    var retainedConfigurationCount: Int {
+        configurationState.withLock { $0.retainedConfigurations.count }
+    }
     private let configurationState: Mutex<ConfigurationState>
 
     // prepare/process は同じ tap の audio callback から直列に呼ばれる。
     private var filterStates: [BiquadState] = []
     private var preparedChannelCount = 0
+    private var isInterleaved = false
+    private var isFloat32 = false
     private var lastConfigurationAddress: UInt = 0
     private var lastConfigurationWasEnabled = false
 
     init(settings: EqualizerSettings = .flat) {
         configurationState = Mutex(ConfigurationState(settings: settings, sampleRate: 48_000))
         publishConfiguration(settings: settings, sampleRate: 48_000)
+    }
+
+    deinit {
+        configurationState.withLock { state in
+            for configuration in state.retainedConfigurations {
+                configuration.deinitialize(count: 1)
+                configuration.deallocate()
+            }
+        }
     }
 
     func setSettings(_ settings: EqualizerSettings) {
@@ -114,6 +136,8 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
     func prepare(format: AVAudioFormat) {
         let channelCount = Int(format.channelCount)
         preparedChannelCount = channelCount
+        isInterleaved = format.isInterleaved
+        isFloat32 = format.commonFormat == .pcmFormatFloat32
         filterStates = Array(
             repeating: BiquadState(),
             count: channelCount * EqualizerSettings.bandCount
@@ -128,59 +152,51 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
     }
 
     func process(_ buffer: AVAudioPCMBuffer) {
-        guard buffer.format.commonFormat == .pcmFormatFloat32,
-              let channelData = buffer.floatChannelData,
-              buffer.frameLength > 0
-        else {
-            return
+        process(buffer.mutableAudioBufferList, frameCount: Int(buffer.frameLength))
+    }
+
+    func process(_ buffers: UnsafeMutablePointer<AudioBufferList>, frameCount: Int) {
+        guard isFloat32, frameCount > 0, preparedChannelCount > 0 else { return }
+        let channelCount = preparedChannelCount
+        let list = UnsafeMutableAudioBufferListPointer(buffers)
+        guard list.count >= (isInterleaved ? 1 : channelCount) else { return }
+        let stride = isInterleaved ? channelCount : 1
+        for channel in 0..<(isInterleaved ? 1 : channelCount) {
+            guard list[channel].mData != nil,
+                  Int(list[channel].mDataByteSize) >= frameCount * stride * MemoryLayout<Float>.size
+            else { return }
         }
 
-        let channelCount = Int(buffer.format.channelCount)
-        guard channelCount == preparedChannelCount,
-              filterStates.count == channelCount * EqualizerSettings.bandCount
-        else {
-            return
-        }
-
-        let address = configurationAddress.load(ordering: .acquiring)
-        guard address != 0,
-              let pointer = UnsafeRawPointer(bitPattern: address)
-        else {
-            return
-        }
-        let configuration = Unmanaged<ConfigurationBox>.fromOpaque(pointer).takeUnretainedValue()
+        // Sequential consistency closes the load/publish/recheck reclamation race.
+        // If publication races this callback, skip one EQ buffer instead of spinning.
+        let address = configurationAddress.load(ordering: .sequentiallyConsistent)
+        readerAddress.store(address, ordering: .sequentiallyConsistent)
+        defer { readerAddress.store(0, ordering: .sequentiallyConsistent) }
+        guard address == configurationAddress.load(ordering: .sequentiallyConsistent),
+              let pointer = UnsafeRawPointer(bitPattern: address) else { return }
+        let configuration = pointer.assumingMemoryBound(to: ConfigurationBox.self)
         if address != lastConfigurationAddress {
-            if configuration.isEnabled, lastConfigurationWasEnabled == false {
+            if configuration.pointee.isEnabled, lastConfigurationWasEnabled == false {
                 reset()
             }
             lastConfigurationAddress = address
-            lastConfigurationWasEnabled = configuration.isEnabled
+            lastConfigurationWasEnabled = configuration.pointee.isEnabled
         }
-        guard configuration.isEnabled else { return }
+        guard configuration.pointee.isEnabled else { return }
 
-        let frameCount = Int(buffer.frameLength)
-        if buffer.format.isInterleaved {
-            let samples = channelData[0]
-            for channel in 0..<channelCount {
-                processChannel(
-                    samples,
-                    frameCount: frameCount,
-                    stride: channelCount,
-                    offset: channel,
-                    channel: channel,
-                    configuration: configuration
-                )
-            }
-        } else {
-            for channel in 0..<channelCount {
-                processChannel(
-                    channelData[channel],
-                    frameCount: frameCount,
-                    stride: 1,
-                    offset: 0,
-                    channel: channel,
-                    configuration: configuration
-                )
+        filterStates.withUnsafeMutableBufferPointer { states in
+            configuration.pointee.coefficients.withUnsafeBufferPointer { coefficients in
+                for channel in 0..<channelCount {
+                    let samples = list[isInterleaved ? 0 : channel].mData!.assumingMemoryBound(to: Float.self)
+                    processChannel(
+                        samples,
+                        layout: ChannelLayout(
+                            frameCount: frameCount, stride: stride, offset: isInterleaved ? channel : 0
+                        ),
+                        states: states.baseAddress!.advanced(by: channel * EqualizerSettings.bandCount),
+                        coefficients: coefficients.baseAddress!, preampGain: configuration.pointee.preampGain
+                    )
+                }
             }
         }
     }
@@ -193,27 +209,24 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
 
     private func processChannel(
         _ samples: UnsafeMutablePointer<Float>,
-        frameCount: Int,
-        stride: Int,
-        offset: Int,
-        channel: Int,
-        configuration: ConfigurationBox
+        layout: ChannelLayout,
+        states: UnsafeMutablePointer<BiquadState>,
+        coefficients: UnsafePointer<BiquadCoefficients>,
+        preampGain: Float
     ) {
-        let stateOffset = channel * EqualizerSettings.bandCount
-        for frame in 0..<frameCount {
-            let sampleIndex = offset + frame * stride
+        for frame in 0..<layout.frameCount {
+            let sampleIndex = layout.offset + frame * layout.stride
             var sample = samples[sampleIndex]
             for band in 0..<EqualizerSettings.bandCount {
-                let coefficients = configuration.coefficients[band]
-                let stateIndex = stateOffset + band
-                var state = filterStates[stateIndex]
+                let coefficients = coefficients[band]
+                var state = states[band]
                 let output = coefficients.feedforward0 * sample + state.delay1
                 state.delay1 = coefficients.feedforward1 * sample - coefficients.feedback1 * output + state.delay2
                 state.delay2 = coefficients.feedforward2 * sample - coefficients.feedback2 * output
-                filterStates[stateIndex] = state
+                states[band] = state
                 sample = output
             }
-            samples[sampleIndex] = sample * configuration.preampGain
+            samples[sampleIndex] = sample * preampGain
         }
     }
 
@@ -228,9 +241,18 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
         sampleRate: Double,
         state: inout ConfigurationState
     ) {
-        let configuration = ConfigurationBox(settings: settings, sampleRate: sampleRate)
+        let configuration = UnsafeMutablePointer<ConfigurationBox>.allocate(capacity: 1)
+        configuration.initialize(to: ConfigurationBox(settings: settings, sampleRate: sampleRate))
         state.retainedConfigurations.append(configuration)
-        let pointer = Unmanaged.passUnretained(configuration).toOpaque()
-        configurationAddress.store(UInt(bitPattern: pointer), ordering: .releasing)
+        let address = UInt(bitPattern: configuration)
+        configurationAddress.store(address, ordering: .sequentiallyConsistent)
+        let reader = readerAddress.load(ordering: .sequentiallyConsistent)
+        state.retainedConfigurations.removeAll {
+            let retainedAddress = UInt(bitPattern: $0)
+            guard retainedAddress != address && retainedAddress != reader else { return false }
+            $0.deinitialize(count: 1)
+            $0.deallocate()
+            return true
+        }
     }
 }
