@@ -1,148 +1,198 @@
 import Foundation
+#if os(macOS)
+import AppKit
+#endif
 
-struct MusicLibraryMatchHints: Equatable, Sendable {
+nonisolated struct MusicLibraryMatchHints: Equatable, Sendable {
     var sortTitle: String?
     var sortArtist: String?
     var sortAlbum: String?
     var duration: TimeInterval
 }
 
-enum MusicLibraryMetadataLookupResult: Sendable {
+nonisolated enum MusicLibraryMetadataLookupResult: Sendable {
     case found(MediaMetadataEmbeddedValues)
     case notFound
     case failed(String)
 }
 
-enum MusicLibraryMetadataProvider {
-    nonisolated static func lookup(url: URL, hints: MusicLibraryMatchHints) async -> MusicLibraryMetadataLookupResult {
+nonisolated struct MusicLibraryMetadataSnapshot: Sendable {
+    struct Track: Sendable {
+        var url: URL?
+        var hints: MusicLibraryMatchHints
+        var values: MediaMetadataEmbeddedValues
+    }
+
+    private let tracksByPath: [String: Track]
+    private let tracksBySortTitle: [String: [Track]]
+
+    init(tracks: [Track]) {
+        var paths: [String: Track] = [:]
+        var titles: [String: [Track]] = [:]
+        for track in tracks {
+            if let path = track.url?.standardizedFileURL.path, paths[path] == nil { paths[path] = track }
+            if let title = track.hints.sortTitle, title.isEmpty == false { titles[title, default: []].append(track) }
+        }
+        tracksByPath = paths
+        tracksBySortTitle = titles
+    }
+
+    func lookup(url: URL, hints: MusicLibraryMatchHints) -> MusicLibraryMetadataLookupResult {
+        if let track = tracksByPath[url.standardizedFileURL.path] { return .found(track.values) }
+        guard let title = hints.sortTitle, title.isEmpty == false, hints.duration.isFinite else { return .notFound }
+        let track = tracksBySortTitle[title]?.first {
+            (hints.sortArtist?.isEmpty != false || $0.hints.sortArtist == hints.sortArtist)
+                && (hints.sortAlbum?.isEmpty != false || $0.hints.sortAlbum == hints.sortAlbum)
+                && $0.hints.duration.isFinite && abs($0.hints.duration - max(0, hints.duration)) < 1
+        }
+        return track.map { .found($0.values) } ?? .notFound
+    }
+}
+
+nonisolated enum MusicLibraryMetadataSnapshotResult: Sendable {
+    case loaded(MusicLibraryMetadataSnapshot)
+    case failed(String)
+}
+
+nonisolated struct MusicLibraryMetadataProvider: Sendable {
+    var loadSnapshot: @Sendable () async -> MusicLibraryMetadataSnapshotResult = {
         #if os(macOS)
-        return await Task.detached(priority: .utility) {
-            lookupSynchronously(url: url, hints: hints)
-        }.value
+        return await MusicLibraryScriptReader.shared.read()
         #else
-        return .notFound
+        return .loaded(MusicLibraryMetadataSnapshot(tracks: []))
         #endif
     }
 
-    #if os(macOS)
-    nonisolated static func appleScriptSource(url: URL, hints: MusicLibraryMatchHints) -> String {
-        let targetPath = appleScriptString(url.standardizedFileURL.path)
-        let sortTitle = appleScriptString(hints.sortTitle ?? "")
-        let sortArtist = appleScriptString(hints.sortArtist ?? "")
-        let sortAlbum = appleScriptString(hints.sortAlbum ?? "")
-        let duration = hints.duration.isFinite ? max(0, hints.duration) : 0
+    func makeSession() -> MusicLibraryMetadataSession {
+        MusicLibraryMetadataSession(loadSnapshot: loadSnapshot)
+    }
+}
 
-        return """
-        on textOrEmpty(theValue)
-            if theValue is missing value then return ""
-            return theValue as text
-        end textOrEmpty
+// One lazy snapshot per import, including failed/unavailable reads. Never cache it across imports.
+actor MusicLibraryMetadataSession {
+    private let loadSnapshot: @Sendable () async -> MusicLibraryMetadataSnapshotResult
+    private var snapshotTask: Task<MusicLibraryMetadataSnapshotResult, Never>?
 
-        on metadataFor(musicTrack)
-            tell application "Music"
-                return {my textOrEmpty(name of musicTrack), my textOrEmpty(artist of musicTrack), \
-        my textOrEmpty(album of musicTrack), my textOrEmpty(album artist of musicTrack), \
-        my textOrEmpty(composer of musicTrack), my textOrEmpty(genre of musicTrack), year of musicTrack, \
-        track number of musicTrack, track count of musicTrack, disc number of musicTrack, \
-        disc count of musicTrack, compilation of musicTrack, my textOrEmpty(comment of musicTrack)}
-            end tell
-        end metadataFor
-
-        set targetPath to "\(targetPath)"
-        set sortTitleHint to "\(sortTitle)"
-        set sortArtistHint to "\(sortArtist)"
-        set sortAlbumHint to "\(sortAlbum)"
-        set durationHint to \(duration)
-
-        tell application "Music"
-            set matchedTrack to missing value
-
-            try
-                set targetFile to POSIX file targetPath as alias
-                set pathMatches to every file track of library playlist 1 whose location is targetFile
-                if (count of pathMatches) > 0 then set matchedTrack to item 1 of pathMatches
-            end try
-
-            if matchedTrack is missing value and sortTitleHint is not "" then
-                try
-                    set metadataMatches to every file track of library playlist 1 whose sort name is sortTitleHint
-                    repeat with candidateTrack in metadataMatches
-                        set artistMatches to sortArtistHint is "" or sort artist of candidateTrack is sortArtistHint
-                        set albumMatches to sortAlbumHint is "" or sort album of candidateTrack is sortAlbumHint
-                        set durationDifference to (duration of candidateTrack) - durationHint
-                        if durationDifference < 0 then set durationDifference to -durationDifference
-                        if artistMatches and albumMatches and durationDifference < 1 then
-                            set matchedTrack to candidateTrack
-                            exit repeat
-                        end if
-                    end repeat
-                end try
-            end if
-
-            if matchedTrack is missing value then return {}
-            return my metadataFor(matchedTrack)
-        end tell
-        """
+    init(loadSnapshot: @escaping @Sendable () async -> MusicLibraryMetadataSnapshotResult) {
+        self.loadSnapshot = loadSnapshot
     }
 
-    nonisolated private static func lookupSynchronously(
-        url: URL,
-        hints: MusicLibraryMatchHints
-    ) -> MusicLibraryMetadataLookupResult {
-        guard let script = NSAppleScript(source: appleScriptSource(url: url, hints: hints)) else {
-            return .failed(L10n.string("Could not prepare Music library access."))
+    func lookup(url: URL, hints: MusicLibraryMatchHints) async -> MusicLibraryMetadataLookupResult {
+        guard Task.isCancelled == false else { return .notFound }
+        if snapshotTask == nil { snapshotTask = Task { await loadSnapshot() } }
+        guard let result = await snapshotTask?.value, Task.isCancelled == false else { return .notFound }
+        switch result {
+        case let .loaded(snapshot): return snapshot.lookup(url: url, hints: hints)
+        case let .failed(message): return .failed(message)
         }
+    }
+}
 
+#if os(macOS)
+// Script creation, execution and descriptor decoding share a serial worker, outside MainActor
+// and the cooperative executor. Only immutable Swift values leave this queue.
+nonisolated final class MusicLibraryScriptReader: @unchecked Sendable {
+    static let shared = MusicLibraryScriptReader()
+    private let queue = DispatchQueue(label: "SimpleMediaPlayer.MusicLibraryMetadata", qos: .utility)
+    private var script: NSAppleScript?
+    private let isMusicRunning: @Sendable () -> Bool
+
+    init(isMusicRunning: @escaping @Sendable () -> Bool = {
+        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
+            .contains(where: { $0.isTerminated == false })
+    }) {
+        self.isMusicRunning = isMusicRunning
+    }
+
+    func read() async -> MusicLibraryMetadataSnapshotResult {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: self.readSynchronously()) }
+        }
+    }
+
+    private func readSynchronously() -> MusicLibraryMetadataSnapshotResult {
+        guard isMusicRunning() else {
+            return .loaded(MusicLibraryMetadataSnapshot(tracks: []))
+        }
+        if script == nil { script = NSAppleScript(source: MusicLibraryMetadataProvider.appleScriptSource) }
+        guard let script else { return .failed(L10n.string("Could not prepare Music library access.")) }
         var errorInfo: NSDictionary?
         let result = script.executeAndReturnError(&errorInfo)
         if let errorInfo {
-            let message = (errorInfo[NSAppleScript.errorMessage] as? String)
-                ?? L10n.string("Music library access failed.")
-            return .failed(message)
+            return .failed((errorInfo[NSAppleScript.errorMessage] as? String)
+                ?? L10n.string("Music library access failed."))
         }
-        guard result.numberOfItems >= 13 else {
-            return .notFound
+        guard let snapshot = MusicLibraryMetadataProvider.snapshot(from: result) else {
+            return .failed(L10n.string("Music library access failed."))
         }
+        return .loaded(snapshot)
+    }
+}
 
-        var values = MediaMetadataEmbeddedValues()
-        values.title = normalized(result.atIndex(1)?.stringValue)
-        values.artist = normalized(result.atIndex(2)?.stringValue)
-        values.album = normalized(result.atIndex(3)?.stringValue)
-        values.albumArtist = normalized(result.atIndex(4)?.stringValue)
-        values.composer = normalized(result.atIndex(5)?.stringValue)
-        values.genre = normalized(result.atIndex(6)?.stringValue)
-
-        let year = result.atIndex(7)?.int32Value ?? 0
-        values.year = year > 0 ? String(year) : nil
-        values.trackNumber = numberPair(
-            current: result.atIndex(8)?.int32Value ?? 0,
-            total: result.atIndex(9)?.int32Value ?? 0
-        )
-        values.discNumber = numberPair(
-            current: result.atIndex(10)?.int32Value ?? 0,
-            total: result.atIndex(11)?.int32Value ?? 0
-        )
-        values.isCompilation = result.atIndex(12)?.booleanValue
-        values.comment = normalized(result.atIndex(13)?.stringValue)
-        return .found(values)
+extension MusicLibraryMetadataProvider {
+    // `properties of every file track` is one bulk request. Its result contains records,
+    // not track references, so descriptor decoding performs no further Music requests.
+    nonisolated static var appleScriptSource: String {
+        """
+        if application "Music" is not running then return {}
+        with timeout of 30 seconds
+            tell application "Music"
+                return properties of every file track of library playlist 1
+            end tell
+        end timeout
+        """
     }
 
-    nonisolated private static func normalized(_ value: String?) -> String? {
-        let value = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    nonisolated static func snapshot(from result: NSAppleEventDescriptor) -> MusicLibraryMetadataSnapshot? {
+        guard result.descriptorType == typeAEList else { return nil }
+        var tracks: [MusicLibraryMetadataSnapshot.Track] = []
+        for index in 0..<result.numberOfItems {
+            guard let record = result.atIndex(index + 1), record.descriptorType == typeAERecord else { return nil }
+            var values = MediaMetadataEmbeddedValues()
+            values.title = text(record, "pnam")
+            values.artist = text(record, "pArt")
+            values.album = text(record, "pAlb")
+            values.albumArtist = text(record, "pAlA")
+            values.composer = text(record, "pCmp")
+            values.genre = text(record, "pGen")
+            let year = field(record, "pYr ")?.int32Value ?? 0
+            values.year = year > 0 ? String(year) : nil
+            values.trackNumber = numberPair(record, current: "pTrN", total: "pTrC")
+            values.discNumber = numberPair(record, current: "pDsN", total: "pDsC")
+            let compilation = field(record, "pAnt")
+            if let compilation, [typeBoolean, typeTrue, typeFalse].contains(compilation.descriptorType) {
+                values.isCompilation = compilation.booleanValue
+            }
+            values.comment = text(record, "pCmt")
+            tracks.append(MusicLibraryMetadataSnapshot.Track(
+                url: field(record, "pLoc")?.coerce(toDescriptorType: typeFileURL)?.fileURLValue,
+                hints: MusicLibraryMatchHints(
+                    sortTitle: text(record, "pSNm"), sortArtist: text(record, "pSAr"),
+                    sortAlbum: text(record, "pSAl"),
+                    duration: field(record, "pDur")?.doubleValue ?? .nan
+                ),
+                values: values
+            ))
+        }
+        return MusicLibraryMetadataSnapshot(tracks: tracks)
+    }
+
+    nonisolated private static func field(_ record: NSAppleEventDescriptor, _ code: String) -> NSAppleEventDescriptor? {
+        record.forKeyword(code.utf8.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) })
+    }
+
+    nonisolated private static func text(_ record: NSAppleEventDescriptor, _ code: String) -> String? {
+        let value = field(record, code)?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
         return value?.isEmpty == false ? value : nil
     }
 
-    nonisolated private static func numberPair(current: Int32, total: Int32) -> String? {
+    nonisolated private static func numberPair(
+        _ record: NSAppleEventDescriptor, current: String, total: String
+    ) -> String? {
+        let current = field(record, current)?.int32Value ?? 0
+        let total = field(record, total)?.int32Value ?? 0
         guard current > 0 else { return nil }
         return total > 0 ? "\(current)/\(total)" : "\(current)"
     }
-
-    nonisolated private static func appleScriptString(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\r", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-    }
-    #endif
 }
+#endif

@@ -1495,15 +1495,7 @@ struct MP4MetadataWriterTests {
 
     #if os(macOS)
     @Test func musicLibraryLookupAppleScriptCompiles() throws {
-        let source = MusicLibraryMetadataProvider.appleScriptSource(
-            url: URL(fileURLWithPath: "/Music/Artist/Album/01.m4a"),
-            hints: MusicLibraryMatchHints(
-                sortTitle: "すしでたまらない",
-                sortArtist: "ゆめおいかける",
-                sortAlbum: "すしでたまらない",
-                duration: 253.7
-            )
-        )
+        let source = MusicLibraryMetadataProvider.appleScriptSource
         let script = try #require(NSAppleScript(source: source))
         var errorInfo: NSDictionary?
 
