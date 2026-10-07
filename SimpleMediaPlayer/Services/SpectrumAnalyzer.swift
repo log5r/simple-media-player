@@ -53,6 +53,7 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
             self.chunkHistoryL.removeAll()
             self.chunkHistoryR.removeAll()
             self.videoSamples.reset()
+            if active { self.resetAnalysisState() }
             if active == false {
                 self.decayUntilSilent(
                     currentTime: currentTime,
@@ -78,12 +79,7 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
             let newCount = max(1, count ?? 16)
             guard newCount != self.requestedBandCount else { return }
             self.requestedBandCount = newCount
-            self.levelsL = Array(repeating: 0, count: newCount)
-            self.levelsR = Array(repeating: 0, count: newCount)
-            self.peaksL = Array(repeating: 0, count: newCount)
-            self.peaksR = Array(repeating: 0, count: newCount)
-            self.peakAgesL = Array(repeating: 0, count: newCount)
-            self.peakAgesR = Array(repeating: 0, count: newCount)
+            self.resetAnalysisState()
             let state = self.stateLock.withLock { (self.playbackActive, self.generation) }
             self.emit(currentTime: self.lastFrameTime, isPlaying: state.0, generation: state.1)
         }
@@ -97,21 +93,52 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
         isPlaying: Bool,
         params: SpectrumSmoothing,
         generation: Int,
-        isSourceCurrent: (@Sendable () -> Bool)? = nil
+        isSourceCurrent: (@Sendable () -> Bool)? = nil,
+        usesHistory: Bool = true
     ) {
-        appendChunkHistory(&chunkHistoryL, chunkL)
-        appendChunkHistory(&chunkHistoryR, chunkR)
-        let newL = fft.bandLevels(for: chunkHistoryL, sampleRate: sampleRate, bandCount: requestedBandCount)
-        let newR = fft.bandLevels(for: chunkHistoryR, sampleRate: sampleRate, bandCount: requestedBandCount)
+        var historyL = usesHistory ? chunkHistoryL : []
+        var historyR = usesHistory ? chunkHistoryR : []
+        if usesHistory {
+            appendChunkHistory(&historyL, chunkL)
+            appendChunkHistory(&historyR, chunkR)
+        }
+        let newL = fft.bandLevels(for: usesHistory ? historyL : chunkL,
+                                  sampleRate: sampleRate, bandCount: requestedBandCount)
+        let newR = fft.bandLevels(for: usesHistory ? historyR : chunkR,
+                                  sampleRate: sampleRate, bandCount: requestedBandCount)
+        let rms = (left: normalizedDB(vDSP.rootMeanSquare(chunkL)), right: normalizedDB(vDSP.rootMeanSquare(chunkR)))
+        // FFT and RMS run without stateLock. Revalidate before applying their result.
+        guard isCurrent(generation), isSourceCurrent?() != false else { return }
+        if usesHistory {
+            chunkHistoryL = historyL
+            chunkHistoryR = historyR
+        }
         levelsL = zip(newL, levelsL).map { $0 > $1 ? min(1, $0 * 1.12) : max($0, $1 * params.levelRelease) }
         levelsR = zip(newR, levelsR).map { $0 > $1 ? min(1, $0 * 1.12) : max($0, $1 * params.levelRelease) }
-        updatePeaks(levels: levelsL, peaks: &peaksL, ages: &peakAgesL, params: params)
-        updatePeaks(levels: levelsR, peaks: &peaksR, ages: &peakAgesR, params: params)
-        updateRMS(left: chunkL, right: chunkR, params: params)
+        params.updatePeaks(levels: levelsL, peaks: &peaksL, ages: &peakAgesL)
+        params.updatePeaks(levels: levelsR, peaks: &peaksR, ages: &peakAgesR)
+        updateRMS(levels: rms, params: params)
         emit(
             currentTime: currentTime, isPlaying: isPlaying, generation: generation,
             isSourceCurrent: isSourceCurrent
         )
+    }
+
+    private func resetAnalysisState() {
+        chunkHistoryL.removeAll()
+        chunkHistoryR.removeAll()
+        levelsL = Array(repeating: 0, count: requestedBandCount)
+        levelsR = levelsL
+        peaksL = levelsL
+        peaksR = levelsL
+        peakAgesL = Array(repeating: 0, count: requestedBandCount)
+        peakAgesR = peakAgesL
+        rmsL = 0
+        rmsR = 0
+        peakRmsL = 0
+        peakRmsR = 0
+        rmsPeakAgeL = 0
+        rmsPeakAgeR = 0
     }
 
     private func appendChunkHistory(_ history: inout [Float], _ chunk: [Float]) {
@@ -157,8 +184,8 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
         }
         levelsL = levelsL.map(released)
         levelsR = levelsR.map(released)
-        updatePeaks(levels: levelsL, peaks: &peaksL, ages: &peakAgesL, params: params)
-        updatePeaks(levels: levelsR, peaks: &peaksR, ages: &peakAgesR, params: params)
+        params.updatePeaks(levels: levelsL, peaks: &peaksL, ages: &peakAgesL)
+        params.updatePeaks(levels: levelsR, peaks: &peaksR, ages: &peakAgesR)
         rmsL = released(rmsL)
         rmsR = released(rmsR)
         updateRMSPeak(params: params)
@@ -188,24 +215,9 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
         return min(1, max(0, (decibels + 60) / 60))
     }
 
-    private func updatePeaks(levels: [Float], peaks: inout [Float], ages: inout [Int], params: SpectrumSmoothing) {
-        for index in levels.indices {
-            if levels[index] >= peaks[index] {
-                peaks[index] = levels[index]
-                ages[index] = 0
-            } else if ages[index] > params.peakHoldUpdates {
-                peaks[index] = max(levels[index], peaks[index] - params.peakFall)
-            } else {
-                ages[index] += 1
-            }
-        }
-    }
-
-    private func updateRMS(left: [Float], right: [Float], params: SpectrumSmoothing) {
-        let newL = normalizedDB(vDSP.rootMeanSquare(left))
-        let newR = normalizedDB(vDSP.rootMeanSquare(right))
-        rmsL = newL > rmsL ? newL : max(newL, rmsL * params.rmsRelease)
-        rmsR = newR > rmsR ? newR : max(newR, rmsR * params.rmsRelease)
+    private func updateRMS(levels: (left: Float, right: Float), params: SpectrumSmoothing) {
+        rmsL = levels.left > rmsL ? levels.left : max(levels.left, rmsL * params.rmsRelease)
+        rmsR = levels.right > rmsR ? levels.right : max(levels.right, rmsR * params.rmsRelease)
         updateRMSPeak(params: params)
     }
 
@@ -307,19 +319,11 @@ nonisolated extension SpectrumAnalyzer {
                 )
                 return
             }
-            let params = SpectrumSmoothing.slow
-            let newL = self.fft.bandLevels(for: left, sampleRate: sampleRate, bandCount: self.requestedBandCount)
-            let newR = self.fft.bandLevels(for: right, sampleRate: sampleRate, bandCount: self.requestedBandCount)
-            self.levelsL = zip(newL, self.levelsL).map {
-                $0 > $1 ? min(1, $0 * 1.12) : max($0, $1 * params.levelRelease)
-            }
-            self.levelsR = zip(newR, self.levelsR).map {
-                $0 > $1 ? min(1, $0 * 1.12) : max($0, $1 * params.levelRelease)
-            }
-            self.updatePeaks(levels: self.levelsL, peaks: &self.peaksL, ages: &self.peakAgesL, params: params)
-            self.updatePeaks(levels: self.levelsR, peaks: &self.peaksR, ages: &self.peakAgesR, params: params)
-            self.updateRMS(left: left, right: right, params: params)
-            self.emit(currentTime: currentTime, isPlaying: isPlaying, generation: generation)
+            self.processChunk(
+                chunkL: left, chunkR: right, sampleRate: sampleRate,
+                currentTime: currentTime, isPlaying: isPlaying,
+                params: .slow, generation: generation, usesHistory: false
+            )
         }
     }
 
@@ -333,10 +337,7 @@ nonisolated extension SpectrumAnalyzer {
             guard isSourceCurrent(), self.isCurrent(batch.analysisGeneration) else { return }
             let mode = self.responseMode
             let result = self.videoSamples.append(batch, mode: mode)
-            if result.didReset {
-                self.chunkHistoryL.removeAll()
-                self.chunkHistoryR.removeAll()
-            }
+            if result.didReset { self.resetAnalysisState() }
             let revision = self.videoSamples.revision
             for chunk in result.chunks {
                 self.queue.asyncAfter(deadline: .now() + max(0, chunk.time - batch.time)) {

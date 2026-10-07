@@ -32,4 +32,17 @@ nonisolated struct SpectrumSmoothing {
         case .fast: fast
         }
     }
+
+    func updatePeaks(levels: [Float], peaks: inout [Float], ages: inout [Int]) {
+        for index in levels.indices {
+            if levels[index] >= peaks[index] {
+                peaks[index] = levels[index]
+                ages[index] = 0
+            } else if ages[index] > peakHoldUpdates {
+                peaks[index] = max(levels[index], peaks[index] - peakFall)
+            } else {
+                ages[index] += 1
+            }
+        }
+    }
 }

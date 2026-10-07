@@ -109,7 +109,6 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
     private var preparedChannelCount = 0
     private var isInterleaved = false
     private var isFloat32 = false
-    private var lastConfigurationAddress: UInt = 0
     private var lastConfigurationWasEnabled = false
 
     init(settings: EqualizerSettings = .flat) {
@@ -142,7 +141,6 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
             repeating: BiquadState(),
             count: channelCount * EqualizerSettings.bandCount
         )
-        lastConfigurationAddress = 0
         lastConfigurationWasEnabled = false
 
         configurationState.withLock { state in
@@ -175,14 +173,12 @@ nonisolated final class VideoEqualizerProcessor: @unchecked Sendable {
         guard address == configurationAddress.load(ordering: .sequentiallyConsistent),
               let pointer = UnsafeRawPointer(bitPattern: address) else { return }
         let configuration = pointer.assumingMemoryBound(to: ConfigurationBox.self)
-        if address != lastConfigurationAddress {
-            if configuration.pointee.isEnabled, lastConfigurationWasEnabled == false {
-                reset()
-            }
-            lastConfigurationAddress = address
-            lastConfigurationWasEnabled = configuration.pointee.isEnabled
-        }
-        guard configuration.pointee.isEnabled else { return }
+        // Allocator addresses can be reused, so observe the rendered enabled state
+        // independently of the pointer used for snapshot lifetime protection.
+        let isEnabled = configuration.pointee.isEnabled
+        if isEnabled, lastConfigurationWasEnabled == false { reset() }
+        lastConfigurationWasEnabled = isEnabled
+        guard isEnabled else { return }
 
         filterStates.withUnsafeMutableBufferPointer { states in
             configuration.pointee.coefficients.withUnsafeBufferPointer { coefficients in

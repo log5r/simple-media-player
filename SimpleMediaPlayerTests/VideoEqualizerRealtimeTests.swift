@@ -35,6 +35,33 @@ struct VideoEqualizerRealtimeTests {
         }
     }
 
+    @Test func reenablingEQResetsDelayStateAfterUnprocessedSettingsUpdates() throws {
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 64))
+        buffer.frameLength = 64
+        let samples = try #require(buffer.floatChannelData?[0])
+        var gains = Array(repeating: Float(0), count: EqualizerSettings.bandCount)
+        gains[5] = 12
+        let enabled = EqualizerSettings(isEnabled: true, preampDecibels: 0, bandGains: gains)
+        let processor = VideoEqualizerProcessor()
+        processor.prepare(format: format)
+        // Repeated publications exercise allocator address reuse. Only the disabled
+        // and final enabled snapshots are rendered; the intermediate update is skipped.
+        for _ in 0..<128 {
+            processor.setSettings(enabled)
+            samples.update(repeating: 0, count: 64)
+            samples[63] = 0.4 // Leave a nonzero biquad tail immediately before disabling.
+            processor.process(buffer.mutableAudioBufferList, frameCount: 64)
+            processor.setSettings(.flat)
+            samples.update(repeating: 0, count: 64)
+            processor.process(buffer.mutableAudioBufferList, frameCount: 64)
+            processor.setSettings(.flat)
+            processor.setSettings(enabled)
+            processor.process(buffer.mutableAudioBufferList, frameCount: 64)
+            #expect((0..<64).allSatisfy { samples[$0] == 0 })
+        }
+    }
+
     @Test func longRunningConcurrentSettingsUpdatesRetainAtMostTwoSnapshots() throws {
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 64))

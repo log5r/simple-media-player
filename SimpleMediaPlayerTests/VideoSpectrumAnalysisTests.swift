@@ -84,6 +84,59 @@ struct VideoSpectrumAnalysisTests {
         #expect(analyzer.realtimeVideoGeneration == 0)
     }
 
+    @Test func newSourceDoesNotInheritSpectrumOrHeldMeterPeaks() async throws {
+        let analyzer = SpectrumAnalyzer()
+        var frames: [AudioFrameData] = []
+        analyzer.onFrame = { frames.append($0) }
+        analyzer.setPlaybackActive(true, currentTime: 0)
+        let samples = (0..<1_600).map { Float(sin(Double($0) * 2 * .pi * 440 / 48_000)) * 0.4 }
+        analyzer.analyzeVideoSamples(.init(
+            left: samples, right: samples, sampleRate: 48_000,
+            time: 0, analysisGeneration: analyzer.realtimeVideoGeneration,
+            sourceEpoch: 3, startsStream: true
+        )) { true }
+        try await waitUntil { frames.contains { !$0.isSilent } }
+        let silence = Array(repeating: Float(0), count: 1_600)
+        analyzer.analyzeVideoSamples(.init(
+            left: silence, right: silence, sampleRate: 48_000,
+            time: 20, analysisGeneration: analyzer.realtimeVideoGeneration,
+            sourceEpoch: 5, startsStream: true
+        )) { true }
+        try await waitUntil { frames.last?.currentTime == 20 }
+        #expect(frames.last?.isSilent == true)
+    }
+
+    @Test func invalidationAfterChunkAdmissionCannotSeedTheNextSourceState() async throws {
+        let analyzer = SpectrumAnalyzer()
+        var frames: [AudioFrameData] = []
+        analyzer.onFrame = { frames.append($0) }
+        analyzer.setPlaybackActive(true, currentTime: 0)
+        let validations = Mutex(0)
+        let samples = Array(repeating: Float(0.4), count: 1_600)
+        // Admit the batch and scheduled chunk, then invalidate before any result
+        // can be published. This reproduces validity changing during FFT work.
+        analyzer.analyzeVideoSamples(.init(
+            left: samples, right: samples, sampleRate: 48_000,
+            time: 0, analysisGeneration: analyzer.realtimeVideoGeneration,
+            sourceEpoch: 3, startsStream: true
+        )) {
+            validations.withLock { count in
+                count += 1
+                return count < 3
+            }
+        }
+        try await waitUntil { validations.withLock { $0 >= 3 } }
+        #expect(frames.isEmpty)
+        let silence = Array(repeating: Float(0), count: 1_600)
+        analyzer.analyzeVideoSamples(.init(
+            left: silence, right: silence, sampleRate: 48_000,
+            time: 20, analysisGeneration: analyzer.realtimeVideoGeneration,
+            sourceEpoch: 5, startsStream: true
+        )) { true }
+        try await waitUntil { !frames.isEmpty }
+        #expect(frames.allSatisfy { $0.currentTime == 20 && $0.isSilent })
+    }
+
     private func waitUntil(_ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))
         while !condition(), ContinuousClock.now < deadline {

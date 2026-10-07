@@ -67,6 +67,28 @@ struct SpectrumAnalyzerIdleTests {
         #expect(frames.dropFirst(resumedAt).allSatisfy { $0.isPlaying && $0.currentTime >= 20 })
     }
 
+    @Test(arguments: VisualizerResponseMode.allCases)
+    func resumedSilentAudioDoesNotInheritPreviousPeaks(mode: VisualizerResponseMode) async throws {
+        let analyzer = SpectrumAnalyzer()
+        var frames: [AudioFrameData] = []
+        analyzer.onFrame = { frames.append($0) }
+        analyzer.setResponseMode(mode)
+        analyzer.setPlaybackActive(true, currentTime: 0)
+        let buffer = try toneBuffer()
+        analyzer.analyze(buffer, currentTime: 1, isPlaying: true)
+        try await waitUntil { frames.contains { $0.isPlaying && !$0.isSilent } }
+        analyzer.setPlaybackActive(false, currentTime: 2)
+        analyzer.setPlaybackActive(true, currentTime: 20)
+        let resumedAt = frames.count
+        let channels = try #require(buffer.floatChannelData)
+        for channel in 0..<Int(buffer.format.channelCount) {
+            channels[channel].update(repeating: 0, count: Int(buffer.frameLength))
+        }
+        analyzer.analyze(buffer, currentTime: 20, isPlaying: true)
+        try await waitUntil { frames.count > resumedAt }
+        #expect(frames.dropFirst(resumedAt).allSatisfy { $0.isPlaying && $0.isSilent && $0.currentTime >= 20 })
+    }
+
     @Test func changingBandCountWhileIdlePublishesOnlyTheNewLayout() async throws {
         let analyzer = SpectrumAnalyzer()
         var frames: [AudioFrameData] = []
