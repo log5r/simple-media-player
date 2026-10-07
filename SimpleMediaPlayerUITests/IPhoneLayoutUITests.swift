@@ -24,6 +24,41 @@ final class IPhoneLayoutUITests: XCTestCase {
         verifyDeck(language: "ja", appearance: "dark", style: "backlit")
     }
 
+    @MainActor func testFirstTrackRestartAvailabilityFollowsSeekingAndPlayback() {
+        let app = launch(language: "en", appearance: "dark", style: "dark")
+        XCTAssertTrue(app.buttons["All Songs"].waitForExistence(timeout: 10))
+        app.buttons["All Songs"].tap()
+        let track = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'")).firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        track.tap()
+        let dock = app.buttons["phoneLEDDock"]
+        XCTAssertTrue(dock.waitForExistence(timeout: 10))
+        dock.tap()
+        let playPause = app.buttons["phonePlayPause"]
+        XCTAssertTrue(playPause.waitForExistence(timeout: 5))
+        playPause.tap()
+        XCTAssertEqual(playPause.label, "Play")
+        let position = app.sliders["Playback Position"]
+        let previous = app.buttons["phonePrevious"]
+        position.adjust(toNormalizedSliderPosition: 0)
+        // Drag past the endpoint to make the below-three-second position deterministic.
+        position.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: position.coordinate(withNormalizedOffset: CGVector(dx: -0.1, dy: 0.5)))
+        XCTAssertFalse(previous.isEnabled, "Position: \(position.value ?? "nil"), track: \(dock.value ?? "nil")")
+        position.adjust(toNormalizedSliderPosition: 0.15)
+        XCTAssertTrue(previous.isEnabled)
+        previous.tap()
+        XCTAssertFalse(previous.isEnabled)
+        XCTAssertEqual(playPause.label, "Play")
+
+        playPause.tap()
+        let threshold = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: previous)
+        wait(for: [threshold], timeout: 10)
+        previous.tap()
+        XCTAssertFalse(previous.isEnabled)
+        XCTAssertEqual(playPause.label, "Pause")
+    }
+
     @MainActor func testEnglishDockWithLongTitleAndLargeText() {
         verifyLargeTextDock(language: "en", appearance: "light")
     }

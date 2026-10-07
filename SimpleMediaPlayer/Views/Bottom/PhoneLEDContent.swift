@@ -33,8 +33,8 @@ struct PhoneLEDContent: View {
                 .frame(height: 20)
             }
             HStack(spacing: 8) {
-                SevenSegmentTimeView(
-                    time: player.currentTime, color: palette.primaryColor,
+                PlaybackTimeView(
+                    player: player, color: palette.primaryColor,
                     scale: layout == .phoneDeck ? 1.5 : 0.7,
                     shadowOpacity: palette.timeShadowOpacity, shadowRadius: palette.timeShadowRadius
                 )
@@ -53,13 +53,7 @@ struct PhoneLEDContent: View {
                 MusicAnalysisStripView(player: player, palette: palette, mediaInfoStyle: mediaInfoStyle)
                 VisualizerHostView(player: player, palette: palette).frame(height: visualizerHeight)
             } else {
-                GeometryReader { proxy in
-                    Rectangle().fill(palette.primaryColor.opacity(0.2))
-                        .overlay(alignment: .leading) {
-                            Rectangle().fill(palette.primaryColor)
-                                .frame(width: proxy.size.width * playbackFraction)
-                        }
-                }.frame(height: 2).accessibilityHidden(true)
+                PlaybackProgressStrip(player: player, color: palette.primaryColor)
             }
         }
         .foregroundStyle(palette.primaryColor)
@@ -68,10 +62,6 @@ struct PhoneLEDContent: View {
     private var trackNumber: String {
         if let number = player.currentItem?.trackNumber, !number.isEmpty { return number }
         return player.queue.firstIndex { $0.id == player.currentItem?.id }.map { String($0 + 1) } ?? "—"
-    }
-
-    private var playbackFraction: Double {
-        min(max(player.currentTime / max(player.duration, 1), 0), 1)
     }
 
     private var subtitle: String {

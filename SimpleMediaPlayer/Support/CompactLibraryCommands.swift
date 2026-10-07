@@ -145,7 +145,7 @@ struct CompactLibraryCommandContext {
 
     private func canSkip(offset: Int) -> Bool {
         if player.currentItem != nil {
-            return offset < 0 ? player.canSkipToPrevious || player.currentTime >= 3 : player.canSkipToNext
+            return offset < 0 ? player.canPlayPrevious : player.canSkipToNext
         }
         return adjacentItem(offset: offset) != nil
     }

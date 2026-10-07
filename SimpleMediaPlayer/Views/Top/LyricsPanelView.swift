@@ -6,7 +6,7 @@ struct LyricsPanelView: View {
     let listIndex: Int?
     let libraryService: LibraryService
     var page: PanelContent?
-    var playbackTime: TimeInterval?
+    var playbackPlayer: PlayerViewModel?
     var browsingState: LibraryBrowsingState?
     /// Sheets can share page selection while keeping their nested editors locally presented.
     var contentSelection: Binding<PanelContent>?
@@ -158,7 +158,7 @@ struct LyricsPanelView: View {
     }
 
     private var activeLyricIndex: Int? {
-        guard let playbackTime, parsed.hasTimeTags else { return nil }
+        guard parsed.hasTimeTags, let playbackTime = playbackPlayer?.currentTime else { return nil }
         return parsed.lines.lastIndex { ($0.timestamp ?? .infinity) <= playbackTime }
     }
 

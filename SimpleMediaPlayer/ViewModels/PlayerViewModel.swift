@@ -63,7 +63,15 @@ final class PlayerViewModel {
         }
     }
     private(set) var playbackGeneration: UInt64 = 0
-    var currentTime: TimeInterval = 0
+    @ObservationIgnored private let playbackClock = PlaybackClock()
+    var currentTime: TimeInterval {
+        get { playbackClock.time }
+        set { playbackClock.update(to: newValue) }
+    }
+    var elapsedSeconds: Int { playbackClock.elapsedSeconds }
+    var canPlayPrevious: Bool {
+        canSkipToPrevious || (currentItem != nil && playbackClock.canRestart)
+    }
     var duration: TimeInterval = 0
     var audioFrame = AudioFrameData.silent()
     var isVideoMode = false
@@ -500,7 +508,7 @@ extension PlayerViewModel {
                 return
             }
             MainActor.assumeIsolated {
-                self.tick()
+                self.synchronizePlaybackClock()
             }
         }
         timer.tolerance = 0.003
@@ -508,14 +516,14 @@ extension PlayerViewModel {
         self.timer = timer
     }
 
-    private func tick() {
+    func synchronizePlaybackClock() {
         guard isPlaying || currentItem != nil else { return }
         if isVideoMode {
             currentTime = videoService.currentTime
-            duration = duration > 0 ? duration : videoService.duration
+            if duration <= 0, videoService.duration > 0 { duration = videoService.duration }
         } else {
             currentTime = audioEngine.currentTime
-            duration = duration > 0 ? duration : audioEngine.duration
+            if duration <= 0, audioEngine.duration > 0 { duration = audioEngine.duration }
         }
     }
 
@@ -579,33 +587,5 @@ extension PlayerViewModel {
         showVideoArea = false
         analyzer.setPlaybackActive(false, currentTime: 0)
         resetSpectrumFrameRate()
-    }
-}
-
-struct SpectrumFrameRateCounter {
-    private var windowStartTime: TimeInterval?
-    private var frameCount = 0
-    private let publishInterval: TimeInterval = 0.5
-
-    mutating func recordFrame(at time: TimeInterval) -> Int? {
-        guard let windowStartTime else {
-            self.windowStartTime = time
-            frameCount = 1
-            return nil
-        }
-
-        frameCount += 1
-        let elapsed = time - windowStartTime
-        guard elapsed >= publishInterval else { return nil }
-
-        let frameRate = Int((Double(frameCount - 1) / elapsed).rounded())
-        self.windowStartTime = time
-        frameCount = 1
-        return min(999, max(0, frameRate))
-    }
-
-    mutating func reset() {
-        windowStartTime = nil
-        frameCount = 0
     }
 }
