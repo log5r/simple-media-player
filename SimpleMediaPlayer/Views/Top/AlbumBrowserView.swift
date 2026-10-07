@@ -15,6 +15,8 @@ struct AlbumBrowserView<ItemMenu: View>: View {
     @Bindable var browsingState: LibraryBrowsingState
     let itemMenu: (MediaItem) -> ItemMenu
 
+    @State var albumProjection = LibraryAlbumProjection()
+
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -37,21 +39,16 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                 albumGrid
             }
         }
-    }
-
-    private var albums: [LibraryAlbum] {
-        LibraryAlbum.grouped(items)
-    }
-
-    private var selectedAlbum: LibraryAlbum? {
-        guard let selectedAlbumID else { return nil }
-        return albums.first { $0.id == selectedAlbumID }
+        .onChange(of: AlbumSource(items: items), initial: true) { _, source in
+            albumProjection.update(items: source.items)
+        }
+        .onDisappear { albumProjection.clear() }
     }
 
     private var albumGrid: some View {
         ScrollView {
             LazyVGrid(columns: gridColumns, alignment: .leading, spacing: 24) {
-                ForEach(albums) { album in
+                ForEach(albumProjection.albums) { album in
                     Button {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.28)) {
                             browsingState.openGroup(section: .albums, name: album.id)
@@ -88,7 +85,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
     }
 
     private func albumDetail(_ albumID: String) -> some View {
-        let album = selectedAlbum
+        let album = albumProjection.albums.first { $0.id == albumID }
         let tracks = album?.tracks ?? []
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -121,7 +118,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                 }
 
                 ForEach(Array(tracks.enumerated()), id: \.element.id) { offset, item in
-                    albumTrackRow(item, fallbackNumber: offset + 1, tracks: tracks)
+                    albumTrackRow(item, fallbackNumber: offset + 1, tracks: tracks, albumArtist: album?.artist)
                         .id(item.id)
                         .modifier(LibraryScrollAnchorRow(id: item.id))
 
@@ -196,10 +193,12 @@ struct AlbumBrowserView<ItemMenu: View>: View {
         }
     }
 
-    private func albumTrackRow(_ item: MediaItem, fallbackNumber: Int, tracks: [MediaItem]) -> some View {
+    private func albumTrackRow(
+        _ item: MediaItem, fallbackNumber: Int, tracks: [MediaItem], albumArtist: String?
+    ) -> some View {
         let isSelected = isBulkEditMode ? bulkSelection.contains(item.id) : selectedItemID == item.id
 
-        return albumTrackContent(item, fallbackNumber: fallbackNumber)
+        return albumTrackContent(item, fallbackNumber: fallbackNumber, albumArtist: albumArtist)
         .padding(.horizontal, 10)
         .frame(minHeight: 48)
         .contentShape(Rectangle())
@@ -220,7 +219,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
         .accessibilityAction { selectTrack(item, tracks: tracks) }
     }
 
-    private func albumTrackContent(_ item: MediaItem, fallbackNumber: Int) -> some View {
+    private func albumTrackContent(_ item: MediaItem, fallbackNumber: Int, albumArtist: String?) -> some View {
         let isSelected = isBulkEditMode ? bulkSelection.contains(item.id) : selectedItemID == item.id
         return HStack(spacing: 12) {
             if differentiateWithoutColor, isSelected {
@@ -243,7 +242,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
                 Text(item.title)
                     .lineLimit(1)
 
-                if item.displayArtist != selectedAlbum?.artist {
+                if item.displayArtist != albumArtist {
                     Text(item.displayArtist)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -274,7 +273,7 @@ struct AlbumBrowserView<ItemMenu: View>: View {
 
     private func play(_ item: MediaItem, in tracks: [MediaItem]) {
         selectedItemID = item.id
-        browsingState.playingListName = selectedAlbum?.title ?? item.displayAlbum
+        browsingState.playingListName = item.displayAlbum
         player.play(item: item, in: tracks)
     }
 
@@ -282,6 +281,14 @@ struct AlbumBrowserView<ItemMenu: View>: View {
         let value = item.trackNumber?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard value.isEmpty == false else { return "\(fallback)" }
         return String(value.split(separator: "/", maxSplits: 1).first ?? Substring(value))
+    }
+}
+
+private nonisolated struct AlbumSource: Equatable {
+    let items: [MediaItem]
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.items.elementsEqual(rhs.items) { $0 === $1 }
     }
 }
 
