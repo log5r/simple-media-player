@@ -368,7 +368,7 @@ final class LibraryService {
             item.composer = modelValues.composer
             item.discNumber = modelValues.discNumber
             item.isCompilation = modelValues.isCompilation
-            item.hasEditedTextMetadata = true
+            item.setEditedTextMetadata(draft)
         }
         if draft.editsArtwork {
             item.artworkData = draft.artworkData

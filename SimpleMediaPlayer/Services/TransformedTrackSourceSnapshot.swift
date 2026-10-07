@@ -5,6 +5,9 @@ import SwiftData
 struct TransformedTrackSourceSnapshot: Sendable {
     let registeredID: UUID?
     let metadata: MediaMetadataModelValues
+    let editedArtist: String?
+    let editedAlbum: String?
+    let hasEditedTextMetadata: Bool
     let lyricsRaw: String?
     var artworkData: Data?
 
@@ -17,7 +20,18 @@ struct TransformedTrackSourceSnapshot: Sendable {
             isCompilation: item.isCompilation
         )
         lyricsRaw = item.lyricsRaw
+        editedArtist = item.editedArtist
+        editedAlbum = item.editedAlbum
+        hasEditedTextMetadata = item.hasEditedTextMetadata
         // Filled from the asynchronous artwork read after the model values have been frozen.
         artworkData = nil
+    }
+
+    @MainActor func applyEditedMetadata(to item: MediaItem, title: String) throws {
+        try Task.checkCancellation()
+        item.editedTitle = hasEditedTextMetadata ? title : nil
+        item.editedArtist = editedArtist
+        item.editedAlbum = editedAlbum
+        item.hasEditedTextMetadata = hasEditedTextMetadata
     }
 }

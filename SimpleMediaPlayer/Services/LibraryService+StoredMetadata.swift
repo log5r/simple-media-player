@@ -20,6 +20,13 @@ extension LibraryService {
 }
 
 extension MediaItem {
+    func setEditedTextMetadata(_ draft: MediaMetadataEditDraft) {
+        editedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        editedArtist = draft.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        editedAlbum = draft.album.trimmingCharacters(in: .whitespacesAndNewlines)
+        hasEditedTextMetadata = true
+    }
+
     func setEditedLyrics(_ lyrics: String?) {
         lyricsRaw = lyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true ? nil : lyrics
         hasEditedLyrics = true

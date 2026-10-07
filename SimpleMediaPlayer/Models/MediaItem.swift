@@ -21,6 +21,10 @@ nonisolated final class MediaItem {
     // Empty edited values remain authoritative when embedded metadata is read again.
     var hasEditedLyrics: Bool = false
     var hasEditedTextMetadata: Bool = false
+    // Preserve tag values independently of title/artist/album display fallbacks.
+    var editedTitle: String?
+    var editedArtist: String?
+    var editedAlbum: String?
     var bookmarkData: Data
     var artworkID: UUID?
     @Relationship(deleteRule: .cascade)

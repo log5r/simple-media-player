@@ -56,9 +56,9 @@ struct MediaMetadataEditDraft: Equatable, Sendable {
 
     @MainActor
     init(item: MediaItem) {
-        title = item.title
-        artist = item.artist == "Unknown Artist" ? "" : item.artist
-        album = item.album == "Unknown Album" ? "" : item.album
+        title = item.editedTitle ?? item.title
+        artist = item.editedArtist ?? (item.artist == "Unknown Artist" ? "" : item.artist)
+        album = item.editedAlbum ?? (item.album == "Unknown Album" ? "" : item.album)
         genre = item.genre ?? ""
         year = item.year ?? ""
         trackNumber = item.trackNumber ?? ""
@@ -177,6 +177,7 @@ struct MediaMetadataEditPatch: Equatable, Sendable {
 
     nonisolated func applying(to original: MediaMetadataEditDraft) -> MediaMetadataEditDraft {
         var patched = original
+        patched.editsTextMetadata = fields.isEmpty ? original.editsTextMetadata : fields.contains { $0 != .artwork }
         for field in fields {
             switch field {
             case .artwork:

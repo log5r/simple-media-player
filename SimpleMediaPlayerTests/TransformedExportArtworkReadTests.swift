@@ -5,6 +5,37 @@ import Testing
 
 @MainActor
 struct TransformedExportArtworkReadTests {
+    @Test(arguments: [false, true])
+    func transformedCopyPreservesClearedAndLiteralUnknownTagValues(literal: Bool) async throws {
+        let fixture = try TransformedExportFixture()
+        defer { fixture.remove() }
+        let initial = MediaMetadataEditDraft(
+            title: "", artist: literal ? "Unknown Artist" : "", album: literal ? "Unknown Album" : "", genre: ""
+        )
+        fixture.source.artist = "Unknown Artist"
+        fixture.source.album = "Unknown Album"
+        fixture.source.setEditedTextMetadata(initial)
+        try fixture.context.save()
+        let renderer = ControlledExportRenderer(behavior: .finishImmediately)
+        let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
+
+        let copy = try await fixture.export(using: exporter)
+
+        let embedded = try AdditionalAudioMetadata.read(
+            from: fixture.mediaDirectory.appendingPathComponent(copy.fileName)
+        )
+        #expect(embedded.values.title == "Rendered")
+        #expect(embedded.values.artist == (literal ? "Unknown Artist" : nil))
+        #expect(embedded.values.album == (literal ? "Unknown Album" : nil))
+        let reloaded = try #require(ModelContext(fixture.container).fetch(FetchDescriptor<MediaItem>()).first {
+            $0.id == copy.id
+        })
+        let draft = MediaMetadataEditDraft(item: reloaded)
+        #expect(draft.title == "Rendered")
+        #expect(draft.artist == initial.artist)
+        #expect(draft.album == initial.album)
+    }
+
     @Test func artworkReadFailureReportsErrorWithoutStartingRenderer() async throws {
         let readError = CocoaError(.fileReadUnknown)
         let loader = LibraryArtworkLoader { _, _ in throw readError }
