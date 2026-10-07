@@ -5,19 +5,6 @@ struct MusicAnalysisStripView: View {
     let palette: LEDDisplayPalette
     let mediaInfoStyle: MediaInfoDisplayStyle
 
-    private var analysis: MusicAnalysis? { player.musicAnalysis.result }
-    private var time: Double { player.currentTime }
-    private var duration: Double { analysis?.duration ?? player.duration }
-    private var key: String {
-        analysis?.keyLabel(at: time, transposition: player.isVideoMode ? 0 : player.pitchSemitones) ?? "—"
-    }
-    private var bpm: String {
-        analysis?.displayedBPM(
-            at: time,
-            tempoByBeat: player.musicAnalysis.tempoByBeat,
-            rate: player.isVideoMode ? 1 : player.playbackRate
-        ).map(String.init) ?? "—"
-    }
     private var statusText: String {
         switch player.musicAnalysis.status {
         case .idle: return ""
@@ -45,7 +32,7 @@ struct MusicAnalysisStripView: View {
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Music analysis"))
-        .accessibilityValue(Text("KEY \(key), \(bpm) BPM. \(statusText)"))
+        .modifier(MusicAnalysisPlaybackAccessibility(player: player, statusText: statusText))
     }
 
     private func strip(compact: Bool) -> some View {
@@ -54,12 +41,12 @@ struct MusicAnalysisStripView: View {
                 if !compact {
                     Text("KEY").font(.system(size: 8, design: .monospaced))
                 }
-                Text(key)
+                MusicAnalysisKeyView(player: player)
                     .font(mediaInfoStyle.titleFont(scale: 1.25))
                     .tracking(mediaInfoStyle.textTracking)
             }
             .fixedSize(horizontal: true, vertical: false)
-            timeline
+            MusicAnalysisTimelineView(player: player, color: palette.primaryColor)
                 .frame(minWidth: compact ? 24 : 80)
                 .overlay {
                     if !statusText.isEmpty && !compact {
@@ -76,73 +63,17 @@ struct MusicAnalysisStripView: View {
                         Text("888")
                             .opacity(0.08)
                             .accessibilityHidden(true)
-                        Text(bpm == "—" ? "---" : bpm)
+                        MusicAnalysisTempoView(player: player)
                     }
                     .font(.custom(TimeDisplayStyle.sevenSegment.fontName, size: 17))
                     Text("BPM")
                         .font(.system(size: 8, design: .monospaced))
                 }
-                LEDBeatIndicatorView(
-                    position: analysis?.beatPosition(at: time),
-                    isPlaying: player.isPlaying,
-                    color: palette.primaryColor
-                )
+                MusicAnalysisBeatView(player: player, color: palette.primaryColor)
             }
             .fixedSize(horizontal: true, vertical: false)
         }
         .lineLimit(1)
-    }
-
-    private var timeline: some View {
-        Canvas { context, size in
-            guard duration.isFinite, duration > 0, size.width > 0 else { return }
-            let position = min(1, max(0, time.isFinite ? time / duration : 0))
-            let color = palette.primaryColor
-            let activeSection = analysis?.sections.first { $0.contains(time) }
-            if let activeSection {
-                let rect = CGRect(
-                    x: activeSection.start / duration * size.width, y: 0,
-                    width: (activeSection.end - activeSection.start) / duration * size.width, height: size.height
-                )
-                context.fill(Path(rect), with: .color(color.opacity(0.08)))
-            }
-            let count = max(1, Int(size.width / 3))
-            let levels = player.musicAnalysis.paceLevels
-            for index in 0..<count {
-                let sampleTime = (Double(index) + 0.5) / Double(count) * duration
-                guard !levels.isEmpty,
-                      let level = levels[min(levels.count - 1, index * levels.count / count)] else { continue }
-                let height = max(1, level * (size.height - 3))
-                let horizontalPosition = CGFloat(index) * size.width / CGFloat(count)
-                let opacity = activeSection?.contains(sampleTime) == true ? 0.8 : 0.35
-                context.fill(
-                    Path(CGRect(x: horizontalPosition, y: size.height - height, width: 2, height: height)),
-                    with: .color(color.opacity(opacity))
-                )
-            }
-            context.fill(
-                Path(CGRect(x: 0, y: size.height - 1, width: size.width, height: 1)),
-                with: .color(color.opacity(0.2))
-            )
-            if analysis == nil {
-                context.fill(
-                    Path(CGRect(x: 0, y: size.height - 2, width: size.width * position, height: 2)),
-                    with: .color(color.opacity(0.6))
-                )
-            }
-            for section in analysis?.sections ?? [] {
-                let horizontalPosition = section.start / duration * size.width
-                context.fill(
-                    Path(CGRect(x: horizontalPosition, y: 0, width: 1, height: size.height)),
-                    with: .color(color.opacity(0.45))
-                )
-            }
-            context.fill(
-                Path(CGRect(x: min(size.width - 1, size.width * position), y: 0, width: 1, height: size.height)),
-                with: .color(color)
-            )
-        }
-        .padding(.vertical, 2)
     }
 
 }

@@ -131,8 +131,8 @@ struct LEDDisplayView: View {
                         informationScale: auxiliaryInformationScale
                     )
                 }
-                SevenSegmentTimeView(
-                    time: player.currentTime,
+                PlaybackTimeView(
+                    player: player,
                     color: palette.primaryColor,
                     scale: informationScale,
                     shadowOpacity: palette.timeShadowOpacity,

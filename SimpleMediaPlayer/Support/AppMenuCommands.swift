@@ -145,7 +145,7 @@ struct AppMenuCommands: Commands {
             }
             .keyboardShortcut(.leftArrow, modifiers: .command)
             .disabled(!(actions?.previousTrack.isEnabled ?? (
-                usesPhonePlayback && (player.canSkipToPrevious || player.currentTime >= 3)
+                usesPhonePlayback && player.canPlayPrevious
             )))
 
             Button("Next Track") {

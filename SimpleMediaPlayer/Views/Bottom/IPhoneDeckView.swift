@@ -181,7 +181,7 @@ struct IPhoneDeckView: View {
                 item: player.currentItem,
                 listIndex: player.queue.firstIndex(where: { $0.id == player.currentItem?.id }).map { $0 + 1 },
                 libraryService: libraryService, page: page == .lyrics ? .lyrics : .information,
-                playbackTime: player.currentTime
+                playbackPlayer: player
             )
         case .upNext:
             List(player.queue) { item in
@@ -243,7 +243,7 @@ struct IPhoneDeckView: View {
             IPhoneTransportButton(title: "Stop", symbol: "stop.fill", identifier: "phoneStop") { player.stop() }
             IPhoneTransportButton(title: "Previous Track", symbol: "backward.end.fill", identifier: "phonePrevious") {
                 player.previous()
-            }.disabled(!player.canSkipToPrevious && player.currentTime < 3)
+            }.disabled(!player.canPlayPrevious)
             IPhoneTransportButton(
                 title: player.isPlaying ? "Pause" : "Play", symbol: player.isPlaying ? "pause.fill" : "play.fill",
                 identifier: "phonePlayPause", size: large ? 76 : 52

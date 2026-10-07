@@ -125,7 +125,7 @@ struct TransportButtonsView: View {
 
     private var canSkipToPrevious: Bool {
         if player.currentItem != nil {
-            return player.canSkipToPrevious
+            return player.canPlayPrevious
         }
         return adjacentSelectedItem(offset: -1) != nil
     }

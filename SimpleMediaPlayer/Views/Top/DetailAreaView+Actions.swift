@@ -112,7 +112,7 @@ extension DetailAreaView {
 
     var canSkipToPrevious: Bool {
         if player.currentItem != nil {
-            return player.canSkipToPrevious || player.currentTime >= 3
+            return player.canPlayPrevious
         }
         return adjacentSelectedItem(offset: -1) != nil
     }

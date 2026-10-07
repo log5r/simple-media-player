@@ -9,28 +9,7 @@ struct IPhoneLEDDock: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: openDeck) {
-                ViewThatFits(in: .vertical) {
-                    if placement != .inline {
-                        VStack(alignment: .leading, spacing: 2) {
-                            trackTitle
-                            Text(player.currentTime.mediaTime)
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    trackTitle
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Now Playing")
-            .accessibilityValue(
-                (player.currentItem?.title ?? "") + ", " + L10n.format("Playback time %@", player.currentTime.mediaTime)
-            )
-            .accessibilityHint("Open the playback deck")
-            .accessibilityIdentifier("phoneLEDDock")
+            IPhoneNowPlayingButton(player: player, openDeck: openDeck, showsTime: placement != .inline)
 
             playbackButton(
                 player.isPlaying ? "Pause" : "Play",
@@ -46,13 +25,6 @@ struct IPhoneLEDDock: View {
         .frame(height: 44)
     }
 
-    private var trackTitle: some View {
-        Text(player.currentItem?.title ?? L10n.string("No Track"))
-            .font(.subheadline.weight(.semibold))
-            .lineLimit(1)
-            .truncationMode(.tail)
-    }
-
     private func playbackButton(
         _ title: LocalizedStringKey, symbol: String, identifier: String, action: @escaping () -> Void
     ) -> some View {
@@ -66,5 +38,45 @@ struct IPhoneLEDDock: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)
     }
+}
+
+private struct IPhoneNowPlayingButton: View {
+    let player: PlayerViewModel
+    let openDeck: () -> Void
+    let showsTime: Bool
+
+    var body: some View {
+        let time = TimeInterval(player.elapsedSeconds).mediaTime
+        Button(action: openDeck) {
+            ViewThatFits(in: .vertical) {
+                if showsTime {
+                    VStack(alignment: .leading, spacing: 2) {
+                        trackTitle
+                        Text(time)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                trackTitle
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Now Playing")
+        .accessibilityValue(
+            (player.currentItem?.title ?? "") + ", " + L10n.format("Playback time %@", time)
+        )
+        .accessibilityHint("Open the playback deck")
+        .accessibilityIdentifier("phoneLEDDock")
+    }
+
+    private var trackTitle: some View {
+        Text(player.currentItem?.title ?? L10n.string("No Track"))
+            .font(.subheadline.weight(.semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
 }
 #endif

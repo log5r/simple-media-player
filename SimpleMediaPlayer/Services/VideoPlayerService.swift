@@ -7,27 +7,21 @@ import MediaToolbox
 final class VideoPlayerService {
     let player = AVPlayer()
     private let analyzer: SpectrumAnalyzer
-    private var periodicObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var audioTapProcessor: VideoAudioTapProcessor?
     private var equalizerSettings = EqualizerSettings.flat
     private var loadGeneration = 0
 
-    var currentTime: TimeInterval = 0
+    var currentTime: TimeInterval {
+        let time = player.currentTime().seconds
+        return time.isFinite ? max(0, time) : 0
+    }
     var duration: TimeInterval = 0
     var onFinished: (() -> Void)?
     var onFormatLoaded: (@MainActor (MediaFormatInfo) -> Void)?
 
     init(analyzer: SpectrumAnalyzer) {
         self.analyzer = analyzer
-        periodicObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
-            queue: .main
-        ) { [weak self] time in
-            Task { @MainActor in
-                self?.currentTime = time.seconds.isFinite ? time.seconds : 0
-            }
-        }
     }
 
     func load(url: URL) async {
@@ -79,7 +73,6 @@ final class VideoPlayerService {
     func stop() {
         player.pause()
         player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
-        currentTime = 0
     }
 
     func close() {
