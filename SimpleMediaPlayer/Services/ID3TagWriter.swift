@@ -284,7 +284,7 @@ enum ID3TagWriter {
         "TIT2", "TPE1", "TALB", "TCON", "TDRC", "TYER", "TRCK", "COMM", "TPE2", "TCOM", "TPOS", "TCMP",
         "TT2", "TP1", "TAL", "TCO", "TYE", "TRK", "COM", "TP2", "TCM", "TPA", "TCP"
     ]
-    nonisolated private static let lyricsFrameIDs: Set<String> = ["USLT", "ULT"]
+    nonisolated private static let lyricsFrameIDs: Set<String> = ["USLT", "ULT", "SYLT", "SLT"]
 
     nonisolated static func canWriteMetadata(to url: URL) -> Bool {
         url.pathExtension.localizedCaseInsensitiveCompare("mp3") == .orderedSame

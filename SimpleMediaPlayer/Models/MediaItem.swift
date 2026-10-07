@@ -18,6 +18,9 @@ nonisolated final class MediaItem {
     var duration: TimeInterval
     var isVideo: Bool
     var lyricsRaw: String?
+    // Empty edited values remain authoritative when embedded metadata is read again.
+    var hasEditedLyrics: Bool = false
+    var hasEditedTextMetadata: Bool = false
     var bookmarkData: Data
     var artworkID: UUID?
     @Relationship(deleteRule: .cascade)

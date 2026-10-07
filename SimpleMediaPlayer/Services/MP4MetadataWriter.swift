@@ -13,7 +13,7 @@ enum MP4MetadataWriter {
         BoxType("aART"),
         BoxType([0xA9, 0x77, 0x72, 0x74]),
         BoxType("disk"),
-        BoxType("cpil")
+        BoxType("cpil"), BoxType("sonm"), BoxType("soar"), BoxType("soal"), BoxType("soaa"), BoxType("soco")
     ]
     nonisolated private static let artworkItemType = BoxType("covr")
     nonisolated private static let lyricsItemType = BoxType([0xA9, 0x6C, 0x79, 0x72])

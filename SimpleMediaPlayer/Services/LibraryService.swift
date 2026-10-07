@@ -29,7 +29,6 @@ final class LibraryService {
     @ObservationIgnored private let musicMetadataProvider: MusicLibraryMetadataProvider
     @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
-    @ObservationIgnored private var editedLyricsItemIDs: Set<UUID> = []
     @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
 
     var isImporting = false
@@ -233,13 +232,13 @@ final class LibraryService {
             }.value
         }
 
-        let previousLyrics = item.lyricsRaw
-        item.lyricsRaw = normalizedLyrics
+        let previousLyrics = (raw: item.lyricsRaw, edited: item.hasEditedLyrics)
+        item.setEditedLyrics(normalizedLyrics)
         do {
             try context.save()
-            editedLyricsItemIDs.insert(item.id)
         } catch {
-            item.lyricsRaw = previousLyrics
+            item.lyricsRaw = previousLyrics.raw
+            item.hasEditedLyrics = previousLyrics.edited
             throw error
         }
     }
@@ -255,7 +254,7 @@ final class LibraryService {
             try Task.checkCancellation()
         }
         try Task.checkCancellation()
-        guard let url = resolvedURL(for: item) else { return draft }
+        guard let url = resolvedURL(for: item) else { return draftPreservingStoredEdits(draft, for: item) }
 
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
@@ -264,7 +263,7 @@ final class LibraryService {
 
         if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
             try Task.checkCancellation()
-            return draftByApplyingExtendedInfo(info, to: draft)
+            return draftPreservingStoredEdits(draftByApplyingExtendedInfo(info, to: draft), for: item)
         }
         try Task.checkCancellation()
 
@@ -295,7 +294,7 @@ final class LibraryService {
         }
 
         try Task.checkCancellation()
-        return draft
+        return draftPreservingStoredEdits(draft, for: item)
     }
 
     func loadArtwork(from url: URL) async throws -> Data {
@@ -357,7 +356,7 @@ final class LibraryService {
         _ draft: MediaMetadataEditDraft, to item: MediaItem, fileURL url: URL, canWriteMetadata: Bool
     ) {
         let modelValues = draft.normalizedModelValues(fileURL: url)
-        if canWriteMetadata {
+        if canWriteMetadata && draft.editsTextMetadata {
             item.title = modelValues.title
             item.artist = modelValues.artist
             item.album = modelValues.album
@@ -369,12 +368,13 @@ final class LibraryService {
             item.composer = modelValues.composer
             item.discNumber = modelValues.discNumber
             item.isCompilation = modelValues.isCompilation
+            item.hasEditedTextMetadata = true
         }
         if draft.editsArtwork {
             item.artworkData = draft.artworkData
         }
         if draft.editsLyrics {
-            item.lyricsRaw = draft.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft.lyrics
+            item.setEditedLyrics(draft.lyrics)
         }
     }
 
@@ -678,7 +678,7 @@ extension LibraryService {
     func refreshMissingLyrics(for item: MediaItem, in context: ModelContext) async {
         guard Task.isCancelled == false,
               item.isVideo == false,
-              editedLyricsItemIDs.contains(item.id) == false,
+              item.hasEditedLyrics == false,
               item.lyricsRaw?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
               let url = resolvedURL(for: item) else { return }
 
@@ -693,7 +693,7 @@ extension LibraryService {
         guard let lyrics = try? await lyricsReader.read(from: url),
               Task.isCancelled == false,
               lyricsLoadRequests[itemID] == requestID,
-              editedLyricsItemIDs.contains(itemID) == false,
+              item.hasEditedLyrics == false,
               item.isDeleted == false,
               item.modelContext === context,
               item.lyricsRaw == previousLyrics else { return }

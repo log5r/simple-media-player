@@ -27,6 +27,8 @@ struct MediaImportMigrationTests {
                 let item = try #require(items.first)
                 #expect(items.count == 1)
                 expectLegacyMetadata(item, id: itemID)
+                #expect(item.hasEditedLyrics == false)
+                #expect(item.hasEditedTextMetadata == false)
                 #expect(try context.fetchCount(FetchDescriptor<MediaArtwork>()) == 1)
 
                 let playlists = try context.fetch(FetchDescriptor<Playlist>())
