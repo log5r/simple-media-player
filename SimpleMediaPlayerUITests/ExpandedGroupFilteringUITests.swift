@@ -156,7 +156,8 @@ final class ExpandedGroupFilteringUITests: XCTestCase {
     @MainActor private func dismissKeyboard(in app: XCUIApplication) {
         // The system key can appear as a button without a Keyboard parent in the AX tree.
         let hide = app.buttons["Hide keyboard"].firstMatch
-        if hide.waitForExistence(timeout: 2) {
+        // A closed keyboard can leave its preview button below the window in the AX tree.
+        if hide.waitForExistence(timeout: 2), hide.frame.intersects(app.frame) {
             let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: hide)
             wait(for: [hittable], timeout: 5)
             hide.tap()
