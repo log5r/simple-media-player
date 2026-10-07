@@ -224,7 +224,7 @@ struct MediaMetadataModelValues: Equatable, Sendable {
     var isCompilation: Bool
 }
 
-struct MediaMetadataEmbeddedValues: Equatable, Sendable {
+nonisolated struct MediaMetadataEmbeddedValues: Equatable, Sendable {
     var title: String?
     var artist: String?
     var album: String?

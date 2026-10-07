@@ -1400,9 +1400,9 @@
       "location": {
         "character": 1,
         "file": "SimpleMediaPlayerTests/SimpleMediaPlayerTests.swift",
-        "line": 2903
+        "line": 2895
       },
-      "reason": "File should contain 1000 lines or less: currently contains 2903",
+      "reason": "File should contain 1000 lines or less: currently contains 2895",
       "ruleDescription": "Files should not span too many lines.",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",

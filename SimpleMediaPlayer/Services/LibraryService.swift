@@ -26,6 +26,7 @@ final class LibraryService {
     @ObservationIgnored private let artworkProcessor: ArtworkProcessor
     @ObservationIgnored let artworkLoader: LibraryArtworkLoader
     @ObservationIgnored private let lyricsReader: EmbeddedLyricsReader
+    @ObservationIgnored private let musicMetadataProvider: MusicLibraryMetadataProvider
     @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var editedLyricsItemIDs: Set<UUID> = []
@@ -57,13 +58,15 @@ final class LibraryService {
         artworkProcessor: ArtworkProcessor = ArtworkProcessor(),
         lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader(),
         artworkLoader: LibraryArtworkLoader = .shared,
-        editabilityChecker: EmbeddedMetadataEditabilityChecker = EmbeddedMetadataEditabilityChecker()
+        editabilityChecker: EmbeddedMetadataEditabilityChecker = EmbeddedMetadataEditabilityChecker(),
+        musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider()
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
         self.artworkLoader = artworkLoader
         self.editabilityChecker = editabilityChecker
+        self.musicMetadataProvider = musicMetadataProvider
     }
 
     func importFiles(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
@@ -111,6 +114,7 @@ final class LibraryService {
         }
         let legacyItems = itemsByID.values.filter { $0.importFingerprint == nil }
         var legacyItemsBySize: [UInt64: [MediaItem]]?
+        let musicSession = musicMetadataProvider.makeSession()
 
         for (index, url) in urls.enumerated() {
             currentImportFileName = url.lastPathComponent
@@ -140,7 +144,9 @@ final class LibraryService {
                     }
                 }
                 if isDuplicate == false {
-                    let item = try await makeMediaItem(from: url, importFingerprint: fingerprint)
+                    let item = try await makeMediaItem(
+                        from: url, importFingerprint: fingerprint, musicSession: musicSession
+                    )
                     context.insert(item)
                     itemsByFingerprint[fingerprint, default: []].append(item)
                 }
@@ -267,7 +273,7 @@ final class LibraryService {
         let metadataValues = await metadata.embeddedValues(compilationKeyNeedles: Self.compilationKeyNeedles)
         try Task.checkCancellation()
         draft = draft.applying(metadataValues)
-        draft = try await draftByApplyingMP4Metadata(to: draft, for: url, item: item)
+        draft = try await draftByApplyingMP4Metadata(to: draft, for: url)
 
         if ID3TagWriter.canWriteMetadata(to: url),
            let values = try? await Task.detached(priority: .utility, operation: {
@@ -421,24 +427,13 @@ private extension LibraryService {
     }
 
     func draftByApplyingMP4Metadata(
-        to original: MediaMetadataEditDraft, for url: URL, item: MediaItem
+        to original: MediaMetadataEditDraft, for url: URL
     ) async throws -> MediaMetadataEditDraft {
         try Task.checkCancellation()
         let metadata = await mp4Metadata(for: url)
         try Task.checkCancellation()
         guard let metadata else { return original }
         var draft = original.applying(metadata.values)
-        if item.isVideo == false {
-            let hints = MusicLibraryMatchHints(
-                sortTitle: metadata.values.title,
-                sortArtist: metadata.values.artist,
-                sortAlbum: metadata.values.album,
-                duration: item.duration
-            )
-            let match = await MusicLibraryMetadataProvider.lookup(url: url, hints: hints)
-            try Task.checkCancellation()
-            if case let .found(values) = match { draft = draft.applying(values) }
-        }
         if let embeddedArtwork = metadata.artworkData {
             let artworkData = await artworkProcessor.thumbnail(from: embeddedArtwork)
             try Task.checkCancellation()
@@ -468,10 +463,12 @@ extension LibraryService {
         try? context.save()
     }
 
-    private func makeMediaItem(from sourceURL: URL, importFingerprint: String) async throws -> MediaItem {
+    private func makeMediaItem(
+        from sourceURL: URL, importFingerprint: String, musicSession: MusicLibraryMetadataSession
+    ) async throws -> MediaItem {
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
-        let sources = try await readImportSources(from: sourceURL)
+        let sources = try await readImportSources(from: sourceURL, musicSession: musicSession)
         let importValues = await mergeImportSources(sources, fileURL: sourceURL)
         let values = importValues.values
         let id = UUID()
@@ -521,7 +518,9 @@ extension LibraryService {
         return item
     }
 
-    private func readImportSources(from url: URL) async throws -> ImportSources {
+    private func readImportSources(
+        from url: URL, musicSession: MusicLibraryMetadataSession
+    ) async throws -> ImportSources {
         let extended = try await ExtendedAudioSource.probeInfo(for: url)
         let asset = AVURLAsset(url: url)
         let duration: TimeInterval
@@ -541,7 +540,7 @@ extension LibraryService {
         }
         let mp4 = extended == nil ? await mp4Metadata(for: url) : nil
         let music = extended == nil ? await musicLibraryMetadata(
-            for: url, mp4Metadata: mp4, duration: duration, isVideo: isVideo
+            for: url, mp4Metadata: mp4, duration: duration, isVideo: isVideo, session: musicSession
         ) : nil
         let id3: MediaMetadataEmbeddedValues?
         if ID3TagWriter.canWriteMetadata(to: url) {
@@ -739,7 +738,8 @@ extension LibraryService {
         for url: URL,
         mp4Metadata: MP4MetadataReadResult?,
         duration: TimeInterval,
-        isVideo: Bool
+        isVideo: Bool,
+        session: MusicLibraryMetadataSession
     ) async -> MediaMetadataEmbeddedValues? {
         guard isVideo == false, let mp4Metadata else { return nil }
 
@@ -749,7 +749,7 @@ extension LibraryService {
             sortAlbum: mp4Metadata.values.album,
             duration: duration
         )
-        switch await MusicLibraryMetadataProvider.lookup(url: url, hints: hints) {
+        switch await session.lookup(url: url, hints: hints) {
         case let .found(values):
             return values
         case .notFound:
