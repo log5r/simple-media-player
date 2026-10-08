@@ -31,7 +31,8 @@ final class LibraryService {
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
-    @ObservationIgnored var pendingFileRemovals: [UUID: Task<Void, Never>] = [:]
+    /// Deleted items can stay in import snapshots while their files are removed in the background.
+    @ObservationIgnored var deletedItemIDs: Set<UUID> = []
 
     var isImporting = false
     var importProgress = 0.0
@@ -100,8 +101,6 @@ final class LibraryService {
             importCompletedFileCount = importTotalFileCount
             currentImportFileName = nil
         }
-        // A stale caller snapshot can still list a deleted item whose file is not yet removed.
-        await waitForPendingFileRemovals()
 
         var itemsByID: [UUID: MediaItem] = [:]
         do {
@@ -128,7 +127,7 @@ final class LibraryService {
 
             do {
                 let fingerprint = try await importFingerprint(for: url)
-                var isDuplicate = await hasAvailableFile(for: itemsByFingerprint[fingerprint] ?? [])
+                var isDuplicate = await hasAvailableFile(for: itemsByFingerprint[fingerprint] ?? [], in: context)
                 if isDuplicate == false, legacyItems.isEmpty == false {
                     if legacyItemsBySize == nil {
                         legacyItemsBySize = await groupImportCandidatesBySize(legacyItems)
@@ -138,7 +137,8 @@ final class LibraryService {
                     }.value
                     for (candidate, candidateURL) in legacyItemsBySize?[size] ?? []
                     where candidate.importFingerprint == nil {
-                        guard let candidateFingerprint = try? await importFingerprint(for: candidateURL)
+                        guard let candidateFingerprint = try? await importFingerprint(for: candidateURL),
+                              isLibraryItemLive(candidate, in: context)
                         else { continue }
                         candidate.importFingerprint = candidateFingerprint
                         itemsByFingerprint[candidateFingerprint, default: []].append(candidate)

@@ -22,37 +22,35 @@ extension LibraryService {
         // The unidirectional item relationship has no inverse to nullify on deletion.
         for entry in entries { entry.item = nil }
         let reference = fileReference(for: item)
+        deletedItemIDs.insert(itemID)
         context.delete(item)
         try? context.save()
         // Managed file names are unique per item, so a late removal cannot reach a newer import.
-        let removal = Task.detached(priority: .utility) { [self] in
+        return Task.detached(priority: .utility) { [self] in
             let url = resolvedURL(for: reference)
             if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
                 ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
             }
             try? FileManager.default.removeItem(at: url)
         }
-        pendingFileRemovals[itemID] = removal
-        Task { [weak self] in
-            await removal.value
-            if self?.pendingFileRemovals[itemID] == removal { self?.pendingFileRemovals[itemID] = nil }
-        }
-        return removal
     }
 
-    func waitForPendingFileRemovals() async {
-        while let (itemID, removal) = pendingFileRemovals.first {
-            await removal.value
-            if pendingFileRemovals[itemID] == removal { pendingFileRemovals[itemID] = nil }
-        }
+    /// Checked after every awaited probe: a deleted item's file can outlive the item until its removal runs.
+    func isLibraryItemLive(_ item: MediaItem, in context: ModelContext) -> Bool {
+        deletedItemIDs.contains(item.id) == false && item.isDeleted == false && item.modelContext === context
     }
 
-    func hasAvailableFile(for items: [MediaItem]) async -> Bool {
-        guard items.isEmpty == false else { return false }
-        let references = items.map(fileReference(for:))
-        return await Task.detached(priority: .utility) { [self] in
-            references.contains { (try? MediaImportFingerprint.fileSize(of: resolvedURL(for: $0))) != nil }
+    func hasAvailableFile(for items: [MediaItem], in context: ModelContext) async -> Bool {
+        let liveItems = items.filter { isLibraryItemLive($0, in: context) }
+        guard liveItems.isEmpty == false else { return false }
+        let references = liveItems.map(fileReference(for:))
+        let availableIDs = await Task.detached(priority: .utility) { [self] in
+            let available = references.filter {
+                (try? MediaImportFingerprint.fileSize(of: resolvedURL(for: $0))) != nil
+            }
+            return Set(available.map(\.id))
         }.value
+        return liveItems.contains { availableIDs.contains($0.id) && isLibraryItemLive($0, in: context) }
     }
 
     /// Libraries imported before fingerprints existed can hold thousands of items, so every bookmark is

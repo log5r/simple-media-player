@@ -45,7 +45,7 @@ struct LibraryBookmarkResolutionTests {
     }
 
     @Test func cancelledExportPlanStopsBeforeVisitingEveryItem() async throws {
-        let recorder = BookmarkResolutionRecorder(blocksUntilReleased: true)
+        let recorder = BookmarkResolutionRecorder { _ in true }
         let fixture = try BookmarkFixture(recorder: recorder)
         defer { fixture.remove() }
         let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
@@ -103,8 +103,8 @@ struct LibraryBookmarkResolutionTests {
         #expect(recorder.workerCount == 1)
     }
 
-    @Test func importAfterDeletionWaitsForTheFileRemovalBeforeCheckingDuplicates() async throws {
-        let recorder = BookmarkResolutionRecorder(blocksUntilReleased: true, blockedCallCount: 1)
+    @Test func staleSnapshotDoesNotTreatADeletedItemsPendingFileAsADuplicate() async throws {
+        let recorder = BookmarkResolutionRecorder { $0 == 1 }
         let fixture = try BookmarkFixture(recorder: recorder)
         defer { fixture.remove() }
         let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
@@ -118,7 +118,7 @@ struct LibraryBookmarkResolutionTests {
         let importTask = Task {
             await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         }
-        // Without waiting for the removal, the import finishes here and skips the file as a duplicate.
+        // The import must finish without treating the still-present file of the deleted item as a duplicate.
         try await Task.sleep(for: .milliseconds(200))
         recorder.release()
         await importTask.value
@@ -127,7 +127,43 @@ struct LibraryBookmarkResolutionTests {
         #expect(items.count == 1)
         #expect(items.first?.id != item.id)
         #expect(fixture.service.lastImportErrors.isEmpty)
-        #expect(fixture.service.pendingFileRemovals.isEmpty)
+    }
+
+    @Test(arguments: [true, false])
+    func deletionDuringTheDuplicateProbeDoesNotSuppressTheImport(hasFingerprint: Bool) async throws {
+        // Call 1 is the duplicate probe (or the legacy size grouping); call 2 is the file removal.
+        let recorder = BookmarkResolutionRecorder { $0 <= 2 }
+        let fixture = try BookmarkFixture(recorder: recorder)
+        defer { fixture.remove() }
+        let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
+        let item = try fixture.insertItem(copying: source)
+        let itemFile = fixture.mediaDirectory.appendingPathComponent(item.fileName)
+        if hasFingerprint {
+            item.importFingerprint = try MediaImportFingerprint.read(from: source)
+            try fixture.context.save()
+        }
+        defer { recorder.release() }
+
+        let importTask = Task {
+            await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
+        }
+        try await waitUntil { recorder.workerCount == 1 }
+        let removal = fixture.service.delete(item, from: fixture.context)
+        try await waitUntil { recorder.workerCount == 2 }
+        // The probe finishes while the deleted item's file still exists.
+        recorder.release(call: 1)
+        await importTask.value
+        recorder.release(call: 2)
+        await removal?.value
+
+        let items = try fixture.context.fetch(FetchDescriptor<MediaItem>())
+        #expect(items.count == 1)
+        #expect(items.first?.id != item.id)
+        #expect(fixture.service.lastImportErrors.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: itemFile.path) == false)
+        let imported = try #require(items.first)
+        let importedFile = fixture.mediaDirectory.appendingPathComponent(imported.fileName)
+        #expect(FileManager.default.fileExists(atPath: importedFile.path))
     }
 
     @Test func mediaInfoResolvesTheBookmarkOutsideTheMainThread() async throws {
@@ -145,6 +181,14 @@ struct LibraryBookmarkResolutionTests {
         #expect(recorder.mainThreadCount == 0)
         #expect(recorder.workerCount == 1)
     }
+}
+
+private func waitUntil(_ condition: () -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    while condition() == false && ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    try #require(condition())
 }
 
 @MainActor
@@ -195,35 +239,47 @@ private struct BookmarkFixture {
 
 nonisolated private final class BookmarkResolutionRecorder: @unchecked Sendable {
     private let lock = NSLock()
-    private let gate = DispatchGroup()
+    private let blocks: @Sendable (Int) -> Bool
     private var counts = (mainThread: 0, worker: 0)
-    private var isBlocking: Bool
-    private let blockedCallCount: Int
+    private var gates: [Int: DispatchSemaphore] = [:]
+    private var releasedCalls: Set<Int> = []
+    private var isReleased = false
 
-    /// Blocks the first `blockedCallCount` resolutions until `release()` when `blocksUntilReleased` is set.
-    init(blocksUntilReleased: Bool = false, blockedCallCount: Int = .max) {
-        isBlocking = blocksUntilReleased
-        self.blockedCallCount = blockedCallCount
-        if blocksUntilReleased { gate.enter() }
+    /// Blocks each resolution whose 1-based call number satisfies `blocks` until it is released.
+    init(blocking blocks: @escaping @Sendable (Int) -> Bool = { _ in false }) {
+        self.blocks = blocks
     }
 
     var mainThreadCount: Int { lock.withLock { counts.mainThread } }
     var workerCount: Int { lock.withLock { counts.worker } }
 
     func resolve(_ bookmarkData: Data, _ fallbackURL: URL) -> URL {
-        let callIndex = lock.withLock {
+        let gate = lock.withLock { () -> DispatchSemaphore? in
             if Thread.isMainThread { counts.mainThread += 1 } else { counts.worker += 1 }
-            return counts.mainThread + counts.worker
+            let call = counts.mainThread + counts.worker
+            guard blocks(call), isReleased == false, releasedCalls.contains(call) == false else { return nil }
+            let gate = DispatchSemaphore(value: 0)
+            gates[call] = gate
+            return gate
         }
-        if callIndex <= blockedCallCount { gate.wait() }
+        gate?.wait()
         return fallbackURL
     }
 
-    func release() {
-        let shouldLeave = lock.withLock {
-            defer { isBlocking = false }
-            return isBlocking
+    func release(call: Int) {
+        let gate = lock.withLock {
+            releasedCalls.insert(call)
+            return gates.removeValue(forKey: call)
         }
-        if shouldLeave { gate.leave() }
+        gate?.signal()
+    }
+
+    func release() {
+        let pending = lock.withLock {
+            isReleased = true
+            defer { gates = [:] }
+            return Array(gates.values)
+        }
+        pending.forEach { $0.signal() }
     }
 }
