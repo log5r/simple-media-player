@@ -19,8 +19,19 @@ struct PanelToolbarLabel: View {
     }
 }
 
+/// Reads an observable progress value in its own body, so frequent updates redraw only this bar
+/// instead of the screen that hosts it.
+struct ObservedProgressView<Source: AnyObject & Observable>: View {
+    let source: Source
+    let value: KeyPath<Source, Double>
+
+    var body: some View {
+        ProgressView(value: source[keyPath: value])
+    }
+}
+
 struct AACVersionProgressPanel: View {
-    let progress: Double
+    let exporter: TransformedTrackExporter
     let sourceTitle: String?
 
     var body: some View {
@@ -53,11 +64,11 @@ struct AACVersionProgressPanel: View {
         .shadow(radius: 10, y: 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Creating AAC version")
-        .accessibilityValue(progress.formatted(.percent.precision(.fractionLength(0))))
+        .accessibilityValue(exporter.progress.formatted(.percent.precision(.fractionLength(0))))
     }
 
     private var clampedProgress: Double {
-        min(max(progress, 0), 1)
+        min(max(exporter.progress, 0), 1)
     }
 }
 

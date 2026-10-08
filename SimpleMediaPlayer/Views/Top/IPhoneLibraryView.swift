@@ -172,13 +172,13 @@ struct IPhoneLibraryView: View {
             VStack(spacing: 8) {
                 if libraryService.isImporting {
                     Text("Importing")
-                    ProgressView(value: libraryService.importProgress)
+                    ObservedProgressView(source: libraryService, value: \.importProgress)
                 } else if libraryService.isExporting {
                     Text("Exporting")
-                    ProgressView(value: libraryService.exportProgress)
+                    ObservedProgressView(source: libraryService, value: \.exportProgress)
                 } else {
                     Text("Create AAC Version")
-                    ProgressView(value: aacVersionExporter.progress)
+                    ObservedProgressView(source: aacVersionExporter, value: \.progress)
                 }
             }
             .padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).padding()
