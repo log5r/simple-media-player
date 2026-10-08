@@ -150,7 +150,8 @@ nonisolated final class PlaylistEntry {
 
 extension MediaItem {
     var displayContentType: String {
-        let pathExtension = URL(fileURLWithPath: fileName).pathExtension
+        // `URL(fileURLWithPath:)` stats the path to detect directories; the list needs only the name.
+        let pathExtension = (fileName as NSString).pathExtension
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return pathExtension.isEmpty ? "-" : pathExtension.uppercased()
     }

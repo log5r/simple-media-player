@@ -126,8 +126,9 @@ struct MediaListView: View {
     }
 
     var groupedList: some View {
-        List(selection: tableInteractionSelection) {
-            ForEach(groupedSections) { group in
+        let listRows = rows
+        return List(selection: tableInteractionSelection) {
+            ForEach(groupedSections(listRows)) { group in
                 Section {
                     ForEach(group.rows) { row in
                         groupedRow(row)
@@ -150,7 +151,7 @@ struct MediaListView: View {
             }
         }
         .listStyle(.inset)
-        .modifier(LibraryScrollAnchor(itemIDs: rows.map(\.id), browsingState: browsingState))
+        .modifier(LibraryScrollAnchor(itemIDs: listRows.map(\.id), browsingState: browsingState))
     }
 
     var rows: [MediaTableRow] {
@@ -211,7 +212,7 @@ struct MediaListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var groupedSections: [GroupedMediaSection] {
+    private func groupedSections(_ rows: [MediaTableRow]) -> [GroupedMediaSection] {
         let groupedRows = Dictionary(grouping: rows) { row in
             groupTitle(for: row.item)
         }

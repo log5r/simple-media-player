@@ -237,46 +237,28 @@ final class BulkMediaSelectionState {
     }
 }
 
+/// Rows are rebuilt on every list body, so sort values stay computed: the projection sorts,
+/// and Table reads these key paths only to report the clicked column.
 struct MediaTableRow: Identifiable, @unchecked Sendable {
     let index: Int
     let item: MediaItem
-    let indexSortValue: Int
-    let artworkSortValue: String
-    let titleSortValue: String
-    let artistSortValue: String
-    let albumSortValue: String
-    let genreSortValue: String
-    let durationSortValue: TimeInterval
-    let trackNumberSortValue: String
-    let yearSortValue: String
-    let albumArtistSortValue: String
-    let composerSortValue: String
-    let discNumberSortValue: String
-    let kindSortValue: String
-    let contentTypeSortValue: String
-    let dateAddedSortValue: Date
-    let fileNameSortValue: String
 
-    init(index: Int, item: MediaItem) {
-        self.index = index
-        self.item = item
-        indexSortValue = index
-        artworkSortValue = item.hasArtwork ? "1" : ""
-        titleSortValue = item.title
-        artistSortValue = item.displayArtist
-        albumSortValue = item.displayAlbum
-        genreSortValue = item.displayGenre
-        durationSortValue = item.duration
-        trackNumberSortValue = item.trackNumber ?? ""
-        yearSortValue = item.year ?? ""
-        albumArtistSortValue = item.albumArtist ?? ""
-        composerSortValue = item.composer ?? ""
-        discNumberSortValue = item.discNumber ?? ""
-        kindSortValue = item.isVideo ? L10n.string("Video") : L10n.string("Audio")
-        contentTypeSortValue = item.displayContentType
-        dateAddedSortValue = item.addedAt
-        fileNameSortValue = item.fileName
-    }
+    var indexSortValue: Int { index }
+    var artworkSortValue: String { item.hasArtwork ? "1" : "" }
+    var titleSortValue: String { item.title }
+    var artistSortValue: String { item.displayArtist }
+    var albumSortValue: String { item.displayAlbum }
+    var genreSortValue: String { item.displayGenre }
+    var durationSortValue: TimeInterval { item.duration }
+    var trackNumberSortValue: String { item.trackNumber ?? "" }
+    var yearSortValue: String { item.year ?? "" }
+    var albumArtistSortValue: String { item.albumArtist ?? "" }
+    var composerSortValue: String { item.composer ?? "" }
+    var discNumberSortValue: String { item.discNumber ?? "" }
+    var kindSortValue: String { item.isVideo ? L10n.string("Video") : L10n.string("Audio") }
+    var contentTypeSortValue: String { item.displayContentType }
+    var dateAddedSortValue: Date { item.addedAt }
+    var fileNameSortValue: String { item.fileName }
 
     var id: UUID {
         item.id

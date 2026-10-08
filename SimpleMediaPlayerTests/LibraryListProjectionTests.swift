@@ -229,6 +229,61 @@ struct LibraryListProjectionTests {
         try await waitUntil { projection.items.map(\.id) == [video.id] }
     }
 
+    @Test func consecutiveInsertionsShareOneDeferredSourceCapture() async throws {
+        let alpha = makeItem("Alpha")
+        let beta = makeItem("Beta")
+        let gamma = makeItem("Gamma")
+        let probe = LibraryListComputationProbe()
+        let projection = LibraryListProjection(insertionCaptureInterval: .milliseconds(200), compute: probe.compute)
+        defer { projection.cancel(); probe.finishAll() }
+        let request = LibraryListRequest(sortField: .title)
+        projection.update(items: [alpha], playlist: nil, request: request)
+        projection.update(items: [alpha, beta], playlist: nil, request: request)
+        projection.update(items: [alpha, beta, gamma], playlist: nil, request: request)
+
+        try await waitUntil { probe.count == 2 }
+        #expect(probe.snapshot(at: 1).identifiers() == [alpha.id, beta.id, gamma.id])
+        probe.finish(1)
+        try await waitUntil { projection.items.map(\.id) == [alpha.id, beta.id, gamma.id] }
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(probe.count == 2)
+    }
+
+    @Test func removalDuringDeferredInsertionCapturesImmediately() async throws {
+        let alpha = makeItem("Alpha")
+        let beta = makeItem("Beta")
+        let gamma = makeItem("Gamma")
+        let probe = LibraryListComputationProbe()
+        let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
+        defer { projection.cancel(); probe.finishAll() }
+        let request = LibraryListRequest(sortField: .title)
+        projection.update(items: [alpha, beta], playlist: nil, request: request)
+        try await waitUntil { probe.count == 1 }
+        projection.update(items: [alpha, beta, gamma], playlist: nil, request: request)
+        projection.update(items: [alpha, gamma], playlist: nil, request: request)
+
+        try await waitUntil { probe.count == 2 }
+        #expect(probe.snapshot(at: 1).identifiers() == [alpha.id, gamma.id])
+        probe.finish(1)
+        try await waitUntil { projection.items.map(\.id) == [alpha.id, gamma.id] }
+    }
+
+    @Test func metadataChangeDuringDeferredInsertionCapturesImmediately() async throws {
+        let alpha = makeItem("Alpha")
+        let beta = makeItem("Beta")
+        let probe = LibraryListComputationProbe()
+        let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
+        defer { projection.cancel(); probe.finishAll() }
+        let request = LibraryListRequest(sortField: .title)
+        projection.update(items: [alpha], playlist: nil, request: request)
+        try await waitUntil { probe.count == 1 }
+        projection.update(items: [alpha, beta], playlist: nil, request: request)
+        alpha.title = "Zulu"
+
+        try await waitUntil { probe.count == 2 }
+        #expect(probe.snapshot(at: 1).identifiers() == [beta.id, alpha.id])
+    }
+
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while condition() == false, ContinuousClock.now < deadline {

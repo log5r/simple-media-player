@@ -148,10 +148,11 @@ extension MediaListView {
             }
         }
         #else
+        let tableRows = rows
         ScrollView([.horizontal, .vertical]) {
             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                 Section {
-                    ForEach(rows) { row in
+                    ForEach(tableRows) { row in
                         mobileTableRow(row, columns: visibleMediaListColumns)
                             .id(row.id)
                             .modifier(LibraryScrollAnchorRow(id: row.id))
@@ -164,7 +165,7 @@ extension MediaListView {
         }
         .defaultScrollAnchor(.topLeading)
         .background(.background)
-        .modifier(LibraryScrollAnchor(itemIDs: rows.map(\.id), browsingState: browsingState))
+        .modifier(LibraryScrollAnchor(itemIDs: tableRows.map(\.id), browsingState: browsingState))
         #endif
     }
 

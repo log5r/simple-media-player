@@ -22,15 +22,23 @@ final class LibraryListProjection {
     @ObservationIgnored private var requestGeneration: UInt64 = 0
     @ObservationIgnored private var worker: Task<LibraryListResult, Never>?
     @ObservationIgnored private var completion: Task<Void, Never>?
+    @ObservationIgnored private var deferredCapture: Task<Void, Never>?
+    @ObservationIgnored private var lastCapture: ContinuousClock.Instant?
     @ObservationIgnored private let compute: @Sendable (LibraryListSnapshot) async -> [UUID]
+    @ObservationIgnored private let insertionCaptureInterval: Duration
 
-    init(compute: @escaping @Sendable (LibraryListSnapshot) async -> [UUID] = { $0.identifiers() }) {
+    init(
+        insertionCaptureInterval: Duration = .milliseconds(500),
+        compute: @escaping @Sendable (LibraryListSnapshot) async -> [UUID] = { $0.identifiers() }
+    ) {
+        self.insertionCaptureInterval = insertionCaptureInterval
         self.compute = compute
     }
 
     deinit {
         worker?.cancel()
         completion?.cancel()
+        deferredCapture?.cancel()
     }
 
     func selectedItem(id: UUID) -> MediaItem? {
@@ -48,10 +56,14 @@ final class LibraryListProjection {
         let sameSource = inputs?.hasSameSource(items: items, playlist: playlist) == true
         let sourceIsCurrent = sameSource && sourceGeneration.isCurrent(observedGeneration)
         if sourceIsCurrent, inputs?.request == request { return }
+        let onlyInserts = sameSource == false && sourceGeneration.isCurrent(observedGeneration)
+            && inputs?.request == request && inputs?.isStrictSubset(of: items, playlist: playlist) == true
         clearItemsIfDestinationChanged(playlist: playlist, request: request)
         inputs = Inputs(items: items, playlist: playlist, request: request)
         if sourceIsCurrent {
             startComputation()
+        } else if onlyInserts {
+            captureSourceAfterInsertion()
         } else {
             captureSource()
         }
@@ -76,8 +88,11 @@ final class LibraryListProjection {
         requestGeneration &+= 1
         worker?.cancel()
         completion?.cancel()
+        deferredCapture?.cancel()
         worker = nil
         completion = nil
+        deferredCapture = nil
+        lastCapture = nil
         inputs = nil
         snapshot = nil
         sourceByID = [:]
@@ -96,8 +111,29 @@ final class LibraryListProjection {
         visibleEntryIDs = nil
     }
 
+    /// Imports insert one model per file, and each insertion replaces the query array. The
+    /// published models stay valid when nothing was removed, so recapture at most once per
+    /// interval instead of rereading the whole library for every file.
+    private func captureSourceAfterInsertion() {
+        guard deferredCapture == nil else { return }
+        guard let lastCapture, ContinuousClock.now < lastCapture + insertionCaptureInterval else {
+            captureSource()
+            return
+        }
+        let deadline = lastCapture + insertionCaptureInterval
+        deferredCapture = Task { [weak self] in
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            guard Task.isCancelled == false, let self else { return }
+            self.deferredCapture = nil
+            self.captureSource()
+        }
+    }
+
     private func captureSource() {
         guard let inputs else { return }
+        deferredCapture?.cancel()
+        deferredCapture = nil
+        lastCapture = .now
         let generation = sourceGeneration.advance()
         // Fire the previous one-shot tracker after invalidating its token. This removes
         // its model subscriptions even when the replaced source itself never changes.
@@ -239,6 +275,13 @@ final class LibraryListProjection {
         func hasSameSource(items: [MediaItem], playlist: Playlist?) -> Bool {
             self.playlist === playlist && self.items.count == items.count
                 && zip(self.items, items).allSatisfy { $0 === $1 }
+        }
+
+        /// True when `items` keeps every current model and only adds new ones.
+        func isStrictSubset(of items: [MediaItem], playlist: Playlist?) -> Bool {
+            guard self.playlist === playlist, self.items.count < items.count else { return false }
+            let newIdentities = Set(items.map(ObjectIdentifier.init))
+            return self.items.allSatisfy { newIdentities.contains(ObjectIdentifier($0)) }
         }
     }
 }
