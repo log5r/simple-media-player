@@ -3,10 +3,13 @@ import Foundation
 nonisolated enum MediaFileRewriter {
     private static let copyBufferSize = 1_048_576
 
+    /// `write` may change metadata only; the music analysis cache follows the rewritten file.
     static func rewrite(
         at url: URL,
+        analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
         _ write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
+        let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
         let source = try FileHandle(forReadingFrom: url)
         defer { try? source.close() }
         let fileSize = try source.seekToEnd()
@@ -50,6 +53,7 @@ nonisolated enum MediaFileRewriter {
             }
             throw error
         }
+        MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
     }
 
     static func read(from handle: FileHandle, at offset: UInt64, count: Int) throws -> Data {
