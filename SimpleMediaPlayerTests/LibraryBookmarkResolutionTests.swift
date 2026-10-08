@@ -158,6 +158,42 @@ struct LibraryBookmarkResolutionTests {
         #expect(recorder.mainThreadCount == 0)
     }
 
+    @Test func failedFileRemovalStaysJournaledUntilItSucceeds() async throws {
+        let recorder = BookmarkResolutionRecorder()
+        let fixture = try BookmarkFixture(recorder: recorder)
+        defer { fixture.remove() }
+        let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
+        let item = try fixture.insertItem(copying: source)
+        let itemID = item.id
+        let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
+        let missing = PendingFileRemovalJournal.Entry(
+            id: UUID(), bookmarkData: Data([0xFF]),
+            fallbackPath: fixture.mediaDirectory.appendingPathComponent("\(UUID().uuidString).wav").path
+        )
+        fixture.journal.add(missing)
+        let attributes = try FileManager.default.attributesOfItem(atPath: fixture.mediaDirectory.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: fixture.mediaDirectory.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: attributes[.posixPermissions] ?? 0o755], ofItemAtPath: fixture.mediaDirectory.path
+            )
+        }
+
+        await fixture.service.delete(item, from: fixture.context)?.value
+        await fixture.service.resumePendingFileRemovals().value
+
+        // The item is gone, but its file could not be removed, so the entry remains for a later retry.
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
+        #expect(FileManager.default.fileExists(atPath: fileURL.path))
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).map(\.id) == [itemID])
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fixture.mediaDirectory.path)
+        await fixture.service.resumePendingFileRemovals().value
+
+        #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+    }
+
     @Test func staleSnapshotDoesNotTreatADeletedItemsPendingFileAsADuplicate() async throws {
         let recorder = BookmarkResolutionRecorder { $0 == 1 }
         let fixture = try BookmarkFixture(recorder: recorder)

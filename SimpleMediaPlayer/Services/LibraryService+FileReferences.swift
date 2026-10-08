@@ -51,7 +51,12 @@ extension LibraryService {
         if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
             ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
         }
-        try? FileManager.default.removeItem(at: url)
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            // Keep the entry so the next launch retries; a file that is already gone needs no retry.
+            guard FileManager.default.fileExists(atPath: url.path) == false else { return }
+        }
         removalJournal.remove(id: removal.id)
     }
 
