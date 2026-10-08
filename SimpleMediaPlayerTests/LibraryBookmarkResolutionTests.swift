@@ -69,6 +69,23 @@ struct LibraryBookmarkResolutionTests {
         #expect(recorder.mainThreadCount == 0)
     }
 
+    @Test(arguments: ["wav", "mp4"])
+    func exportMetadataRethrowsCancellationInsteadOfFallingBack(fileExtension: String) async throws {
+        let fixture = try BookmarkFixture(recorder: BookmarkResolutionRecorder())
+        defer { fixture.remove() }
+        let wav = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
+        let source = fixture.directory.appendingPathComponent("song").appendingPathExtension(fileExtension)
+        if source != wav { try FileManager.default.copyItem(at: wav, to: source) }
+        #expect(try await LibraryService.exportMetadata(for: source).title == nil)
+
+        let task = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await LibraryService.exportMetadata(for: source)
+        }
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
     @Test func deleteRemovesTheItemImmediatelyAndTheFileInAWorker() async throws {
         let recorder = BookmarkResolutionRecorder()
         let fixture = try BookmarkFixture(recorder: recorder)

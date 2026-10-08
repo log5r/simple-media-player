@@ -149,7 +149,7 @@ extension LibraryService {
         defer {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
-        let metadata = await Self.exportMetadata(for: url)
+        let metadata = try await Self.exportMetadata(for: url)
         try Task.checkCancellation()
         return ExportPlanEntry(url: url, title: metadata.title, album: metadata.album)
     }
@@ -201,46 +201,66 @@ extension LibraryService {
         return MediaExportResult(exportedCount: exportedCount, errors: errors)
     }
 
-    private nonisolated static func exportMetadata(for url: URL) async -> (title: String?, album: String?) {
-        if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
-            return (info.title, info.album)
-        }
+    /// Unreadable metadata falls back to library values, but cancellation is rethrown so a cancelled plan
+    /// does not keep reading the remaining sources.
+    nonisolated static func exportMetadata(for url: URL) async throws -> (title: String?, album: String?) {
+        do {
+            if let info = try await ExtendedAudioSource.probeInfo(for: url) {
+                return (info.title, info.album)
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {}
+        try Task.checkCancellation()
         let asset = AVURLAsset(url: url)
         var metadataItems: [AVMetadataItem] = []
 
         if let commonMetadata = try? await asset.load(.metadata) {
             metadataItems.append(contentsOf: commonMetadata)
         }
+        try Task.checkCancellation()
 
         if let formats = try? await asset.load(.availableMetadataFormats) {
             for format in formats {
+                try Task.checkCancellation()
                 if let formatMetadata = try? await asset.loadMetadata(for: format) {
                     metadataItems.append(contentsOf: formatMetadata)
                 }
             }
         }
+        try Task.checkCancellation()
 
         var title = await metadataItems.exportStringValue(for: .commonIdentifierTitle)
         if title == nil {
             title = await metadataItems.exportFirstString(whereKeyContains: ["tit2", "title", "©nam"])
         }
+        try Task.checkCancellation()
         if title == nil {
-            title = await mp4NameTitleIfNeeded(for: url)
+            title = try await mp4NameTitleIfNeeded(for: url)
         }
 
         var album = await metadataItems.exportStringValue(for: .commonIdentifierAlbumName)
         if album == nil {
             album = await metadataItems.exportFirstString(whereKeyContains: ["talb", "album", "©alb"])
         }
+        try Task.checkCancellation()
 
         return (title?.nilIfBlank, album?.nilIfBlank)
     }
 
-    private nonisolated static func mp4NameTitleIfNeeded(for url: URL) async -> String? {
+    private nonisolated static func mp4NameTitleIfNeeded(for url: URL) async throws -> String? {
         guard ["mp4", "m4v"].contains(url.pathExtension.lowercased()) else { return nil }
-        return try? await Task.detached(priority: .utility) {
-            try MP4TitleReader.title(in: url)
-        }.value
+        let task = Task.detached(priority: .utility) {
+            try Task.checkCancellation()
+            return try MP4TitleReader.title(in: url)
+        }
+        return try await withTaskCancellationHandler {
+            let title = try? await task.value
+            try Task.checkCancellation()
+            return title
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private nonisolated func copyExportFile(
