@@ -1,6 +1,5 @@
 @preconcurrency import AVFoundation
 import CoreMedia
-import CryptoKit
 import Foundation
 import MusicUnderstanding
 import Observation
@@ -90,6 +89,30 @@ final class MusicAnalysisController {
 actor MusicAnalysisService {
     static let shared = MusicAnalysisService()
     private let logger = Logger(subsystem: "SimpleMediaPlayer", category: "MusicAnalysis")
+    private let cacheDirectory: URL?
+    private let readableFile: @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile
+
+    init(
+        cacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        readableFile: @escaping @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile = {
+            try ExtendedAudioSource.readableFile(for: $0)
+        }
+    ) {
+        self.cacheDirectory = cacheDirectory
+        self.readableFile = readableFile
+    }
+
+    /// Runs blocking file work on a detached task so the actor keeps serving other callers.
+    nonisolated private static func offActor<T: Sendable>(
+        _ work: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        let task = Task.detached(priority: .utility, operation: work)
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
 
     private func logDuration(_ stage: String, since start: ContinuousClock.Instant) {
         logger.info("\(stage, privacy: .public): \(String(describing: start.duration(to: .now)), privacy: .public)")
@@ -110,17 +133,23 @@ actor MusicAnalysisService {
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         try Task.checkCancellation()
 
-        let cacheURL = cacheURL(for: url)
-        if let cacheURL, let data = try? Data(contentsOf: cacheURL),
-           let result = try? JSONDecoder().decode(MusicAnalysis.self, from: data) {
+        let cacheDirectory = cacheDirectory
+        let (cacheURL, cached) = try await Self.offActor {
+            let entry = MusicAnalysisCache.entryURL(for: url, in: cacheDirectory)
+            return (entry, entry.flatMap(MusicAnalysisCache.read(at:)))
+        }
+        if let cached {
             logger.info("Cache hit")
-            return result
+            return cached
         }
 
         logger.info("Cache miss")
         let wholeSongStarted = ContinuousClock.now
-        let source = try ExtendedAudioSource.readableFile(for: url)
+        let readableFile = readableFile
+        // Extended formats decode the whole song here on a cache miss.
+        let source = try await Self.offActor { try readableFile(url) }
         defer { source.release() }
+        try Task.checkCancellation()
         let asset = AVURLAsset(url: source.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else { throw MusicUnderstandingError.invalidAsset }
@@ -140,12 +169,8 @@ actor MusicAnalysisService {
             try await self.analyzeKey(asset: asset, range: range)
         }, onProgress: onProgress)
         try Task.checkCancellation()
-        if let cacheURL, let data = try? JSONEncoder().encode(analysis) {
-            try? FileManager.default.createDirectory(
-                at: cacheURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try? data.write(to: cacheURL, options: .atomic)
+        if let cacheURL {
+            try await Self.offActor { MusicAnalysisCache.write(analysis, at: cacheURL) }
         }
         return analysis
     }
@@ -290,17 +315,6 @@ actor MusicAnalysisService {
             ExcerptRhythm(beats: rhythm.beats.map { context.start + $0.seconds },
                           bars: rhythm.bars.map { context.start + $0.seconds })
         }
-    }
-
-    private func cacheURL(for url: URL) -> URL? {
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
-              let size = values.fileSize, let modified = values.contentModificationDate,
-              let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-        else { return nil }
-        let identity = "v5|\(url.standardizedFileURL.absoluteString)|\(size)|\(modified.timeIntervalSince1970)"
-        let digest = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
-        return directory.appendingPathComponent("SimpleMediaPlayer/MusicAnalysis", isDirectory: true)
-            .appendingPathComponent(digest).appendingPathExtension("json")
     }
 
     @available(macOS 27, iOS 27, *)
