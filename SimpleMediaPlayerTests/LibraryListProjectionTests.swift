@@ -268,6 +268,29 @@ struct LibraryListProjectionTests {
         try await waitUntil { projection.items.map(\.id) == [alpha.id, gamma.id] }
     }
 
+    @Test(arguments: [false, true])
+    func requestChangeDuringDeferredInsertionUsesTheInsertedItems(throughItemsUpdate: Bool) async throws {
+        let audio = makeItem("Audio")
+        let video = makeItem("Video", isVideo: true)
+        let probe = LibraryListComputationProbe()
+        let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
+        defer { projection.cancel(); probe.finishAll() }
+        projection.update(items: [audio], playlist: nil, request: LibraryListRequest(section: .allSongs))
+        try await waitUntil { probe.count == 1 }
+        projection.update(items: [audio, video], playlist: nil, request: LibraryListRequest(section: .allSongs))
+        let videos = LibraryListRequest(section: .allVideos)
+        if throughItemsUpdate {
+            projection.update(items: [audio, video], playlist: nil, request: videos)
+        } else {
+            projection.update(request: videos)
+        }
+
+        try await waitUntil { probe.count == 2 }
+        #expect(probe.snapshot(at: 1).identifiers() == [video.id])
+        probe.finish(1)
+        try await waitUntil { projection.items.map(\.id) == [video.id] }
+    }
+
     @Test func metadataChangeDuringDeferredInsertionCapturesImmediately() async throws {
         let alpha = makeItem("Alpha")
         let beta = makeItem("Beta")

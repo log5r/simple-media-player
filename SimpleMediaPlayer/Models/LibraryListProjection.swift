@@ -54,13 +54,13 @@ final class LibraryListProjection {
 
     func update(items: [MediaItem], playlist: Playlist?, request: LibraryListRequest) {
         let sameSource = inputs?.hasSameSource(items: items, playlist: playlist) == true
-        let sourceIsCurrent = sameSource && sourceGeneration.isCurrent(observedGeneration)
-        if sourceIsCurrent, inputs?.request == request { return }
-        let onlyInserts = sameSource == false && sourceGeneration.isCurrent(observedGeneration)
+        let generationIsCurrent = sourceGeneration.isCurrent(observedGeneration)
+        if sameSource, generationIsCurrent, inputs?.request == request { return }
+        let onlyInserts = sameSource == false && generationIsCurrent
             && inputs?.request == request && inputs?.isStrictSubset(of: items, playlist: playlist) == true
         clearItemsIfDestinationChanged(playlist: playlist, request: request)
         inputs = Inputs(items: items, playlist: playlist, request: request)
-        if sourceIsCurrent {
+        if sameSource, snapshotIsCurrent {
             startComputation()
         } else if onlyInserts {
             captureSourceAfterInsertion()
@@ -75,11 +75,17 @@ final class LibraryListProjection {
         if inputs.request == request, sourceGeneration.isCurrent(observedGeneration) { return }
         clearItemsIfDestinationChanged(playlist: inputs.playlist, request: request)
         self.inputs?.request = request
-        if sourceGeneration.isCurrent(observedGeneration) {
+        if snapshotIsCurrent {
             startComputation()
         } else {
             captureSource()
         }
+    }
+
+    /// A deferred insertion capture leaves `inputs` ahead of the snapshot, so a new request
+    /// must not compute from the snapshot until it is recaptured.
+    private var snapshotIsCurrent: Bool {
+        sourceGeneration.isCurrent(observedGeneration) && deferredCapture == nil
     }
 
     func cancel() {
