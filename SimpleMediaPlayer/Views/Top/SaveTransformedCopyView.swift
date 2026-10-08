@@ -95,7 +95,7 @@ struct SaveTransformedCopyView: View {
             }
 
             if exporter.isExporting {
-                ProgressView(value: exporter.progress)
+                ObservedProgressView(source: exporter, value: \.progress)
             }
 
             if let message = exporter.errorMessage {

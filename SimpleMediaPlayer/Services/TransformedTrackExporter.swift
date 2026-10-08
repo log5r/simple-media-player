@@ -11,14 +11,17 @@ final class TransformedTrackExporter {
 
     @ObservationIgnored private let renderer: any TransformedAudioRendering
     @ObservationIgnored private let temporaryDirectory: URL
+    @ObservationIgnored private let progressReportInterval: Duration
     @ObservationIgnored private var exportID: UUID?
 
     init(
         renderer: any TransformedAudioRendering = TransformedAudioRenderer(),
-        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        progressReportInterval: Duration = ProgressReportThrottle.defaultMinimumInterval
     ) {
         self.renderer = renderer
         self.temporaryDirectory = temporaryDirectory
+        self.progressReportInterval = progressReportInterval
     }
 
     func export(
@@ -63,12 +66,13 @@ final class TransformedTrackExporter {
         let pitchCents = Float(pitchSemitones * 100)
         let renderRate = Float(rate)
         let renderer = renderer
+        let reportProgress = makeProgressHandler(for: exportID)
 
         do {
             let draft = try await metadataDraft(for: item, title: trimmedTitle, libraryService: libraryService)
             try libraryService.validateCopySource(item, in: sourceContext)
             sourceSnapshot.artworkData = draft.artworkData
-            let renderTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let renderTask = Task.detached(priority: .userInitiated) {
                 try Task.checkCancellation()
                 let result = try renderer.render(
                     sourceURL: sourceURL,
@@ -86,12 +90,7 @@ final class TransformedTrackExporter {
                             )
                         }
                     },
-                    progress: { [weak self] value in
-                        Task { @MainActor [weak self] in
-                            guard let self, self.exportID == exportID else { return }
-                            self.progress = max(self.progress, min(0.95, value * 0.95))
-                        }
-                    }
+                    progress: reportProgress
                 )
                 try Task.checkCancellation()
                 try format.writeMetadata(draft, to: outputURL)
@@ -123,6 +122,21 @@ final class TransformedTrackExporter {
             }
             errorMessage = error.localizedDescription
             throw error
+        }
+    }
+
+    /// Offline rendering reports every buffer, far faster than real time, so only visible changes reach the main actor.
+    private func makeProgressHandler(for exportID: UUID) -> @Sendable (Double) -> Void {
+        let throttle = ProgressReportThrottle(minimumInterval: progressReportInterval)
+        return { [weak self] value in
+            guard throttle.shouldReport(value) else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.exportID == exportID else { return }
+                let reportedProgress = max(progress, min(0.95, value * 0.95))
+                if reportedProgress != progress {
+                    progress = reportedProgress
+                }
+            }
         }
     }
 

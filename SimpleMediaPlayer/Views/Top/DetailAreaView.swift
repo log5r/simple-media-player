@@ -133,13 +133,13 @@ struct DetailAreaView: View {
         .focusedSceneValue(\.appMenuActions, appMenuActions)
         .overlay(alignment: .top) {
             if libraryService.isImporting {
-                ProgressView(value: libraryService.importProgress)
+                ObservedProgressView(source: libraryService, value: \.importProgress)
                     .progressViewStyle(.linear)
             } else if libraryService.isExporting {
-                ProgressView(value: libraryService.exportProgress)
+                ObservedProgressView(source: libraryService, value: \.exportProgress)
                     .progressViewStyle(.linear)
             } else if aacVersionExporter.isExporting {
-                ProgressView(value: aacVersionExporter.progress)
+                ObservedProgressView(source: aacVersionExporter, value: \.progress)
                     .progressViewStyle(.linear)
             }
         }
@@ -154,7 +154,7 @@ struct DetailAreaView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if aacVersionExporter.isExporting {
                 AACVersionProgressPanel(
-                    progress: aacVersionExporter.progress,
+                    exporter: aacVersionExporter,
                     sourceTitle: aacVersionSourceTitle
                 )
                 .padding(16)
