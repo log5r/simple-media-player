@@ -86,24 +86,46 @@ struct LibraryBookmarkResolutionTests {
         await #expect(throws: CancellationError.self) { try await task.value }
     }
 
-    @Test func deleteRemovesTheItemImmediatelyAndTheFileInAWorker() async throws {
-        let recorder = BookmarkResolutionRecorder()
+    @Test func mp4ReaderStopsWhenItsTaskIsCancelled() async throws {
+        let fixture = Bundle.allBundles.compactMap({
+            $0.url(forResource: "fragmented-video", withExtension: "mp4")
+        }).first ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/fragmented-video.mp4")
+        _ = try MP4MetadataReader.read(from: fixture)
+
+        let task = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try MP4TitleReader.title(in: fixture)
+        }
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
+    @Test func deleteRemovesTheFileInAWorkerBeforeTheItem() async throws {
+        let recorder = BookmarkResolutionRecorder { $0 == 1 }
         let fixture = try BookmarkFixture(recorder: recorder)
         defer { fixture.remove() }
         let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
         let item = try fixture.insertItem(copying: source)
         let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
+        defer { recorder.release() }
 
-        let removal = fixture.service.delete(item, from: fixture.context)
+        let deletion = Task { await fixture.service.delete(item, from: fixture.context) }
+        try await waitUntil { recorder.workerCount == 1 }
+        // The item stays until its file is gone, and a repeated request does not start another removal.
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 1)
+        await fixture.service.delete(item, from: fixture.context)
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 1)
+        recorder.release()
+        await deletion.value
 
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
-        await removal?.value
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
         #expect(recorder.mainThreadCount == 0)
         #expect(recorder.workerCount == 1)
     }
 
-    @Test func staleSnapshotDoesNotTreatADeletedItemsPendingFileAsADuplicate() async throws {
+    @Test func importDuringADeletionDoesNotTreatTheItemsFileAsADuplicate() async throws {
         let recorder = BookmarkResolutionRecorder { $0 == 1 }
         let fixture = try BookmarkFixture(recorder: recorder)
         defer { fixture.remove() }
@@ -113,15 +135,12 @@ struct LibraryBookmarkResolutionTests {
         try fixture.context.save()
         defer { recorder.release() }
 
-        fixture.service.delete(item, from: fixture.context)
-        // The caller's snapshot still lists the deleted item while its file removal is blocked.
-        let importTask = Task {
-            await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
-        }
-        // The import must finish without treating the still-present file of the deleted item as a duplicate.
-        try await Task.sleep(for: .milliseconds(200))
+        let deletion = Task { await fixture.service.delete(item, from: fixture.context) }
+        try await waitUntil { recorder.workerCount == 1 }
+        // The item and its file still exist while the removal is blocked.
+        await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         recorder.release()
-        await importTask.value
+        await deletion.value
 
         let items = try fixture.context.fetch(FetchDescriptor<MediaItem>())
         #expect(items.count == 1)
@@ -148,13 +167,13 @@ struct LibraryBookmarkResolutionTests {
             await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         }
         try await waitUntil { recorder.workerCount == 1 }
-        let removal = fixture.service.delete(item, from: fixture.context)
+        let deletion = Task { await fixture.service.delete(item, from: fixture.context) }
         try await waitUntil { recorder.workerCount == 2 }
         // The probe finishes while the deleted item's file still exists.
         recorder.release(call: 1)
         await importTask.value
         recorder.release(call: 2)
-        await removal?.value
+        await deletion.value
 
         let items = try fixture.context.fetch(FetchDescriptor<MediaItem>())
         #expect(items.count == 1)

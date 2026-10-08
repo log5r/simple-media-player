@@ -175,7 +175,7 @@ struct LibraryServicePersistenceTests {
         fixture.context.insert(item)
         try fixture.context.save()
 
-        await fixture.service.delete(item, from: fixture.context)?.value
+        await fixture.service.delete(item, from: fixture.context)
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
@@ -200,7 +200,7 @@ struct LibraryServicePersistenceTests {
         fixture.context.insert(item)
         try fixture.context.save()
 
-        await fixture.service.delete(item, from: fixture.context)?.value
+        await fixture.service.delete(item, from: fixture.context)
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)

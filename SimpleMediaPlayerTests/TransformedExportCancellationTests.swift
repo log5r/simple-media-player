@@ -86,7 +86,7 @@ struct TransformedExportCancellationTests {
         defer { task.cancel(); renderer.release() }
 
         try await renderer.waitUntilStarted()
-        await fixture.service.delete(fixture.source, from: fixture.context)?.value
+        await fixture.service.delete(fixture.source, from: fixture.context)
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
         #expect(FileManager.default.fileExists(atPath: fixture.sourceURL.path) == false)
 
@@ -260,7 +260,7 @@ struct TransformedExportCancellationTests {
         defer { task.cancel(); renderer.release() }
         try await renderer.waitUntilStarted()
 
-        await fixture.service.delete(fixture.source, from: fixture.context)?.value
+        await fixture.service.delete(fixture.source, from: fixture.context)
         renderer.release()
 
         await #expect(throws: CancellationError.self) { try await task.value }

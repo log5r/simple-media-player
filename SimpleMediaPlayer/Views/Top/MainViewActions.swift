@@ -10,7 +10,7 @@ extension MainView {
             player.clearCurrentItem()
         }
         player.queue.removeAll { $0.id == item.id }
-        libraryService.delete(item, from: modelContext)
+        Task { await libraryService.delete(item, from: modelContext) }
     }
 
     func remove(_ item: MediaItem, from playlist: Playlist) {
