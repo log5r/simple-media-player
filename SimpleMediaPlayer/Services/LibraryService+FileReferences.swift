@@ -13,29 +13,49 @@ extension LibraryService {
         resolveBookmark(reference.bookmarkData, fallbackMediaURL(forFileName: reference.fileName))
     }
 
-    /// Removes the file in a worker before the item, as before, so an interrupted deletion leaves a row with
-    /// a missing file instead of an untracked file. Imports ignore the item as soon as the deletion starts.
-    func delete(_ item: MediaItem, from context: ModelContext) async {
+    /// Removes the item immediately and its file in the returned background task. The journal entry written
+    /// before the item is deleted lets the next launch finish a removal that termination interrupted.
+    @discardableResult
+    func delete(_ item: MediaItem, from context: ModelContext) -> Task<Void, Never>? {
         let itemID = item.id
-        guard deletedItemIDs.insert(itemID).inserted else { return }
-        let reference = fileReference(for: item)
-        await Task.detached(priority: .utility) { [self] in
-            let url = resolvedURL(for: reference)
-            if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
-                ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
-            }
-            try? FileManager.default.removeItem(at: url)
-        }.value
-        guard item.isDeleted == false, item.modelContext === context else { return }
+        guard deletedItemIDs.contains(itemID) == false else { return nil }
         let linkedEntries = FetchDescriptor<PlaylistEntry>(predicate: #Predicate { $0.item?.id == itemID })
-        guard let entries = try? context.fetch(linkedEntries) else { return }
+        guard let entries = try? context.fetch(linkedEntries) else { return nil }
         // The unidirectional item relationship has no inverse to nullify on deletion.
         for entry in entries { entry.item = nil }
+        let removal = PendingFileRemovalJournal.Entry(
+            id: itemID,
+            bookmarkData: item.bookmarkData,
+            fallbackPath: fallbackMediaURL(forFileName: item.fileName).path
+        )
+        deletedItemIDs.insert(itemID)
+        removalJournal.add(removal)
         context.delete(item)
         try? context.save()
+        // Managed file names are unique per item, so a late removal cannot reach a newer import.
+        return Task.detached(priority: .utility) { [self] in removeFile(for: removal) }
     }
 
-    /// Checked after every awaited probe: an item being deleted can still have its file during the probe.
+    /// Finishes removals recorded by earlier launches; call once when the app starts.
+    @discardableResult
+    func resumePendingFileRemovals() -> Task<Void, Never> {
+        Task.detached(priority: .utility) { [self] in
+            for removal in removalJournal.entries(in: mediaDirectoryURL()) {
+                removeFile(for: removal)
+            }
+        }
+    }
+
+    private nonisolated func removeFile(for removal: PendingFileRemovalJournal.Entry) {
+        let url = resolveBookmark(removal.bookmarkData, URL(fileURLWithPath: removal.fallbackPath))
+        if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
+            ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
+        }
+        try? FileManager.default.removeItem(at: url)
+        removalJournal.remove(id: removal.id)
+    }
+
+    /// Checked after every awaited probe: a deleted item's file can outlive the item until its removal runs.
     func isLibraryItemLive(_ item: MediaItem, in context: ModelContext) -> Bool {
         deletedItemIDs.contains(item.id) == false && item.isDeleted == false && item.modelContext === context
     }

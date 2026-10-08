@@ -29,6 +29,7 @@ final class LibraryService {
     @ObservationIgnored private let musicMetadataProvider: MusicLibraryMetadataProvider
     @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
+    @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
     /// Deleted items can stay in import snapshots while their files are removed in the background.
@@ -62,10 +63,12 @@ final class LibraryService {
         artworkLoader: LibraryArtworkLoader = .shared,
         editabilityChecker: EmbeddedMetadataEditabilityChecker = EmbeddedMetadataEditabilityChecker(),
         musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider(),
-        resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve
+        resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve,
+        removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal()
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
         self.resolveBookmark = resolveBookmark
+        self.removalJournal = removalJournal
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
         self.artworkLoader = artworkLoader

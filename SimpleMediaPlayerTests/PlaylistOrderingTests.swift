@@ -29,7 +29,7 @@ struct PlaylistOrderingTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let deletedFile = directory.appendingPathComponent(deleted.fileName)
         try Data("audio".utf8).write(to: deletedFile)
-        await LibraryService(mediaDirectoryURL: directory).delete(deleted, from: context)
+        await LibraryService(mediaDirectoryURL: directory).delete(deleted, from: context)?.value
 
         #expect(FileManager.default.fileExists(atPath: deletedFile.path) == false)
         #expect(try context.fetchCount(FetchDescriptor<MediaItem>()) == 3)

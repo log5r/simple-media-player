@@ -101,50 +101,84 @@ struct LibraryBookmarkResolutionTests {
         await #expect(throws: CancellationError.self) { try await task.value }
     }
 
-    @Test func deleteRemovesTheFileInAWorkerBeforeTheItem() async throws {
+    @Test func deleteRemovesTheItemImmediatelyAndJournalsTheFileRemoval() async throws {
         let recorder = BookmarkResolutionRecorder { $0 == 1 }
+        let fixture = try BookmarkFixture(recorder: recorder)
+        defer { fixture.remove() }
+        let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
+        let item = try fixture.insertItem(copying: source)
+        let itemID = item.id
+        let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
+        defer { recorder.release() }
+
+        let removal = fixture.service.delete(item, from: fixture.context)
+
+        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
+        #expect(fixture.service.delete(item, from: fixture.context) == nil)
+        try await waitUntil { recorder.workerCount == 1 }
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).map(\.id) == [itemID])
+        recorder.release()
+        await removal?.value
+        #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(recorder.mainThreadCount == 0)
+        #expect(recorder.workerCount == 1)
+    }
+
+    @Test func interruptedFileRemovalResumesAtTheNextLaunch() async throws {
+        let recorder = BookmarkResolutionRecorder()
         let fixture = try BookmarkFixture(recorder: recorder)
         defer { fixture.remove() }
         let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
         let item = try fixture.insertItem(copying: source)
         let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
-        defer { recorder.release() }
+        fixture.journal.add(PendingFileRemovalJournal.Entry(
+            id: item.id, bookmarkData: item.bookmarkData, fallbackPath: fileURL.path
+        ))
+        let otherDirectory = fixture.directory.appendingPathComponent("OtherMedia")
+        try FileManager.default.createDirectory(at: otherDirectory, withIntermediateDirectories: true)
+        let otherFile = otherDirectory.appendingPathComponent("\(UUID().uuidString).wav")
+        try FileManager.default.copyItem(at: source, to: otherFile)
+        fixture.journal.add(PendingFileRemovalJournal.Entry(
+            id: UUID(), bookmarkData: Data([0xFF]), fallbackPath: otherFile.path
+        ))
 
-        let deletion = Task { await fixture.service.delete(item, from: fixture.context) }
-        try await waitUntil { recorder.workerCount == 1 }
-        // The item stays until its file is gone, and a repeated request does not start another removal.
-        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 1)
-        await fixture.service.delete(item, from: fixture.context)
-        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 1)
-        recorder.release()
-        await deletion.value
+        let relaunched = LibraryService(
+            mediaDirectoryURL: fixture.mediaDirectory,
+            resolveBookmark: recorder.resolve,
+            removalJournal: fixture.journal
+        )
+        await relaunched.resumePendingFileRemovals().value
 
-        #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        // Entries of another media directory belong to another service.
+        #expect(FileManager.default.fileExists(atPath: otherFile.path))
+        #expect(fixture.journal.entries(in: otherDirectory).count == 1)
         #expect(recorder.mainThreadCount == 0)
-        #expect(recorder.workerCount == 1)
     }
 
-    @Test func importDuringADeletionDoesNotTreatTheItemsFileAsADuplicate() async throws {
+    @Test func staleSnapshotDoesNotTreatADeletedItemsPendingFileAsADuplicate() async throws {
         let recorder = BookmarkResolutionRecorder { $0 == 1 }
         let fixture = try BookmarkFixture(recorder: recorder)
         defer { fixture.remove() }
         let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
         let item = try fixture.insertItem(copying: source)
+        let itemID = item.id
         item.importFingerprint = try MediaImportFingerprint.read(from: source)
         try fixture.context.save()
         defer { recorder.release() }
 
-        let deletion = Task { await fixture.service.delete(item, from: fixture.context) }
+        let removal = fixture.service.delete(item, from: fixture.context)
         try await waitUntil { recorder.workerCount == 1 }
-        // The item and its file still exist while the removal is blocked.
+        // The caller's snapshot still lists the deleted item while its file removal is blocked.
         await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         recorder.release()
-        await deletion.value
+        await removal?.value
 
         let items = try fixture.context.fetch(FetchDescriptor<MediaItem>())
         #expect(items.count == 1)
-        #expect(items.first?.id != item.id)
+        #expect(items.first?.id != itemID)
         #expect(fixture.service.lastImportErrors.isEmpty)
     }
 
@@ -167,13 +201,13 @@ struct LibraryBookmarkResolutionTests {
             await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         }
         try await waitUntil { recorder.workerCount == 1 }
-        let deletion = Task { await fixture.service.delete(item, from: fixture.context) }
+        let removal = fixture.service.delete(item, from: fixture.context)
         try await waitUntil { recorder.workerCount == 2 }
         // The probe finishes while the deleted item's file still exists.
         recorder.release(call: 1)
         await importTask.value
         recorder.release(call: 2)
-        await deletion.value
+        await removal?.value
 
         let items = try fixture.context.fetch(FetchDescriptor<MediaItem>())
         #expect(items.count == 1)
@@ -216,6 +250,8 @@ private struct BookmarkFixture {
     let mediaDirectory: URL
     let container: ModelContainer
     let service: LibraryService
+    let journal: PendingFileRemovalJournal
+    private let journalSuiteName = "LibraryBookmarkResolutionTests-\(UUID().uuidString)"
     var context: ModelContext { container.mainContext }
 
     init(recorder: BookmarkResolutionRecorder) throws {
@@ -225,10 +261,16 @@ private struct BookmarkFixture {
         let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         container = try ModelContainer(for: schema, configurations: [configuration])
-        service = LibraryService(mediaDirectoryURL: mediaDirectory, resolveBookmark: recorder.resolve)
+        journal = PendingFileRemovalJournal(defaults: try #require(UserDefaults(suiteName: journalSuiteName)))
+        service = LibraryService(
+            mediaDirectoryURL: mediaDirectory, resolveBookmark: recorder.resolve, removalJournal: journal
+        )
     }
 
-    func remove() { try? FileManager.default.removeItem(at: directory) }
+    func remove() {
+        try? FileManager.default.removeItem(at: directory)
+        UserDefaults(suiteName: journalSuiteName)?.removePersistentDomain(forName: journalSuiteName)
+    }
 
     func makeAudio(named name: String, frameCount: AVAudioFrameCount) throws -> URL {
         let url = directory.appendingPathComponent(name)

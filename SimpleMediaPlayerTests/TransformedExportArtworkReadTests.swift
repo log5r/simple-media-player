@@ -107,7 +107,7 @@ struct TransformedExportArtworkReadTests {
 
         try await probe.waitUntilReading()
         if deleteSource {
-            await fixture.service.delete(fixture.source, from: fixture.context)
+            await fixture.service.delete(fixture.source, from: fixture.context)?.value
         } else {
             task.cancel()
         }
