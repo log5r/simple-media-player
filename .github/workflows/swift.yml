@@ -5,13 +5,26 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The weekly run also builds x86_64, which push and pull request runs skip.
+  schedule:
+    - cron: '0 18 * * 0'
+  workflow_dispatch:
 
 jobs:
   build-and-test:
     runs-on: xcode-27
+    env:
+      UNIVERSAL_BUILD: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - uses: actions/checkout@v7
+
+      - name: Restore Swift package checkouts
+        uses: actions/cache@v6
+        with:
+          path: .build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('SimpleMediaPlayer.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
 
       - name: Select Xcode with an iOS 27.1 or newer SDK
         run: |
@@ -26,7 +39,9 @@ jobs:
           echo "::error::Install Xcode 27.1 (Beta is supported) on the xcode-27 runner."
           exit 1
 
-      - name: Build for macOS
+      # Runs before build-for-testing so that the test steps use the arm64 products.
+      - name: Build for macOS (arm64 and x86_64)
+        if: ${{ env.UNIVERSAL_BUILD == 'true' }}
         run: |
           xcodebuild \
             -project SimpleMediaPlayer.xcodeproj \
@@ -37,8 +52,24 @@ jobs:
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO build
 
+      # Builds the app and test targets for arm64 once. The test steps reuse these products.
+      - name: Build for macOS testing
+        run: |
+          xcodebuild \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO build-for-testing
+
       - name: Build for iOS Simulator
         run: |
+          arch_settings=()
+          if [[ "${UNIVERSAL_BUILD}" != true ]]; then
+            arch_settings=(ARCHS=arm64)
+          fi
           xcodebuild \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
@@ -46,6 +77,7 @@ jobs:
             -derivedDataPath .build/DerivedData \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
+            "${arch_settings[@]}" \
             CODE_SIGNING_ALLOWED=NO build
 
       - name: Run macOS unit tests
@@ -55,14 +87,14 @@ jobs:
           xcodebuild \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/DerivedData \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
             -only-testing:SimpleMediaPlayerTests \
             -parallel-testing-enabled NO \
             -resultBundlePath "${RUNNER_TEMP}/TestResults/AllUnitTests.xcresult" \
-            CODE_SIGNING_ALLOWED=NO test
+            CODE_SIGNING_ALLOWED=NO test-without-building
 
       # Diagnostic runs retain the original failure and isolate each suite from the others.
       - name: Diagnose lazy lyrics tests in isolation
@@ -73,13 +105,13 @@ jobs:
           xcodebuild \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/DerivedData \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
             -only-testing:SimpleMediaPlayerTests/LazyLyricsLoadingTests \
             -resultBundlePath "${RUNNER_TEMP}/TestResults/LazyLyricsLoadingTests.xcresult" \
-            CODE_SIGNING_ALLOWED=NO test
+            CODE_SIGNING_ALLOWED=NO test-without-building
 
       - name: Diagnose loudness normalization tests in isolation
         id: loudness_tests
@@ -89,13 +121,13 @@ jobs:
           xcodebuild \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
-            -destination 'platform=macOS' \
+            -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/DerivedData \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
             -only-testing:SimpleMediaPlayerTests/AudioLoudnessNormalizationTests \
             -resultBundlePath "${RUNNER_TEMP}/TestResults/AudioLoudnessNormalizationTests.xcresult" \
-            CODE_SIGNING_ALLOWED=NO test
+            CODE_SIGNING_ALLOWED=NO test-without-building
 
       - name: Summarize macOS test outcomes
         if: ${{ always() && steps.unit_tests.outcome != 'skipped' }}
