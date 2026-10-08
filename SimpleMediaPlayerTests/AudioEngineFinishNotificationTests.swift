@@ -38,6 +38,35 @@ struct AudioEngineFinishNotificationTests {
         #expect(probe.finishedCount == 1)
     }
 
+    @Test func finishQueuedBeforeSeekBackIsNotDelivered() async throws {
+        let url = try await makeSilentAudio()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let probe = try await makeEngineAtEnd(of: url)
+        defer { probe.engine.suspend() }
+
+        probe.engine.play()
+        probe.engine.seek(to: 0, autoPlay: false)
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(probe.finishedCount == 0)
+    }
+
+    @Test func finishQueuedBeforePauseAndResumeIsDeliveredOnlyForResumedPlayback() async throws {
+        let url = try await makeSilentAudio()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let probe = try await makeEngineAtEnd(of: url)
+        defer { probe.engine.suspend() }
+
+        // 再開後の再生も終端から始まるため、通知は再開した再生の 1 回だけになる
+        probe.engine.play()
+        probe.engine.pause()
+        probe.engine.play()
+        try await waitUntil { probe.finishedCount >= 1 }
+        try await Task.sleep(for: .milliseconds(200))
+
+        #expect(probe.finishedCount == 1)
+    }
+
     @Test func finishQueuedBeforeSuspendIsNotDelivered() async throws {
         let url = try await makeSilentAudio()
         defer { try? FileManager.default.removeItem(at: url) }
