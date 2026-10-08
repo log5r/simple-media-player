@@ -182,7 +182,9 @@ final class PlayerViewModel {
             self?.acceptAudioFrame(frame)
         }
         audioEngine.onFinished = { [weak self] in
-            self?.next()
+            // 停止・一時停止の直前に終端へ達した曲の通知では次の曲へ進まない
+            guard let self, self.isPlaying, !self.isVideoMode else { return }
+            self.next()
         }
         videoService.onFinished = { [weak self] in
             self?.next()

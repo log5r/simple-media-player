@@ -57,6 +57,36 @@ struct PlayerPlaybackStateTests {
         #expect(fixture.player.isPaused == false)
     }
 
+    @Test func audioFinishAfterStopOrPauseDoesNotAdvanceQueue() {
+        let first = makePlaybackStateItem(id: 1, title: "One")
+        let second = makePlaybackStateItem(id: 2, title: "Two")
+        let fixture = makePlayerFixture(urlsByID: [
+            first.id: URL(fileURLWithPath: "/tmp/one.mp3"),
+            second.id: URL(fileURLWithPath: "/tmp/two.mp3")
+        ])
+        fixture.player.play(item: first, in: [first, second])
+        fixture.player.pause()
+        fixture.audio.onFinished?()
+
+        #expect(fixture.player.currentItem?.id == first.id)
+        #expect(fixture.player.isPaused)
+        #expect(fixture.audio.loadedURLs.count == 1)
+
+        fixture.player.resume()
+        fixture.player.stop()
+        fixture.audio.onFinished?()
+
+        #expect(fixture.player.currentItem?.id == first.id)
+        #expect(fixture.player.isPlaying == false)
+        #expect(fixture.audio.loadedURLs.count == 1)
+
+        fixture.player.resume()
+        fixture.audio.onFinished?()
+
+        #expect(fixture.player.currentItem?.id == second.id)
+        #expect(fixture.player.isPlaying)
+    }
+
     @Test func newPlaybackAndResolutionFailureClearPause() {
         let first = makePlaybackStateItem(id: 1, title: "One")
         let second = makePlaybackStateItem(id: 2, title: "Two")

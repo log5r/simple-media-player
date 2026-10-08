@@ -28,6 +28,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var audioFile: AVAudioFile?
     private var currentURL: URL?
     private var currentReadableFile: ExtendedAudioCache.ReadableFile?
+    // 最後に処理した再生操作の ID。終端通知をその操作に結び付ける
+    private var appliedPlaybackRequestID: UUID?
     private var preparationTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var playWhenReady = false
@@ -48,6 +50,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var cachedDuration: TimeInterval = 0
     private var pendingSeek: PendingSeek?
     private var activeLoadID = UUID()
+    // 再生状態を変える操作を呼ぶたびに更新する。終端通知の有効性判定に使う
+    private var activePlaybackRequestID = UUID()
 
     var onFinished: (@MainActor () -> Void)?
     var onError: (@MainActor (String) -> Void)?
@@ -149,8 +153,10 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         stateLock.lock()
         pendingSeek = nil
         activeLoadID = requestID
+        let playbackRequestID = renewPlaybackRequestLocked()
         stateLock.unlock()
         controlQueue.async {
+            self.appliedPlaybackRequestID = playbackRequestID
             self.preparationTask?.cancel()
             self.loadGeneration += 1
             let generation = self.loadGeneration
@@ -232,7 +238,11 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     }
 
     func play() {
+        stateLock.lock()
+        let playbackRequestID = renewPlaybackRequestLocked()
+        stateLock.unlock()
         controlQueue.async {
+            self.appliedPlaybackRequestID = playbackRequestID
             if self.audioFile == nil, self.preparationTask != nil {
                 self.playWhenReady = true
             } else {
@@ -251,8 +261,10 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
                 seekID: request.seekID
             )
         }
+        let playbackRequestID = renewPlaybackRequestLocked()
         stateLock.unlock()
         controlQueue.async {
+            self.appliedPlaybackRequestID = playbackRequestID
             self.playWhenReady = false
             self.loudnessNormalization.cancel()
             self.seekFrame = self.frame(for: self.preciseCurrentTime())
@@ -267,8 +279,10 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     func stop(reset: Bool) {
         stateLock.lock()
         pendingSeek = nil
+        let playbackRequestID = renewPlaybackRequestLocked()
         stateLock.unlock()
         controlQueue.async {
+            self.appliedPlaybackRequestID = playbackRequestID
             self.playWhenReady = false
             self.performStop(reset: reset)
         }
@@ -280,8 +294,10 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         stateLock.lock()
         pendingSeek = nil
         activeLoadID = UUID()
+        let playbackRequestID = renewPlaybackRequestLocked()
         stateLock.unlock()
         controlQueue.async {
+            self.appliedPlaybackRequestID = playbackRequestID
             // キャンセル後に完了した準備タスクの結果を受け付けない。
             self.loadGeneration += 1
             self.preparationTask?.cancel()
@@ -354,12 +370,17 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         stateLock.lock()
         let requestID = activeLoadID
         pendingSeek = PendingSeek(time: time, autoPlay: autoPlay, loadID: requestID, seekID: seekID)
+        let playbackRequestID = renewPlaybackRequestLocked()
         stateLock.unlock()
         controlQueue.async {
+            self.appliedPlaybackRequestID = playbackRequestID
             self.performPendingSeek(for: requestID, seekID: seekID)
         }
     }
 
+}
+
+nonisolated extension AudioEngineService {
     private func performPlay() {
         idleSuspension.cancel()
         guard let audioFile else { return }
@@ -416,9 +437,6 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         }
     }
 
-}
-
-nonisolated extension AudioEngineService {
     private func finishPlayback(at finalFrame: AVAudioFramePosition) {
         loudnessNormalization.cancel()
         setDisplayClock(playing: false)
@@ -428,7 +446,18 @@ nonisolated extension AudioEngineService {
         seekFrame = finalFrame
         resetDisplayClock(to: Double(finalFrame) / sampleRate)
         suspendAfterTail()
-        Task { @MainActor in self.onFinished?() }
+        notifyFinished()
+    }
+
+    // 終端処理が controlQueue に積まれた後、MainActor で曲の切り替え・停止・
+    // 一時停止・シーク・再開が呼ばれることがある。終端時点で最後に処理していた
+    // 再生操作の ID を MainActor 上で照合し、その後に操作があれば通知しない
+    private func notifyFinished() {
+        guard let playbackRequestID = appliedPlaybackRequestID else { return }
+        Task { @MainActor in
+            guard self.isActivePlaybackRequest(playbackRequestID) else { return }
+            self.onFinished?()
+        }
     }
 
     // 設定を再生中に切り替えても段差ノイズが出ないよう、補正量を短くランプさせる。
@@ -535,7 +564,7 @@ nonisolated extension AudioEngineService {
     private func schedule(file: AVAudioFile, from frame: AVAudioFramePosition) {
         let remaining = AVAudioFrameCount(max(0, file.length - frame))
         guard remaining > 0 else {
-            Task { @MainActor in self.onFinished?() }
+            notifyFinished()
             return
         }
         startFrame = frame
@@ -601,6 +630,19 @@ nonisolated extension AudioEngineService {
         stateLock.lock()
         defer { stateLock.unlock() }
         return activeLoadID == requestID
+    }
+
+    private func isActivePlaybackRequest(_ requestID: UUID) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return activePlaybackRequestID == requestID
+    }
+
+    // stateLock を保持した状態で呼ぶこと
+    private func renewPlaybackRequestLocked() -> UUID {
+        let requestID = UUID()
+        activePlaybackRequestID = requestID
+        return requestID
     }
 
     private func installTap() {
