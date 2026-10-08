@@ -3,25 +3,39 @@ import CoreMedia
 import Foundation
 import UniformTypeIdentifiers
 
-enum MediaInfoInspector {
-    static func missingFileDetails(for item: MediaInfoItemSnapshot) -> MediaInfoDetails {
-        MediaInfoDetails(
-            fileRows: [
-                MediaInfoRow(id: "fileName", label: L10n.string("File"), value: item.fileName)
-            ],
-            summaryRows: summaryRows(for: item),
-            sections: [],
-            errorMessage: L10n.string("Could not resolve the media file.")
-        )
-    }
+private nonisolated struct FileAttributes: Sendable {
+    let byteCount: Int?
+    let contentType: UTType?
+    let creationDate: Date?
+    let contentModificationDate: Date?
 
+    init(url: URL) {
+        let keys: Set<URLResourceKey> = [
+            .fileSizeKey,
+            .totalFileSizeKey,
+            .contentTypeKey,
+            .creationDateKey,
+            .contentModificationDateKey
+        ]
+        let values = try? url.resourceValues(forKeys: keys)
+        byteCount = values?.totalFileSize ?? values?.fileSize
+        contentType = values?.contentType
+        creationDate = values?.creationDate
+        contentModificationDate = values?.contentModificationDate
+    }
+}
+
+enum MediaInfoInspector {
     static func loadDetails(for item: MediaInfoItemSnapshot, url: URL) async -> MediaInfoDetails {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
 
-        let fileRows = fileRows(for: item, url: url)
+        let attributes = await Task.detached(priority: .userInitiated) {
+            FileAttributes(url: url)
+        }.value
+        let fileRows = fileRows(for: item, url: url, attributes: attributes)
         if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
             var rows = [MediaInfoRow(id: "codec", label: L10n.string("Codec"), value: info.codec)]
             if let sampleRate = info.sampleRate {
@@ -65,16 +79,10 @@ enum MediaInfoInspector {
         }
     }
 
-    private static func fileRows(for item: MediaInfoItemSnapshot, url: URL) -> [MediaInfoRow] {
-        let keys: Set<URLResourceKey> = [
-            .fileSizeKey,
-            .totalFileSizeKey,
-            .contentTypeKey,
-            .creationDateKey,
-            .contentModificationDateKey
-        ]
-        let values = try? url.resourceValues(forKeys: keys)
-        let byteCount = values?.totalFileSize ?? values?.fileSize
+    private static func fileRows(
+        for item: MediaInfoItemSnapshot, url: URL, attributes: FileAttributes
+    ) -> [MediaInfoRow] {
+        let byteCount = attributes.byteCount
 
         var rows = [
             MediaInfoRow(id: "fileName", label: L10n.string("File"), value: item.fileName),
@@ -88,17 +96,17 @@ enum MediaInfoInspector {
                 value: "\(MediaInfoTextFormatter.fileSize(bytes: Int64(byteCount))) (\(byteCount) bytes)"
             ))
         }
-        if let type = values?.contentType {
+        if let type = attributes.contentType {
             rows.append(MediaInfoRow(id: "contentType", label: L10n.string("Content Type"), value: type.identifier))
         }
-        if let creationDate = values?.creationDate {
+        if let creationDate = attributes.creationDate {
             rows.append(MediaInfoRow(
                 id: "created",
                 label: L10n.string("Created"),
                 value: creationDate.formatted(date: .numeric, time: .shortened)
             ))
         }
-        if let modifiedDate = values?.contentModificationDate {
+        if let modifiedDate = attributes.contentModificationDate {
             rows.append(MediaInfoRow(
                 id: "modified",
                 label: L10n.string("Modified"),

@@ -106,8 +106,9 @@ struct TransformedExportArtworkReadTests {
         defer { task.cancel(); probe.release() }
 
         try await probe.waitUntilReading()
+        var fileRemoval: Task<Void, Never>?
         if deleteSource {
-            fixture.service.delete(fixture.source, from: fixture.context)
+            fileRemoval = fixture.service.delete(fixture.source, from: fixture.context)
         } else {
             task.cancel()
         }
@@ -121,6 +122,7 @@ struct TransformedExportArtworkReadTests {
         #expect(try fixture.renderedFiles().isEmpty)
         if deleteSource {
             #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
+            await fileRemoval?.value
             #expect(try fixture.mediaFiles().isEmpty)
         } else {
             try fixture.expectOnlyOriginalRemains()

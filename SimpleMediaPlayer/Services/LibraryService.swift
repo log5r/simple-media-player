@@ -28,8 +28,10 @@ final class LibraryService {
     @ObservationIgnored private let lyricsReader: EmbeddedLyricsReader
     @ObservationIgnored private let musicMetadataProvider: MusicLibraryMetadataProvider
     @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
+    @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
+    @ObservationIgnored var pendingFileRemovals: [UUID: Task<Void, Never>] = [:]
 
     var isImporting = false
     var importProgress = 0.0
@@ -58,9 +60,11 @@ final class LibraryService {
         lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader(),
         artworkLoader: LibraryArtworkLoader = .shared,
         editabilityChecker: EmbeddedMetadataEditabilityChecker = EmbeddedMetadataEditabilityChecker(),
-        musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider()
+        musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider(),
+        resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
+        self.resolveBookmark = resolveBookmark
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
         self.artworkLoader = artworkLoader
@@ -96,6 +100,8 @@ final class LibraryService {
             importCompletedFileCount = importTotalFileCount
             currentImportFileName = nil
         }
+        // A stale caller snapshot can still list a deleted item whose file is not yet removed.
+        await waitForPendingFileRemovals()
 
         var itemsByID: [UUID: MediaItem] = [:]
         do {
@@ -112,7 +118,7 @@ final class LibraryService {
             }
         }
         let legacyItems = itemsByID.values.filter { $0.importFingerprint == nil }
-        var legacyItemsBySize: [UInt64: [MediaItem]]?
+        var legacyItemsBySize: [UInt64: [(item: MediaItem, url: URL)]]?
         let musicSession = musicMetadataProvider.makeSession()
 
         for (index, url) in urls.enumerated() {
@@ -130,9 +136,9 @@ final class LibraryService {
                     let size = try await Task.detached(priority: .utility) {
                         try MediaImportFingerprint.fileSize(of: url)
                     }.value
-                    for candidate in legacyItemsBySize?[size] ?? [] where candidate.importFingerprint == nil {
-                        guard let candidateURL = resolvedURL(for: candidate),
-                              let candidateFingerprint = try? await importFingerprint(for: candidateURL)
+                    for (candidate, candidateURL) in legacyItemsBySize?[size] ?? []
+                    where candidate.importFingerprint == nil {
+                        guard let candidateFingerprint = try? await importFingerprint(for: candidateURL)
                         else { continue }
                         candidate.importFingerprint = candidateFingerprint
                         itemsByFingerprint[candidateFingerprint, default: []].append(candidate)
@@ -164,23 +170,21 @@ final class LibraryService {
     }
 
     func resolvedURL(for item: MediaItem) -> URL? {
-        EmbeddedMetadataEditabilityChecker.resolve(item.bookmarkData, fallbackMediaURL(forFileName: item.fileName))
+        resolvedURL(for: fileReference(for: item))
     }
 
     func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
         let snapshot = MediaInfoItemSnapshot(item: item)
-        guard let url = resolvedURL(for: item) else {
-            return MediaInfoInspector.missingFileDetails(for: snapshot)
-        }
-
+        let reference = fileReference(for: item)
+        let url = await Task.detached(priority: .userInitiated) { [self] in
+            resolvedURL(for: reference)
+        }.value
         return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
     }
 
     func editableMetadataItemIDs(for items: [MediaItem]) async throws -> Set<UUID> {
         try Task.checkCancellation()
-        let inputs = items.map {
-            EmbeddedMetadataEditabilityChecker.Input(id: $0.id, bookmarkData: $0.bookmarkData, fileName: $0.fileName)
-        }
+        let inputs = items.map(fileReference(for:))
         return try await editabilityChecker.editableIDs(for: inputs) { self.mediaDirectoryURL() }
     }
 
@@ -448,21 +452,6 @@ extension LibraryService {
         mediaDirectoryURL().appendingPathComponent(fileName)
     }
 
-    func delete(_ item: MediaItem, from context: ModelContext) {
-        let itemID = item.id
-        let linkedEntries = FetchDescriptor<PlaylistEntry>(predicate: #Predicate { $0.item?.id == itemID })
-        guard let entries = try? context.fetch(linkedEntries) else { return }
-        // The unidirectional item relationship has no inverse to nullify on deletion.
-        for entry in entries { entry.item = nil }
-        if let url = resolvedURL(for: item) {
-            let cacheURL = ExtendedAudioSource.cacheURL(for: url)
-            if let cacheURL { ExtendedAudioSource.removeCacheInBackground(at: cacheURL) }
-            try? FileManager.default.removeItem(at: url)
-        }
-        context.delete(item)
-        try? context.save()
-    }
-
     private func makeMediaItem(
         from sourceURL: URL, importFingerprint: String, musicSession: MusicLibraryMetadataSession
     ) async throws -> MediaItem {
@@ -646,33 +635,6 @@ extension LibraryService {
         try await Task.detached(priority: .utility) {
             try MediaImportFingerprint.read(from: url)
         }.value
-    }
-
-    private func hasAvailableFile(for items: [MediaItem]) async -> Bool {
-        guard items.isEmpty == false else { return false }
-        let urls = items.compactMap { resolvedURL(for: $0) }
-        return await Task.detached(priority: .utility) {
-            urls.contains { (try? MediaImportFingerprint.fileSize(of: $0)) != nil }
-        }.value
-    }
-
-    private func groupImportCandidatesBySize(_ items: [MediaItem]) async -> [UInt64: [MediaItem]] {
-        let candidates = items.compactMap { item -> (UUID, URL)? in
-            guard let url = resolvedURL(for: item) else { return nil }
-            return (item.id, url)
-        }
-        let sizes = await Task.detached(priority: .utility) {
-            var sizes: [UUID: UInt64] = [:]
-            for (id, url) in candidates {
-                sizes[id] = try? MediaImportFingerprint.fileSize(of: url)
-            }
-            return sizes
-        }.value
-        var grouped: [UInt64: [MediaItem]] = [:]
-        for item in items {
-            if let size = sizes[item.id] { grouped[size, default: []].append(item) }
-        }
-        return grouped
     }
 
     func refreshMissingLyrics(for item: MediaItem, in context: ModelContext) async {
