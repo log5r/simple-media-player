@@ -25,6 +25,7 @@ struct MusicAnalysisCacheTests {
         defer { try? FileManager.default.removeItem(at: moved) }
         #expect(moved != original)
         #expect(!FileManager.default.fileExists(atPath: original.path))
+        guard #available(macOS 27, iOS 27, *) else { return }
         let service = MusicAnalysisService(readableFile: { _ in
             Issue.record("A tag-only save must not trigger reanalysis")
             throw CancellationError()
@@ -73,6 +74,7 @@ struct MusicAnalysisCacheTests {
 
     @Test(.timeLimit(.minutes(1)))
     func extendedDecodeLeavesTheActorAvailableAndReleasesCancelledFiles() async throws {
+        guard #available(macOS 27, iOS 27, *) else { return }
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let decoder = BlockingDecoder()
