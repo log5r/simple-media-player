@@ -28,6 +28,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var audioFile: AVAudioFile?
     private var currentURL: URL?
     private var currentReadableFile: ExtendedAudioCache.ReadableFile?
+    // audioFile を読み込んだ load の ID。終端通知を発行元の曲に結び付ける
+    private var loadedRequestID: UUID?
     private var preparationTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var playWhenReady = false
@@ -204,6 +206,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         preparationTask = nil
         currentReadableFile = readableFile
         audioFile = file
+        loadedRequestID = requestID
         sampleRate = file.fileFormat.sampleRate
         loudnessNormalization.load(url)
         let duration = Double(file.length) / file.fileFormat.sampleRate
@@ -222,13 +225,6 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
             playWhenReady = false
             performPlay()
         }
-    }
-
-    private func releaseLoadedAudio() {
-        audioFile = nil
-        currentReadableFile?.release()
-        currentReadableFile = nil
-        currentURL = nil
     }
 
     func play() {
@@ -419,6 +415,14 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
 }
 
 nonisolated extension AudioEngineService {
+    private func releaseLoadedAudio() {
+        audioFile = nil
+        loadedRequestID = nil
+        currentReadableFile?.release()
+        currentReadableFile = nil
+        currentURL = nil
+    }
+
     private func finishPlayback(at finalFrame: AVAudioFramePosition) {
         loudnessNormalization.cancel()
         setDisplayClock(playing: false)
@@ -428,7 +432,19 @@ nonisolated extension AudioEngineService {
         seekFrame = finalFrame
         resetDisplayClock(to: Double(finalFrame) / sampleRate)
         suspendAfterTail()
-        Task { @MainActor in self.onFinished?() }
+        notifyFinished()
+    }
+
+    // 終端処理が controlQueue に積まれた後、MainActor で次の曲の load が
+    // 呼ばれることがある。通知時点の activeLoadID ではなく、終端に達した
+    // 曲の load ID を MainActor 上で照合し、切り替え後の曲を基準に
+    // onFinished が走らないようにする
+    private func notifyFinished() {
+        guard let requestID = loadedRequestID else { return }
+        Task { @MainActor in
+            guard self.isActiveLoad(requestID) else { return }
+            self.onFinished?()
+        }
     }
 
     // 設定を再生中に切り替えても段差ノイズが出ないよう、補正量を短くランプさせる。
@@ -535,7 +551,7 @@ nonisolated extension AudioEngineService {
     private func schedule(file: AVAudioFile, from frame: AVAudioFramePosition) {
         let remaining = AVAudioFrameCount(max(0, file.length - frame))
         guard remaining > 0 else {
-            Task { @MainActor in self.onFinished?() }
+            notifyFinished()
             return
         }
         startFrame = frame
