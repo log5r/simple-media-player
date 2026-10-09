@@ -56,11 +56,7 @@ struct LibraryBookmarkResolutionTests {
         let task = Task { try await fixture.service.makeExportPlan(for: items) }
         defer { recorder.release() }
 
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-        while recorder.workerCount == 0 && ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        try #require(recorder.workerCount > 0)
+        await recorder.waitForCalls(1)
         task.cancel()
         recorder.release()
 
@@ -115,7 +111,7 @@ struct LibraryBookmarkResolutionTests {
 
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
         #expect(fixture.service.delete(item, from: fixture.context) == nil)
-        try await waitUntil { recorder.workerCount == 1 }
+        await recorder.waitForCalls(1)
         #expect(fixture.journal.entries(in: fixture.mediaDirectory).map(\.id) == [itemID])
         recorder.release()
         await removal?.value
@@ -206,7 +202,7 @@ struct LibraryBookmarkResolutionTests {
         defer { recorder.release() }
 
         let removal = fixture.service.delete(item, from: fixture.context)
-        try await waitUntil { recorder.workerCount == 1 }
+        await recorder.waitForCalls(1)
         // The caller's snapshot still lists the deleted item while its file removal is blocked.
         await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         recorder.release()
@@ -236,9 +232,9 @@ struct LibraryBookmarkResolutionTests {
         let importTask = Task {
             await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         }
-        try await waitUntil { recorder.workerCount == 1 }
+        await recorder.waitForCalls(1)
         let removal = fixture.service.delete(item, from: fixture.context)
-        try await waitUntil { recorder.workerCount == 2 }
+        await recorder.waitForCalls(2)
         // The probe finishes while the deleted item's file still exists.
         recorder.release(call: 1)
         await importTask.value
@@ -270,14 +266,6 @@ struct LibraryBookmarkResolutionTests {
         #expect(recorder.mainThreadCount == 0)
         #expect(recorder.workerCount == 1)
     }
-}
-
-private func waitUntil(_ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-    while condition() == false && ContinuousClock.now < deadline {
-        try await Task.sleep(for: .milliseconds(10))
-    }
-    try #require(condition())
 }
 
 @MainActor
@@ -334,13 +322,17 @@ private struct BookmarkFixture {
     }
 }
 
+/// Blocked resolutions occupy cooperative threads, so tests wait for them with continuations resumed by the
+/// resolving thread instead of `Task.sleep`, whose wake-up needs a free cooperative thread.
 nonisolated private final class BookmarkResolutionRecorder: @unchecked Sendable {
+    private static let blockTimeout: DispatchTimeInterval = .seconds(30)
     private let lock = NSLock()
     private let blocks: @Sendable (Int) -> Bool
     private var counts = (mainThread: 0, worker: 0)
     private var gates: [Int: DispatchSemaphore] = [:]
     private var releasedCalls: Set<Int> = []
     private var isReleased = false
+    private var waiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     /// Blocks each resolution whose 1-based call number satisfies `blocks` until it is released.
     init(blocking blocks: @escaping @Sendable (Int) -> Bool = { _ in false }) {
@@ -350,16 +342,31 @@ nonisolated private final class BookmarkResolutionRecorder: @unchecked Sendable 
     var mainThreadCount: Int { lock.withLock { counts.mainThread } }
     var workerCount: Int { lock.withLock { counts.worker } }
 
+    func waitForCalls(_ count: Int) async {
+        await withCheckedContinuation { continuation in
+            let isReady = lock.withLock {
+                guard counts.mainThread + counts.worker < count else { return true }
+                waiters.append((count, continuation))
+                return false
+            }
+            if isReady { continuation.resume() }
+        }
+    }
+
     func resolve(_ bookmarkData: Data, _ fallbackURL: URL) -> URL {
-        let gate = lock.withLock { () -> DispatchSemaphore? in
+        let (gate, ready) = lock.withLock { () -> (DispatchSemaphore?, [CheckedContinuation<Void, Never>]) in
             if Thread.isMainThread { counts.mainThread += 1 } else { counts.worker += 1 }
             let call = counts.mainThread + counts.worker
-            guard blocks(call), isReleased == false, releasedCalls.contains(call) == false else { return nil }
+            let ready = waiters.filter { $0.count <= call }.map(\.continuation)
+            waiters.removeAll { $0.count <= call }
+            guard blocks(call), isReleased == false, releasedCalls.contains(call) == false else { return (nil, ready) }
             let gate = DispatchSemaphore(value: 0)
             gates[call] = gate
-            return gate
+            return (gate, ready)
         }
-        gate?.wait()
+        ready.forEach { $0.resume() }
+        // The timeout turns a test that never releases into a failure instead of a hang.
+        _ = gate?.wait(timeout: .now() + Self.blockTimeout)
         return fallbackURL
     }
 

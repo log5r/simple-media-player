@@ -32,9 +32,9 @@ enum MediaInfoInspector {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
 
-        let attributes = await Task.detached(priority: .userInitiated) {
+        let attributes = await FileSystemWorkQueue.run(qos: .userInitiated) {
             FileAttributes(url: url)
-        }.value
+        }
         let fileRows = fileRows(for: item, url: url, attributes: attributes)
         if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
             var rows = [MediaInfoRow(id: "codec", label: L10n.string("Codec"), value: info.codec)]

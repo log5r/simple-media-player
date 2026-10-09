@@ -179,9 +179,9 @@ final class LibraryService {
     func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
         let snapshot = MediaInfoItemSnapshot(item: item)
         let reference = fileReference(for: item)
-        let url = await Task.detached(priority: .userInitiated) { [self] in
+        let url = await FileSystemWorkQueue.run(qos: .userInitiated) { [self] in
             resolvedURL(for: reference)
-        }.value
+        }
         return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
     }
 

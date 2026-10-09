@@ -33,15 +33,19 @@ extension LibraryService {
         context.delete(item)
         try? context.save()
         // Managed file names are unique per item, so a late removal cannot reach a newer import.
-        return Task.detached(priority: .utility) { [self] in removeFile(for: removal) }
+        return Task.detached(priority: .utility) { [self] in
+            await FileSystemWorkQueue.run { [self] in removeFile(for: removal) }
+        }
     }
 
     /// Finishes removals recorded by earlier launches; call once when the app starts.
     @discardableResult
     func resumePendingFileRemovals() -> Task<Void, Never> {
         Task.detached(priority: .utility) { [self] in
-            for removal in removalJournal.entries(in: mediaDirectoryURL()) {
-                removeFile(for: removal)
+            await FileSystemWorkQueue.run { [self] in
+                for removal in removalJournal.entries(in: mediaDirectoryURL()) {
+                    removeFile(for: removal)
+                }
             }
         }
     }
@@ -69,12 +73,12 @@ extension LibraryService {
         let liveItems = items.filter { isLibraryItemLive($0, in: context) }
         guard liveItems.isEmpty == false else { return false }
         let references = liveItems.map(fileReference(for:))
-        let availableIDs = await Task.detached(priority: .utility) { [self] in
+        let availableIDs = await FileSystemWorkQueue.run { [self] in
             let available = references.filter {
                 (try? MediaImportFingerprint.fileSize(of: resolvedURL(for: $0))) != nil
             }
             return Set(available.map(\.id))
-        }.value
+        }
         return liveItems.contains { availableIDs.contains($0.id) && isLibraryItemLive($0, in: context) }
     }
 
@@ -84,7 +88,7 @@ extension LibraryService {
         _ items: [MediaItem]
     ) async -> [UInt64: [(item: MediaItem, url: URL)]] {
         let references = items.map(fileReference(for:))
-        let files = await Task.detached(priority: .utility) { [self] in
+        let files = await FileSystemWorkQueue.run { [self] in
             var files: [UUID: (url: URL, size: UInt64)] = [:]
             for reference in references {
                 let url = resolvedURL(for: reference)
@@ -93,7 +97,7 @@ extension LibraryService {
                 }
             }
             return files
-        }.value
+        }
         var grouped: [UInt64: [(item: MediaItem, url: URL)]] = [:]
         for item in items {
             if let file = files[item.id] { grouped[file.size, default: []].append((item, file.url)) }
