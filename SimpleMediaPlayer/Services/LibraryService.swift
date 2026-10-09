@@ -30,6 +30,8 @@ final class LibraryService {
     @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
+    /// Shared by every export plan, so resolutions left running by a cancelled plan still count.
+    @ObservationIgnored nonisolated let exportPlanLimiter = FileSystemWorkLimiter(limit: exportPlanConcurrency)
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
     /// Deleted items can stay in import snapshots while their files are removed in the background.

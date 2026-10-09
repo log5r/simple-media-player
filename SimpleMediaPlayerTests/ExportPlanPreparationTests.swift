@@ -106,6 +106,49 @@ struct ExportPlanPreparationTests {
         #expect(fixture.service.exportPlanPreparation == nil)
     }
 
+    @Test func retryAfterCancellingWaitsForTheAbandonedResolutions() async throws {
+        let limit = LibraryService.exportPlanConcurrency
+        let recorder = BookmarkResolutionRecorder { $0 <= limit }
+        let fixture = try BookmarkFixture(recorder: recorder)
+        defer { fixture.remove() }
+        defer { recorder.release() }
+        let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
+        var first: [MediaItem] = []
+        for _ in 0..<limit { first.append(try fixture.insertItem(copying: source)) }
+        let retried = [try fixture.insertItem(copying: source)]
+        let old = fixture.service.beginExportPlanPreparation(for: first)
+        await recorder.waitForCalls(limit)
+        fixture.service.cancelExportPlanPreparation()
+        #expect(await fixture.service.exportPlan(from: old) == nil)
+
+        let retry = fixture.service.beginExportPlanPreparation(for: retried)
+        // The abandoned resolutions still hold every slot, so the retry does not start another one.
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(recorder.workerCount == limit)
+        #expect(retry.completedCount == 0)
+
+        recorder.release(call: 1)
+        let plan = try #require(await fixture.service.exportPlan(from: retry))
+        #expect(plan.files.map(\.id) == retried.map(\.id))
+        #expect(recorder.workerCount == limit + 1)
+    }
+
+    @Test func limiterHandsFreedSlotsToWaitersAndDropsCancelledOnes() async throws {
+        let limiter = FileSystemWorkLimiter(limit: 1)
+        try await limiter.acquire()
+        let cancelled = Task { try await limiter.acquire() }
+        let waiting = Task { try await limiter.acquire() }
+        try await Task.sleep(for: .milliseconds(100))
+
+        cancelled.cancel()
+        await #expect(throws: CancellationError.self) { try await cancelled.value }
+        limiter.release()
+
+        try await waiting.value
+        limiter.release()
+        try await limiter.acquire()
+    }
+
     /// Progress arrives through main-actor tasks sent by the workers, so the test yields until they run.
     private func waitUntil(_ condition: () -> Bool) async -> Bool {
         let deadline = ContinuousClock.now + .seconds(10)
