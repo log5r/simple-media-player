@@ -169,3 +169,50 @@ struct ExportProgressPanel: View {
         "\(libraryService.exportCompletedFileCount)/\(libraryService.exportTotalFileCount)"
     }
 }
+
+struct ExportPlanPreparationPanel: View {
+    let preparation: ExportPlanPreparation
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Preparing Export")
+                        .font(.headline)
+                    Spacer(minLength: 16)
+                    Text(progressCountText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+
+                ProgressView(value: preparation.fractionCompleted)
+                    .progressViewStyle(.linear)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Preparing export")
+            .accessibilityValue("\(preparation.completedCount) / \(preparation.totalCount)")
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: cancel)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("cancelExportPreparationButton")
+            }
+        }
+        .padding(14)
+        .frame(width: 280)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.quaternary)
+        }
+        .shadow(radius: 10, y: 4)
+    }
+
+    private var progressCountText: String {
+        "\(preparation.completedCount)/\(preparation.totalCount)"
+    }
+}

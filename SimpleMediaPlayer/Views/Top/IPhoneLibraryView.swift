@@ -168,6 +168,26 @@ struct IPhoneLibraryView: View {
     }
 
     @ViewBuilder private var progressPanel: some View {
+        VStack(spacing: 0) {
+            if let preparation = libraryService.exportPlanPreparation {
+                exportPreparationPanel(preparation)
+            }
+            activityProgressPanel
+        }
+    }
+
+    private func exportPreparationPanel(_ preparation: ExportPlanPreparation) -> some View {
+        VStack(spacing: 8) {
+            Text("Preparing Export")
+            ObservedProgressView(source: preparation, value: \.fractionCompleted)
+                .accessibilityLabel("Preparing export")
+            Button("Cancel", action: libraryService.cancelExportPlanPreparation)
+                .accessibilityIdentifier("cancelExportPreparationButton")
+        }
+        .padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).padding()
+    }
+
+    @ViewBuilder private var activityProgressPanel: some View {
         if libraryService.isImporting || libraryService.isExporting || aacVersionExporter.isExporting {
             VStack(spacing: 8) {
                 if libraryService.isImporting {

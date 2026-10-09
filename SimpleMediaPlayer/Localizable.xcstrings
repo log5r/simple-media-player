@@ -3326,6 +3326,28 @@
         }
       }
     },
+    "Preparing Export" : {
+      "comment" : "A label displayed in the panel while export names are read before exporting.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き出しを準備中"
+          }
+        }
+      }
+    },
+    "Preparing export" : {
+      "comment" : "An accessibility label for the progress of reading export names before exporting.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き出しを準備中"
+          }
+        }
+      }
+    },
     "Preset Name" : {
       "localizations" : {
         "ja" : {

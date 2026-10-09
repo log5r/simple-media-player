@@ -17,18 +17,85 @@ nonisolated enum FileSystemWorkQueue {
 
     /// Returns as soon as the caller is cancelled. The synchronous work cannot be interrupted, so it finishes
     /// on the queue and its result is discarded.
+    ///
+    /// With a `limiter`, the work starts only after taking one of its slots and gives the slot back when the
+    /// work itself finishes, not when the caller stops waiting. Abandoned work therefore keeps counting
+    /// against the limit, and repeated cancel-and-retry cycles cannot pile up blocked work on the queue.
     static func runCancellable<T: Sendable>(
-        qos: DispatchQoS = .utility, _ work: @escaping @Sendable () -> T
+        qos: DispatchQoS = .utility, limiter: FileSystemWorkLimiter? = nil, _ work: @escaping @Sendable () -> T
     ) async throws -> T {
+        try await limiter?.acquire()
         let resumption = Resumption<T>()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                guard resumption.install(continuation) else { return }
-                queue.async(qos: qos, flags: .enforceQoS) { resumption.resume(with: .success(work())) }
+                guard resumption.install(continuation) else {
+                    limiter?.release()
+                    return
+                }
+                queue.async(qos: qos, flags: .enforceQoS) {
+                    let result = work()
+                    limiter?.release()
+                    resumption.resume(with: .success(result))
+                }
             }
         } onCancel: {
             resumption.resume(with: .failure(CancellationError()))
         }
+    }
+}
+
+/// Bounds how much file system work runs at once, counting work whose caller has stopped waiting.
+nonisolated final class FileSystemWorkLimiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private let limit: Int
+    private var running = 0
+    private var waiters: [(id: UUID, continuation: CheckedContinuation<Void, any Error>)] = []
+
+    init(limit: Int) {
+        precondition(limit > 0)
+        self.limit = limit
+    }
+
+    /// Waits for a free slot. A cancelled caller stops waiting without taking one.
+    func acquire() async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                let acquired: Bool? = lock.withLock {
+                    // The cancellation handler may have run before the waiter was registered.
+                    if Task.isCancelled { return nil }
+                    if running < limit {
+                        running += 1
+                        return true
+                    }
+                    waiters.append((id, continuation))
+                    return false
+                }
+                switch acquired {
+                case nil: continuation.resume(throwing: CancellationError())
+                case true?: continuation.resume()
+                case false?: break
+                }
+            }
+        } onCancel: {
+            let waiter = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
+                guard let index = waiters.firstIndex(where: { $0.id == id }) else { return nil }
+                return waiters.remove(at: index).continuation
+            }
+            waiter?.resume(throwing: CancellationError())
+        }
+    }
+
+    /// Hands the slot to the oldest waiter, or frees it.
+    func release() {
+        let next = lock.withLock { () -> CheckedContinuation<Void, any Error>? in
+            guard waiters.isEmpty == false else {
+                running -= 1
+                return nil
+            }
+            return waiters.removeFirst().continuation
+        }
+        next?.resume()
     }
 }
 

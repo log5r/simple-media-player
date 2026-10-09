@@ -37,6 +37,7 @@ extension DetailAreaView {
                 .disabled(
                     isBulkEditMode || items.isEmpty || libraryService.isImporting
                         || libraryService.isExporting || aacVersionExporter.isExporting
+                        || libraryService.exportPlanPreparation != nil
                 )
                 .help("Export")
                 if isMediaListVisible, isBulkEditMode {

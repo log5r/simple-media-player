@@ -50,7 +50,9 @@ extension DetailAreaView {
             showSettings: AppMenuAction {
                 isSettingsPresented = true
             },
-            exportToFinder: AppMenuAction(isEnabled: items.isEmpty == false && isBusy == false) {
+            exportToFinder: AppMenuAction(
+                isEnabled: items.isEmpty == false && isBusy == false && libraryService.exportPlanPreparation == nil
+            ) {
                 exportToFinder()
             },
             saveAdjustedCopy: AppMenuAction(
