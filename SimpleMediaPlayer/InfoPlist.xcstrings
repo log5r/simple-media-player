@@ -18,6 +18,24 @@
           }
         }
       }
+    },
+    "NSAppleMusicUsageDescription" : {
+      "comment" : "Reason for requesting access to the Music library on iPhone and iPad to play and import songs.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used to play and import songs from your Music library."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicライブラリの曲を再生・取り込みするために使用します。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

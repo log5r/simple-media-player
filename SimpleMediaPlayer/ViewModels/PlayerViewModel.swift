@@ -140,6 +140,8 @@ final class PlayerViewModel {
     @ObservationIgnored private let equalizerDefaults: UserDefaults
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let clockEnabled: Bool
+    /// Alive while a transient item is current or queued; see `TransientPlaybackSession`.
+    @ObservationIgnored private(set) var transientSession: TransientPlaybackSession?
     private var lastAudibleVolume = 0.75
     @ObservationIgnored private var spectrumFrameRateCounter = SpectrumFrameRateCounter()
 
@@ -301,8 +303,27 @@ extension PlayerViewModel {
 }
 
 extension PlayerViewModel {
+    /// Plays media that is not in the library. The previous transient session ends after the switch,
+    /// so its files are removed only once nothing refers to them.
+    func play(transientSession session: TransientPlaybackSession) {
+        guard let first = session.items.first else { return }
+        let previous = transientSession
+        transientSession = session
+        play(item: first, in: session.items)
+        if let previous, previous !== session { previous.end() }
+    }
+
+    func isTransientItem(_ item: MediaItem) -> Bool {
+        transientSession?.contains(item.id) == true
+    }
+
+    var isPlayingTransientItem: Bool {
+        currentItem.map(isTransientItem) == true
+    }
+
     func play(item: MediaItem, in queue: [MediaItem]) {
         playbackGeneration &+= 1
+        releaseTransientSession(unlessContaining: item)
         guard let url = libraryService.resolvedURL(for: item) else {
             clearCurrentItem()
             errorMessage = L10n.format("Could not open file: %@", item.title)
@@ -400,6 +421,14 @@ extension PlayerViewModel {
         formatInfo = .empty
         isVideoMode = false
         showVideoArea = false
+        releaseTransientSession(unlessContaining: nil)
+    }
+
+    private func releaseTransientSession(unlessContaining item: MediaItem?) {
+        guard let session = transientSession else { return }
+        if let item, session.contains(item.id) { return }
+        transientSession = nil
+        session.end()
     }
 
     func setVolume(_ value: Double) {

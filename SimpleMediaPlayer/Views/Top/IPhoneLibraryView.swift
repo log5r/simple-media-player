@@ -18,6 +18,7 @@ struct IPhoneLibraryActions {
     let deleteItem: (MediaItem) -> Void
     let showAddTracks: (Playlist) -> Void
     let requestSaveCopy: (MediaItem) -> Void
+    var musicLibrary = MusicLibraryActions()
 }
 
 struct IPhoneLibraryView: View {
@@ -113,6 +114,17 @@ struct IPhoneLibraryView: View {
                 Button("Import...", systemImage: "square.and.arrow.down") { isImporterPresented = true }
                     .disabled(libraryService.isImporting || aacVersionExporter.isExporting)
                     .accessibilityIdentifier("importMediaButton")
+                Button("Play from Music…", systemImage: "music.note") { actions.musicLibrary.play() }
+                    .disabled(libraryService.musicLibraryPreparation != nil)
+                    .accessibilityIdentifier("playFromMusicButton")
+                Button("Import from Music…", systemImage: "square.and.arrow.down.on.square") {
+                    actions.musicLibrary.importSongs()
+                }
+                .disabled(
+                    libraryService.isImporting || aacVersionExporter.isExporting
+                        || libraryService.musicLibraryPreparation != nil
+                )
+                .accessibilityIdentifier("importFromMusicButton")
                 Button("Export…", systemImage: "square.and.arrow.up") { actions.exportItems(items) }
                     .disabled(items.isEmpty || !canCreateAACVersion)
                 Button("Settings", systemImage: "gearshape") { browsingState.showsSettings = true }
@@ -172,6 +184,9 @@ struct IPhoneLibraryView: View {
             if let preparation = libraryService.exportPlanPreparation {
                 exportPreparationPanel(preparation)
             }
+            if let preparation = libraryService.musicLibraryPreparation {
+                musicPreparationPanel(preparation)
+            }
             activityProgressPanel
         }
     }
@@ -183,6 +198,24 @@ struct IPhoneLibraryView: View {
                 .accessibilityLabel("Preparing export")
             Button("Cancel", action: libraryService.cancelExportPlanPreparation)
                 .accessibilityIdentifier("cancelExportPreparationButton")
+        }
+        .padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).padding()
+    }
+
+    private func musicPreparationPanel(_ preparation: MusicLibraryPreparation) -> some View {
+        VStack(spacing: 8) {
+            Text(preparation.purpose == .playback ? "Preparing Music Song" : "Preparing Music Songs")
+            if preparation.purpose == .importing {
+                ObservedProgressView(source: preparation, value: \.fractionCompleted)
+                    .accessibilityLabel("Preparing Music songs")
+            } else {
+                ProgressView().accessibilityLabel("Preparing Music song")
+            }
+            if let title = preparation.currentTitle {
+                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Button("Cancel", action: libraryService.cancelMusicLibraryPreparation)
+                .accessibilityIdentifier("cancelMusicPreparationButton")
         }
         .padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).padding()
     }

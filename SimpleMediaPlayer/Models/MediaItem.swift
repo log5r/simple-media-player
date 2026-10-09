@@ -36,6 +36,8 @@ nonisolated final class MediaItem {
     var fileName: String
     // Keep the original import identity even when embedded metadata is edited later.
     var importFingerprint: String? = nil
+    // Music library persistent ID of the song an import was exported from; exports never share bytes.
+    var musicLibraryItemID: String?
 
     init(
         id: UUID = UUID(),
@@ -57,7 +59,8 @@ nonisolated final class MediaItem {
         artworkData: Data? = nil,
         addedAt: Date = Date(),
         fileName: String,
-        importFingerprint: String? = nil
+        importFingerprint: String? = nil,
+        musicLibraryItemID: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -82,6 +85,7 @@ nonisolated final class MediaItem {
         self.addedAt = addedAt
         self.fileName = fileName
         self.importFingerprint = importFingerprint
+        self.musicLibraryItemID = musicLibraryItemID
     }
 
     var hasArtwork: Bool { artworkID != nil }
@@ -149,6 +153,12 @@ nonisolated final class PlaylistEntry {
 }
 
 extension MediaItem {
+    /// False for items that only exist for playback, such as Music library songs played without saving.
+    /// Library edits, copies, and playlist membership are limited to inserted items.
+    var isInLibrary: Bool {
+        modelContext != nil && isDeleted == false
+    }
+
     var displayContentType: String {
         // `URL(fileURLWithPath:)` stats the path to detect directories; the list needs only the name.
         let pathExtension = (fileName as NSString).pathExtension

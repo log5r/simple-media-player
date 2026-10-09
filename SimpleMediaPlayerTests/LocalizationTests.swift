@@ -52,6 +52,33 @@ struct LocalizationTests {
         ) == expected)
     }
 
+    @Test(arguments: ["en", "ja"])
+    func musicLibraryPermissionExplanationIsBundledForEachLanguage(language: String) throws {
+        let bundle = try localizedBundle(language)
+        let strings = try stringTable("InfoPlist", in: bundle)
+        let explanation = try #require(strings["NSAppleMusicUsageDescription"])
+        let expected = language == "ja"
+            ? "Musicライブラリの曲を再生・取り込みするために使用します。"
+            : "Used to play and import songs from your Music library."
+
+        #expect(explanation == expected)
+    }
+
+    @Test(arguments: ["en", "ja"])
+    func musicLibraryEntryPointsAreLocalized(language: String) throws {
+        let bundle = try localizedBundle(language)
+        let expected = language == "ja"
+            ? ["Play from Music…": "Musicから再生…", "Import from Music…": "Musicから取り込み…",
+               "Preparing Music Songs": "Musicの曲を準備中", "Open Settings": "設定を開く",
+               "This song is protected and cannot be used.": "この曲は保護されているため使用できません。"]
+            : ["Play from Music…": "Play from Music…", "Import from Music…": "Import from Music…",
+               "Preparing Music Songs": "Preparing Music Songs", "Open Settings": "Open Settings",
+               "This song is protected and cannot be used.": "This song is protected and cannot be used."]
+        for (key, value) in expected {
+            #expect(bundle.localizedString(forKey: key, value: nil, table: nil) == value)
+        }
+    }
+
     @Test func musicAccessErrorsHaveJapaneseTranslations() throws {
         let bundle = try localizedBundle("ja")
         let strings = try stringTable("Localizable", in: bundle)
@@ -59,7 +86,14 @@ struct LocalizationTests {
         for key in [
             "Could not prepare Music library access.",
             "Music library access failed.",
-            "Music library metadata could not be read; embedded metadata was used instead: %@"
+            "Music library metadata could not be read; embedded metadata was used instead: %@",
+            "Music access is not allowed. Allow access in Settings to use songs from your Music library.",
+            "Music access is restricted on this device.",
+            "This song is not downloaded to this device.",
+            "Imported %d songs from Music.",
+            "“%@” is already in your library.",
+            "“%@” was converted to AAC.",
+            "Could not play “%@”: %@"
         ] {
             let translation = try #require(strings[key], "Missing Japanese translation: \(key)")
             #expect(!translation.isEmpty)

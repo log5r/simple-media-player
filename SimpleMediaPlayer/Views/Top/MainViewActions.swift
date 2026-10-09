@@ -74,6 +74,7 @@ extension MainView {
     var canCreateAACVersion: Bool {
         !isSharingExport && !isPreparingExport && pendingExportPlan == nil
             && libraryService.exportPlanPreparation == nil
+            && libraryService.musicLibraryPreparation == nil
             && namedExportRequest == nil && aacVersionSourceTitle == nil
             && aacVersionExporter.isExporting == false
             && libraryService.isImporting == false
@@ -145,7 +146,7 @@ extension MainView {
     }
 
     func exportAACVersion(of item: MediaItem) {
-        guard item.isVideo == false, canCreateAACVersion else { return }
+        guard item.isVideo == false, item.isInLibrary, canCreateAACVersion else { return }
 
         let sourceTitle = item.title
         aacVersionSourceTitle = sourceTitle

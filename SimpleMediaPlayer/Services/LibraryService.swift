@@ -23,6 +23,7 @@ struct BulkMetadataEditResult: Sendable {
 @Observable
 final class LibraryService {
     @ObservationIgnored nonisolated private let mediaDirectoryOverride: URL?
+    @ObservationIgnored nonisolated let temporaryDirectoryURL: URL
     @ObservationIgnored private let artworkProcessor: ArtworkProcessor
     @ObservationIgnored let artworkLoader: LibraryArtworkLoader
     @ObservationIgnored private let lyricsReader: EmbeddedLyricsReader
@@ -43,6 +44,8 @@ final class LibraryService {
     var importTotalFileCount = 0
     var currentImportFileName: String?
     var lastImportErrors: [String] = []
+    private(set) var lastImportCreatedCount = 0
+    private(set) var lastImportDuplicateCount = 0
     var isExporting = false
     var exportProgress = 0.0
     var exportCompletedFileCount = 0
@@ -50,6 +53,7 @@ final class LibraryService {
     var currentExportFileName: String?
     var lastExportErrors: [String] = []
     var exportPlanPreparation: ExportPlanPreparation?
+    var musicLibraryPreparation: MusicLibraryPreparation?
     private var didReportMusicLibraryAccessFailure = false
 
     private static let lyricsKeyNeedles = ["lyrics", "ult", "uslt", "sylt", "©lyr", "lyr"]
@@ -61,6 +65,7 @@ final class LibraryService {
 
     init(
         mediaDirectoryURL: URL? = nil,
+        temporaryDirectoryURL: URL = FileManager.default.temporaryDirectory,
         artworkProcessor: ArtworkProcessor = ArtworkProcessor(),
         lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader(),
         artworkLoader: LibraryArtworkLoader = .shared,
@@ -70,6 +75,7 @@ final class LibraryService {
         removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal()
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
+        self.temporaryDirectoryURL = temporaryDirectoryURL
         self.resolveBookmark = resolveBookmark
         self.removalJournal = removalJournal
         self.artworkProcessor = artworkProcessor
@@ -79,34 +85,30 @@ final class LibraryService {
         self.musicMetadataProvider = musicMetadataProvider
     }
 
-    func importFiles(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
+    /// `overrides` carry values that take precedence over the file's embedded metadata, keyed by source URL.
+    func importFiles(
+        from urls: [URL], overrides: [URL: MediaImportOverride] = [:],
+        into context: ModelContext, existingItems: [MediaItem]
+    ) async {
         guard urls.isEmpty == false else { return }
 
         let previousTask = importTask?.task
         let requestID = UUID()
         let task = Task { @MainActor in
             await previousTask?.value
-            await self.performImport(from: urls, into: context, existingItems: existingItems)
+            await self.performImport(from: urls, overrides: overrides, into: context, existingItems: existingItems)
         }
         importTask = (requestID, task)
         await task.value
         if importTask?.id == requestID { importTask = nil }
     }
 
-    private func performImport(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
-        isImporting = true
-        importProgress = 0
-        importCompletedFileCount = 0
-        importTotalFileCount = urls.count
-        currentImportFileName = nil
-        lastImportErrors = []
-        didReportMusicLibraryAccessFailure = false
-        defer {
-            isImporting = false
-            importProgress = 1
-            importCompletedFileCount = importTotalFileCount
-            currentImportFileName = nil
-        }
+    private func performImport(
+        from urls: [URL], overrides: [URL: MediaImportOverride],
+        into context: ModelContext, existingItems: [MediaItem]
+    ) async {
+        beginImportProgress(totalCount: urls.count)
+        defer { finishImportProgress() }
 
         var itemsByID: [UUID: MediaItem] = [:]
         do {
@@ -154,12 +156,16 @@ final class LibraryService {
                         }
                     }
                 }
-                if isDuplicate == false {
+                if isDuplicate {
+                    lastImportDuplicateCount += 1
+                } else {
                     let item = try await makeMediaItem(
                         from: url, importFingerprint: fingerprint, musicSession: musicSession
                     )
+                    await apply(overrides[url], to: item)
                     context.insert(item)
                     itemsByFingerprint[fingerprint, default: []].append(item)
+                    lastImportCreatedCount += 1
                 }
             } catch {
                 lastImportErrors.append("\(url.lastPathComponent): \(error.localizedDescription)")
@@ -177,27 +183,6 @@ final class LibraryService {
 
     func resolvedURL(for item: MediaItem) -> URL? {
         resolvedURL(for: fileReference(for: item))
-    }
-
-    func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
-        let snapshot = MediaInfoItemSnapshot(item: item)
-        let reference = fileReference(for: item)
-        // Callers discard results of superseded requests, so a cancelled load returns no details.
-        guard let url = try? await FileSystemWorkQueue.runCancellable(qos: .userInitiated, { [self] in
-            resolvedURL(for: reference)
-        }) else { return .empty }
-        return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
-    }
-
-    func editableMetadataItemIDs(for items: [MediaItem]) async throws -> Set<UUID> {
-        try Task.checkCancellation()
-        let inputs = items.map(fileReference(for:))
-        return try await editabilityChecker.editableIDs(for: inputs) { self.mediaDirectoryURL() }
-    }
-
-    func canEditEmbeddedMetadata(for item: MediaItem) async throws -> Bool {
-        let itemID = item.id
-        return try await editableMetadataItemIDs(for: [item]).contains(itemID)
     }
 
     func saveLyrics(_ lyrics: String, for item: MediaItem, embedInFile: Bool, in context: ModelContext) async throws {
@@ -389,6 +374,30 @@ final class LibraryService {
         }
     }
 
+}
+
+extension LibraryService {
+    func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
+        let snapshot = MediaInfoItemSnapshot(item: item)
+        let reference = fileReference(for: item)
+        // Callers discard results of superseded requests, so a cancelled load returns no details.
+        guard let url = try? await FileSystemWorkQueue.runCancellable(qos: .userInitiated, { [self] in
+            resolvedURL(for: reference)
+        }) else { return .empty }
+        return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
+    }
+
+    func editableMetadataItemIDs(for items: [MediaItem]) async throws -> Set<UUID> {
+        try Task.checkCancellation()
+        let inputs = items.map(fileReference(for:))
+        return try await editabilityChecker.editableIDs(for: inputs) { self.mediaDirectoryURL() }
+    }
+
+    func canEditEmbeddedMetadata(for item: MediaItem) async throws -> Bool {
+        let itemID = item.id
+        return try await editableMetadataItemIDs(for: [item]).contains(itemID)
+    }
+
     func updateEmbeddedMetadata(
         for items: [MediaItem],
         patch: MediaMetadataEditPatch,
@@ -451,6 +460,60 @@ private extension LibraryService {
             if let artworkData { draft.artworkData = artworkData }
         }
         return draft
+    }
+
+    /// Applied before the item is inserted. Non-empty override values replace the embedded ones; a
+    /// nil field keeps the embedded value. When the override could not be written into the file, the
+    /// item records the text as edited so later edits start from these values, not the file's tags.
+    private func apply(_ override: MediaImportOverride?, to item: MediaItem) async {
+        guard let override else { return }
+        applyPrimaryValues(override.values, to: item)
+        applySecondaryValues(override.values, to: item)
+        if let lyrics = override.lyrics { item.lyricsRaw = lyrics }
+        if let artwork = override.artworkData, let thumbnail = await artworkProcessor.thumbnail(from: artwork) {
+            item.artworkData = thumbnail
+        }
+        item.musicLibraryItemID = override.musicLibraryItemID ?? item.musicLibraryItemID
+        if override.isEmbeddedInFile == false {
+            item.setEditedTextMetadata(MediaMetadataEditDraft(item: item))
+            if override.lyrics != nil { item.setEditedLyrics(item.lyricsRaw) }
+        }
+    }
+
+    private func applyPrimaryValues(_ values: MediaMetadataEmbeddedValues, to item: MediaItem) {
+        if let title = values.title { item.title = title }
+        if let artist = values.artist { item.artist = artist }
+        if let album = values.album { item.album = album }
+        if let genre = values.genre { item.genre = genre }
+        if let year = values.year { item.year = year }
+        if let trackNumber = values.trackNumber { item.trackNumber = trackNumber }
+    }
+
+    private func applySecondaryValues(_ values: MediaMetadataEmbeddedValues, to item: MediaItem) {
+        if let comment = values.comment { item.comment = comment }
+        if let albumArtist = values.albumArtist { item.albumArtist = albumArtist }
+        if let composer = values.composer { item.composer = composer }
+        if let discNumber = values.discNumber { item.discNumber = discNumber }
+        if let isCompilation = values.isCompilation { item.isCompilation = isCompilation }
+    }
+
+    private func beginImportProgress(totalCount: Int) {
+        isImporting = true
+        importProgress = 0
+        importCompletedFileCount = 0
+        importTotalFileCount = totalCount
+        currentImportFileName = nil
+        lastImportErrors = []
+        lastImportCreatedCount = 0
+        lastImportDuplicateCount = 0
+        didReportMusicLibraryAccessFailure = false
+    }
+
+    private func finishImportProgress() {
+        isImporting = false
+        importProgress = 1
+        importCompletedFileCount = importTotalFileCount
+        currentImportFileName = nil
     }
 }
 
