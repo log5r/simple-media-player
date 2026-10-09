@@ -47,6 +47,7 @@ final class LibraryService {
     var exportTotalFileCount = 0
     var currentExportFileName: String?
     var lastExportErrors: [String] = []
+    var exportPlanPreparation: ExportPlanPreparation?
     private var didReportMusicLibraryAccessFailure = false
 
     private static let lyricsKeyNeedles = ["lyrics", "ult", "uslt", "sylt", "©lyr", "lyr"]

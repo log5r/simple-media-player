@@ -141,25 +141,35 @@ struct DetailAreaView: View {
             } else if aacVersionExporter.isExporting {
                 ObservedProgressView(source: aacVersionExporter, value: \.progress)
                     .progressViewStyle(.linear)
+            } else if let preparation = libraryService.exportPlanPreparation {
+                ObservedProgressView(source: preparation, value: \.fractionCompleted)
+                    .progressViewStyle(.linear)
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if libraryService.isImporting {
-                ImportProgressPanel(libraryService: libraryService)
-                    .padding(16)
+            VStack(alignment: .trailing, spacing: 12) {
+                // Preparing an export does not block importing, so its panel can sit above the import panel.
+                if let preparation = libraryService.exportPlanPreparation {
+                    ExportPlanPreparationPanel(
+                        preparation: preparation, cancel: libraryService.cancelExportPlanPreparation
+                    )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if libraryService.isExporting {
-                ExportProgressPanel(libraryService: libraryService)
-                    .padding(16)
+                }
+                if libraryService.isImporting {
+                    ImportProgressPanel(libraryService: libraryService)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if libraryService.isExporting {
+                    ExportProgressPanel(libraryService: libraryService)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if aacVersionExporter.isExporting {
+                    AACVersionProgressPanel(
+                        exporter: aacVersionExporter,
+                        sourceTitle: aacVersionSourceTitle
+                    )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if aacVersionExporter.isExporting {
-                AACVersionProgressPanel(
-                    exporter: aacVersionExporter,
-                    sourceTitle: aacVersionSourceTitle
-                )
-                .padding(16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .padding(16)
         }
         .navigationTitle(title)
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")

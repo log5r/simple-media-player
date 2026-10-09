@@ -73,6 +73,7 @@ extension MainView {
 
     var canCreateAACVersion: Bool {
         !isSharingExport && !isPreparingExport && pendingExportPlan == nil
+            && libraryService.exportPlanPreparation == nil
             && namedExportRequest == nil && aacVersionSourceTitle == nil
             && aacVersionExporter.isExporting == false
             && libraryService.isImporting == false
@@ -113,10 +114,12 @@ extension MainView {
         }
         #endif
         guard canCreateAACVersion else { return }
-        isPreparingExport = true
+        let preparation = libraryService.beginExportPlanPreparation(for: exportItems)
         Task {
+            // A cancelled preparation returns nil, so its late plan neither exports nor opens a sheet.
+            guard let plan = await libraryService.exportPlan(from: preparation) else { return }
+            isPreparingExport = true
             defer { isPreparingExport = false }
-            guard let plan = try? await libraryService.makeExportPlan(for: exportItems) else { return }
             guard plan.files.isEmpty == false else {
                 exportResultMessage = plan.preparationErrors.isEmpty
                     ? L10n.string("No media selected for export.")

@@ -95,9 +95,18 @@ extension LibraryService {
     nonisolated static let exportPlanConcurrency = 4
 
     /// Reads export names in workers; the result keeps the order of `items`.
-    func makeExportPlan(for items: [MediaItem]) async throws -> MediaExportPlan {
+    func makeExportPlan(
+        for items: [MediaItem], progress: ExportPlanPreparation? = nil
+    ) async throws -> MediaExportPlan {
         let references = items.map(fileReference(for:))
-        let entries = try await exportPlanEntries(for: references)
+        let throttle = ProgressReportThrottle()
+        let entries = try await exportPlanEntries(for: references) { [weak progress] completedCount in
+            guard let progress, throttle.shouldReport(Double(completedCount) / Double(references.count)) else {
+                return
+            }
+            Task { @MainActor in progress.recordCompletedCount(completedCount) }
+        }
+        progress?.recordCompletedCount(entries.count)
         let drafts = zip(items, entries).map { item, entry in
             MediaExportFileDraft(
                 id: item.id,
@@ -111,12 +120,15 @@ extension LibraryService {
         return MediaExportPlan(files: drafts, preparationErrors: [])
     }
 
-    private nonisolated func exportPlanEntries(for references: [MediaFileReference]) async throws -> [ExportPlanEntry] {
+    private nonisolated func exportPlanEntries(
+        for references: [MediaFileReference], reportCompletedCount: @escaping @Sendable (Int) -> Void
+    ) async throws -> [ExportPlanEntry] {
         try Task.checkCancellation()
         let task = Task.detached(priority: .userInitiated) { [self] in
             try await withThrowingTaskGroup(of: (Int, ExportPlanEntry).self) { group in
                 var entries = [ExportPlanEntry?](repeating: nil, count: references.count)
                 var nextIndex = 0
+                var completedCount = 0
                 func addNext() {
                     guard nextIndex < references.count, Task.isCancelled == false else { return }
                     let index = nextIndex
@@ -127,6 +139,8 @@ extension LibraryService {
                 for _ in 0..<Self.exportPlanConcurrency { addNext() }
                 while let (index, entry) = try await group.next() {
                     entries[index] = entry
+                    completedCount += 1
+                    reportCompletedCount(completedCount)
                     addNext()
                 }
                 try Task.checkCancellation()
