@@ -2,6 +2,8 @@ import SwiftUI
 
 /// アプリアイコンの絵柄。1024ptのキャンバスに824ptのタイルを置く macOS の構図で描く。
 ///
+/// 構図はバンドル同梱の `AppIcon.icon`(ガラスの円盤に再生記号を重ねる)にそろえる。
+///
 /// LED表示と同じ配色をそのまま持ち込めるよう、面と記号の色だけを外から受け取る。
 /// アイコン書き出し用のコマンドラインからも単体でコンパイルできるよう、
 /// このファイルは SwiftUI 以外に依存しない。
@@ -71,12 +73,14 @@ struct AppIconArtwork: View {
                     shape.fill(
                         RadialGradient(
                             colors: [mark.color.opacity(0.34), mark.color.opacity(0)],
-                            center: UnitPoint(x: 0.42, y: 0.55),
+                            center: .center,
                             startRadius: 0,
-                            endRadius: tile * 0.58
+                            endRadius: tile * 0.5
                         )
                     )
                 }
+
+                disc(k: scale)
 
                 playMark(k: scale)
 
@@ -145,10 +149,56 @@ struct AppIconArtwork: View {
         )
     }
 
+    private var discFill: Color {
+        switch mode {
+        case .luminous:
+            mark.color.opacity(0.12)
+        case .backlit:
+            .white.opacity(0.45)
+        }
+    }
+
+    /// 再生記号の下に敷くガラスの円盤。タイルの中央に置く。
+    private func disc(k scale: CGFloat) -> some View {
+        let circle = Circle()
+
+        return ZStack {
+            circle.fill(discFill)
+            circle.fill(
+                LinearGradient(
+                    stops: [
+                        .init(color: .white.opacity(0.22), location: 0),
+                        .init(color: .white.opacity(0), location: 0.55)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            circle.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        .white.opacity(0.50),
+                        .white.opacity(0.06),
+                        .white.opacity(0.20)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 4 * scale
+            )
+        }
+        .frame(width: 548 * scale, height: 548 * scale)
+        .shadow(
+            color: .black.opacity(mode == .luminous ? 0.35 : 0.16),
+            radius: 18 * scale,
+            y: 10 * scale
+        )
+    }
+
     @ViewBuilder
     private func playMark(k scale: CGFloat) -> some View {
         let path = markPath(k: scale)
-        let stroke = StrokeStyle(lineWidth: 96 * scale, lineJoin: .round)
+        let stroke = StrokeStyle(lineWidth: 40 * scale, lineJoin: .round)
 
         ZStack {
             if mode == .luminous {
@@ -156,7 +206,7 @@ struct AppIconArtwork: View {
                     path.fill(mark.color)
                     path.stroke(mark.color, style: stroke)
                 }
-                .blur(radius: 22 * scale)
+                .blur(radius: 18 * scale)
                 .opacity(0.38)
             }
 
@@ -175,9 +225,9 @@ struct AppIconArtwork: View {
     /// タイル内の座標(824基準)で描く再生記号。角はストロークの丸結合で落とす。
     private func markPath(k scale: CGFloat) -> Path {
         Path { path in
-            path.move(to: CGPoint(x: 310 * scale, y: 252 * scale))
-            path.addLine(to: CGPoint(x: 554 * scale, y: 412 * scale))
-            path.addLine(to: CGPoint(x: 310 * scale, y: 572 * scale))
+            path.move(to: CGPoint(x: 344 * scale, y: 299 * scale))
+            path.addLine(to: CGPoint(x: 548 * scale, y: 412 * scale))
+            path.addLine(to: CGPoint(x: 344 * scale, y: 525 * scale))
             path.closeSubpath()
         }
     }
