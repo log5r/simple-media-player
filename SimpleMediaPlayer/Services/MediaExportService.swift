@@ -144,8 +144,9 @@ extension LibraryService {
 
     private nonisolated func exportPlanEntry(for reference: MediaFileReference) async throws -> ExportPlanEntry {
         try Task.checkCancellation()
-        let url = await FileSystemWorkQueue.run(qos: .userInitiated) { [self] in resolvedURL(for: reference) }
-        try Task.checkCancellation()
+        let url = try await FileSystemWorkQueue.runCancellable(qos: .userInitiated) { [self] in
+            resolvedURL(for: reference)
+        }
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
             if didAccess { url.stopAccessingSecurityScopedResource() }

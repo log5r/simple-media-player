@@ -32,7 +32,7 @@ enum MediaInfoInspector {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
 
-        let attributes = await FileSystemWorkQueue.run(qos: .userInitiated) {
+        let attributes = try? await FileSystemWorkQueue.runCancellable(qos: .userInitiated) {
             FileAttributes(url: url)
         }
         let fileRows = fileRows(for: item, url: url, attributes: attributes)
@@ -80,9 +80,9 @@ enum MediaInfoInspector {
     }
 
     private static func fileRows(
-        for item: MediaInfoItemSnapshot, url: URL, attributes: FileAttributes
+        for item: MediaInfoItemSnapshot, url: URL, attributes: FileAttributes?
     ) -> [MediaInfoRow] {
-        let byteCount = attributes.byteCount
+        let byteCount = attributes?.byteCount
 
         var rows = [
             MediaInfoRow(id: "fileName", label: L10n.string("File"), value: item.fileName),
@@ -96,17 +96,17 @@ enum MediaInfoInspector {
                 value: "\(MediaInfoTextFormatter.fileSize(bytes: Int64(byteCount))) (\(byteCount) bytes)"
             ))
         }
-        if let type = attributes.contentType {
+        if let type = attributes?.contentType {
             rows.append(MediaInfoRow(id: "contentType", label: L10n.string("Content Type"), value: type.identifier))
         }
-        if let creationDate = attributes.creationDate {
+        if let creationDate = attributes?.creationDate {
             rows.append(MediaInfoRow(
                 id: "created",
                 label: L10n.string("Created"),
                 value: creationDate.formatted(date: .numeric, time: .shortened)
             ))
         }
-        if let modifiedDate = attributes.contentModificationDate {
+        if let modifiedDate = attributes?.contentModificationDate {
             rows.append(MediaInfoRow(
                 id: "modified",
                 label: L10n.string("Modified"),

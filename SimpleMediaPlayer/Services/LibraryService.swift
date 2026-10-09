@@ -179,9 +179,10 @@ final class LibraryService {
     func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
         let snapshot = MediaInfoItemSnapshot(item: item)
         let reference = fileReference(for: item)
-        let url = await FileSystemWorkQueue.run(qos: .userInitiated) { [self] in
+        // Callers discard results of superseded requests, so a cancelled load returns no details.
+        guard let url = try? await FileSystemWorkQueue.runCancellable(qos: .userInitiated, { [self] in
             resolvedURL(for: reference)
-        }
+        }) else { return .empty }
         return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
     }
 
