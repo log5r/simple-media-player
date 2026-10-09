@@ -23,6 +23,7 @@ struct SimpleMediaPlayerApp: App {
         #else
         let libraryService = LibraryService()
         #endif
+        libraryService.resumePendingFileRemovals()
         _libraryService = State(initialValue: libraryService)
         _player = State(initialValue: PlayerViewModel(libraryService: libraryService))
     }

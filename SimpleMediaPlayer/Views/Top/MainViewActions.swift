@@ -116,7 +116,7 @@ extension MainView {
         isPreparingExport = true
         Task {
             defer { isPreparingExport = false }
-            let plan = await libraryService.makeExportPlan(for: exportItems)
+            guard let plan = try? await libraryService.makeExportPlan(for: exportItems) else { return }
             guard plan.files.isEmpty == false else {
                 exportResultMessage = plan.preparationErrors.isEmpty
                     ? L10n.string("No media selected for export.")

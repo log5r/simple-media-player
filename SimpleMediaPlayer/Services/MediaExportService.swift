@@ -91,33 +91,69 @@ enum MediaExportNaming {
 }
 
 extension LibraryService {
-    func makeExportPlan(for items: [MediaItem]) async -> MediaExportPlan {
-        var drafts: [MediaExportFileDraft] = []
-        var errors: [String] = []
+    /// Bounds the files opened at once while reading titles for a large selection.
+    nonisolated static let exportPlanConcurrency = 4
 
-        for item in items {
-            guard let url = resolvedURL(for: item) else {
-                errors.append(L10n.format("Could not resolve the media file: %@", item.title))
-                continue
-            }
-
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer {
-                if didAccess { url.stopAccessingSecurityScopedResource() }
-            }
-
-            let metadata = await exportMetadata(for: url)
-            drafts.append(MediaExportFileDraft(
+    /// Reads export names in workers; the result keeps the order of `items`.
+    func makeExportPlan(for items: [MediaItem]) async throws -> MediaExportPlan {
+        let references = items.map(fileReference(for:))
+        let entries = try await exportPlanEntries(for: references)
+        let drafts = zip(items, entries).map { item, entry in
+            MediaExportFileDraft(
                 id: item.id,
-                sourceURL: url,
-                albumName: Self.normalizedExportAlbum(metadata.album ?? item.album),
-                embeddedTitle: metadata.title,
-                fileExtension: url.pathExtension,
+                sourceURL: entry.url,
+                albumName: Self.normalizedExportAlbum(entry.album ?? item.album),
+                embeddedTitle: entry.title,
+                fileExtension: entry.url.pathExtension,
                 originalFileName: item.fileName
-            ))
+            )
         }
+        return MediaExportPlan(files: drafts, preparationErrors: [])
+    }
 
-        return MediaExportPlan(files: drafts, preparationErrors: errors)
+    private nonisolated func exportPlanEntries(for references: [MediaFileReference]) async throws -> [ExportPlanEntry] {
+        try Task.checkCancellation()
+        let task = Task.detached(priority: .userInitiated) { [self] in
+            try await withThrowingTaskGroup(of: (Int, ExportPlanEntry).self) { group in
+                var entries = [ExportPlanEntry?](repeating: nil, count: references.count)
+                var nextIndex = 0
+                func addNext() {
+                    guard nextIndex < references.count, Task.isCancelled == false else { return }
+                    let index = nextIndex
+                    let reference = references[index]
+                    nextIndex += 1
+                    group.addTask { (index, try await self.exportPlanEntry(for: reference)) }
+                }
+                for _ in 0..<Self.exportPlanConcurrency { addNext() }
+                while let (index, entry) = try await group.next() {
+                    entries[index] = entry
+                    addNext()
+                }
+                try Task.checkCancellation()
+                return entries.compactMap(\.self)
+            }
+        }
+        return try await withTaskCancellationHandler {
+            let entries = try await task.value
+            try Task.checkCancellation()
+            return entries
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private nonisolated func exportPlanEntry(for reference: MediaFileReference) async throws -> ExportPlanEntry {
+        try Task.checkCancellation()
+        let url = try await FileSystemWorkQueue.runCancellable(qos: .userInitiated) { [self] in
+            resolvedURL(for: reference)
+        }
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess { url.stopAccessingSecurityScopedResource() }
+        }
+        let metadata = try await Self.exportMetadata(for: url)
+        try Task.checkCancellation()
+        return ExportPlanEntry(url: url, title: metadata.title, album: metadata.album)
     }
 
     func export(files: [MediaExportFile], to destinationURL: URL) async -> MediaExportResult {
@@ -167,46 +203,66 @@ extension LibraryService {
         return MediaExportResult(exportedCount: exportedCount, errors: errors)
     }
 
-    private func exportMetadata(for url: URL) async -> (title: String?, album: String?) {
-        if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
-            return (info.title, info.album)
-        }
+    /// Unreadable metadata falls back to library values, but cancellation is rethrown so a cancelled plan
+    /// does not keep reading the remaining sources.
+    nonisolated static func exportMetadata(for url: URL) async throws -> (title: String?, album: String?) {
+        do {
+            if let info = try await ExtendedAudioSource.probeInfo(for: url) {
+                return (info.title, info.album)
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {}
+        try Task.checkCancellation()
         let asset = AVURLAsset(url: url)
         var metadataItems: [AVMetadataItem] = []
 
         if let commonMetadata = try? await asset.load(.metadata) {
             metadataItems.append(contentsOf: commonMetadata)
         }
+        try Task.checkCancellation()
 
         if let formats = try? await asset.load(.availableMetadataFormats) {
             for format in formats {
+                try Task.checkCancellation()
                 if let formatMetadata = try? await asset.loadMetadata(for: format) {
                     metadataItems.append(contentsOf: formatMetadata)
                 }
             }
         }
+        try Task.checkCancellation()
 
         var title = await metadataItems.exportStringValue(for: .commonIdentifierTitle)
         if title == nil {
             title = await metadataItems.exportFirstString(whereKeyContains: ["tit2", "title", "©nam"])
         }
+        try Task.checkCancellation()
         if title == nil {
-            title = await mp4NameTitleIfNeeded(for: url)
+            title = try await mp4NameTitleIfNeeded(for: url)
         }
 
         var album = await metadataItems.exportStringValue(for: .commonIdentifierAlbumName)
         if album == nil {
             album = await metadataItems.exportFirstString(whereKeyContains: ["talb", "album", "©alb"])
         }
+        try Task.checkCancellation()
 
         return (title?.nilIfBlank, album?.nilIfBlank)
     }
 
-    private nonisolated func mp4NameTitleIfNeeded(for url: URL) async -> String? {
+    private nonisolated static func mp4NameTitleIfNeeded(for url: URL) async throws -> String? {
         guard ["mp4", "m4v"].contains(url.pathExtension.lowercased()) else { return nil }
-        return try? await Task.detached(priority: .utility) {
-            try MP4TitleReader.title(in: url)
-        }.value
+        let task = Task.detached(priority: .utility) {
+            try Task.checkCancellation()
+            return try MP4TitleReader.title(in: url)
+        }
+        return try await withTaskCancellationHandler {
+            let title = try? await task.value
+            try Task.checkCancellation()
+            return title
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private nonisolated func copyExportFile(
@@ -272,7 +328,13 @@ extension LibraryService {
     }
 }
 
-private extension Array where Element == AVMetadataItem {
+private nonisolated struct ExportPlanEntry: Sendable {
+    let url: URL
+    let title: String?
+    let album: String?
+}
+
+private nonisolated extension Array where Element == AVMetadataItem {
     func exportStringValue(for identifier: AVMetadataIdentifier) async -> String? {
         for item in AVMetadataItem.metadataItems(from: self, filteredByIdentifier: identifier) {
             if let string = try? await item.load(.stringValue), let value = string.nilIfBlank {
@@ -300,7 +362,7 @@ private extension Array where Element == AVMetadataItem {
     }
 }
 
-private extension String {
+private nonisolated extension String {
     var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed

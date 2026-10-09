@@ -1,12 +1,15 @@
 import Foundation
 
+/// The persisted location of a library file, captured on the main actor so workers can resolve it.
+nonisolated struct MediaFileReference: Sendable {
+    let id: UUID
+    let bookmarkData: Data
+    let fileName: String
+}
+
 /// Only value snapshots cross the actor boundary; bookmark resolution and file probes run in the worker.
 nonisolated struct EmbeddedMetadataEditabilityChecker: Sendable {
-    struct Input: Sendable {
-        let id: UUID
-        let bookmarkData: Data
-        let fileName: String
-    }
+    typealias Input = MediaFileReference
 
     private let resolve: @Sendable (Data, URL) -> URL
     private let canWrite: @Sendable (URL) -> Bool

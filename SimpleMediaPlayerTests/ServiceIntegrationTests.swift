@@ -101,7 +101,7 @@ struct MediaExportServiceIntegrationTests {
         )
         let service = LibraryService(mediaDirectoryURL: mediaDirectory)
 
-        let plan = await service.makeExportPlan(for: [item])
+        let plan = try await service.makeExportPlan(for: [item])
 
         let draft = try #require(plan.files.first)
         #expect(plan.files.count == 1)
@@ -164,7 +164,7 @@ struct LibraryServicePersistenceTests {
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
     }
 
-    @Test func deleteRemovesThePersistedItemAndItsResolvedFile() throws {
+    @Test func deleteRemovesThePersistedItemAndItsResolvedFile() async throws {
         let sandbox = try TemporaryDirectory()
         defer { sandbox.remove() }
         let mediaDirectory = try sandbox.createDirectory(named: "Media")
@@ -175,7 +175,7 @@ struct LibraryServicePersistenceTests {
         fixture.context.insert(item)
         try fixture.context.save()
 
-        fixture.service.delete(item, from: fixture.context)
+        await fixture.service.delete(item, from: fixture.context)?.value
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
@@ -200,7 +200,7 @@ struct LibraryServicePersistenceTests {
         fixture.context.insert(item)
         try fixture.context.save()
 
-        fixture.service.delete(item, from: fixture.context)
+        await fixture.service.delete(item, from: fixture.context)?.value
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)

@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 struct PlaylistOrderingTests {
-    @Test func reorderAfterLibraryDeletionUsesVisibleOffsetsAndPersists() throws {
+    @Test func reorderAfterLibraryDeletionUsesVisibleOffsetsAndPersists() async throws {
         let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
@@ -29,7 +29,7 @@ struct PlaylistOrderingTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let deletedFile = directory.appendingPathComponent(deleted.fileName)
         try Data("audio".utf8).write(to: deletedFile)
-        LibraryService(mediaDirectoryURL: directory).delete(deleted, from: context)
+        await LibraryService(mediaDirectoryURL: directory).delete(deleted, from: context)?.value
 
         #expect(FileManager.default.fileExists(atPath: deletedFile.path) == false)
         #expect(try context.fetchCount(FetchDescriptor<MediaItem>()) == 3)

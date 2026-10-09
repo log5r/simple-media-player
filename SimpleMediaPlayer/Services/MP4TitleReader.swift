@@ -149,6 +149,8 @@ private struct Parser {
         var offset = range.lowerBound
 
         while offset + 8 <= range.upperBound {
+            // Fragmented files can have many top-level boxes, so cancelled readers stop between them.
+            try Task.checkCancellation()
             guard let box = try box(at: offset, limit: range.upperBound) else {
                 break
             }
