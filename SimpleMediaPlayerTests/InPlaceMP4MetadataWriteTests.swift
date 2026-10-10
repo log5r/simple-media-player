@@ -154,7 +154,12 @@ struct InPlaceMP4MetadataWriteTests {
         let after = try Data(contentsOf: fixture.url)
         #expect(try fixture.fileNumber() != fileNumber)
         #expect(try fixture.temporaryLeftovers().isEmpty)
-        #expect(after.count == before.count + 64 - remainder)
+        // The rewrite moves the following boxes anyway, so the movie box keeps padding in a trailing `free` box.
+        #expect(after.count == before.count + 64 - remainder + MediaFileRewriter.rewritePadding)
+        let moov = try mp4Box(["moov"], in: after)
+        let children = try parsedMP4Boxes(in: after, range: moov.contentStart..<moov.range.upperBound)
+        #expect(children.last?.type == "free")
+        #expect(children.last?.range.count == MediaFileRewriter.rewritePadding)
         #expect(try content(["mdat"], in: after) == content(["mdat"], in: before))
         #expect(try await playback(at: fixture.url) == reference)
         #expect(try MP4MetadataReader.read(from: fixture.url)?.values.title?.count == 65 - remainder)
@@ -176,14 +181,16 @@ struct InPlaceMP4MetadataWriteTests {
         let moov = try mp4Box(["moov"], in: shrunk)
         let shrunkChildren = try parsedMP4Boxes(in: shrunk, range: moov.contentStart..<moov.range.upperBound)
         #expect(shrunkChildren.last?.type == "free")
-        #expect(shrunkChildren.last?.range.count == 94)
+        // The rewrite for the long title left `rewritePadding` bytes, which the shrink adds to.
+        #expect(shrunkChildren.last?.range.count == 94 + MediaFileRewriter.rewritePadding)
 
         try MP4MetadataWriter.write(titleDraft(String(repeating: "Medium ", count: 8)), to: fixture.url)
 
         let regrown = try Data(contentsOf: fixture.url)
         #expect(regrown.count == long.count)
         let regrownChildren = try parsedMP4Boxes(in: regrown, range: moov.contentStart..<moov.range.upperBound)
-        #expect(regrownChildren.filter { $0.type == "free" }.map(\.range.count) == [44])
+        #expect(regrownChildren.filter { $0.type == "free" }.map(\.range.count)
+            == [44 + MediaFileRewriter.rewritePadding])
         #expect(try fixture.fileNumber() == fileNumber)
         #expect(try content(chunkOffsetPath, in: regrown) == content(chunkOffsetPath, in: long))
         #expect(regrown[moov.range.upperBound...] == long[moov.range.upperBound...])

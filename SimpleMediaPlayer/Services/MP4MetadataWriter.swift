@@ -35,7 +35,7 @@ enum MP4MetadataWriter {
             let movie = try rebuiltMovie(draft, source: source, fileSize: fileSize)
             let moovBox = movie.moovBox
             let oldMoovSize = moovBox.totalRange.upperBound - moovBox.totalRange.lowerBound
-            var rebuiltMoovBox = paddedMoovBox(movie, size: oldMoovSize)
+            var rebuiltMoovBox = rewrittenMoovBox(movie, size: oldMoovSize, fileSize: fileSize)
             let sizeDelta = rebuiltMoovBox.count - Int(oldMoovSize)
             if sizeDelta != 0 {
                 // Fragment/index offsets are not covered by stco/co64 adjustment.
@@ -311,6 +311,18 @@ extension MP4MetadataWriter {
         let unpaddedSize = UInt64(movie.content.count) + 8
         guard unpaddedSize + 8 <= size else { return makeBox(type: movie.moovBox.type, content: movie.content) }
         return makeBox(type: movie.moovBox.type, content: movie.content + makeFreeBox(size: Int(size - unpaddedSize)))
+    }
+
+    /// The movie box for the full rewrite: `paddedMoovBox`, or, when its size changes and boxes follow it, which
+    /// then move anyway, the rebuilt box with a trailing `free` child of `MediaFileRewriter.rewritePadding` bytes,
+    /// so a later save that grows it a little takes `inPlaceEdit`. A box at the end of the file needs none, since
+    /// `inPlaceEdit` resizes the file there.
+    nonisolated private static func rewrittenMoovBox(_ movie: RebuiltMovie, size: UInt64, fileSize: UInt64) -> Data {
+        let moovBox = paddedMoovBox(movie, size: size)
+        guard UInt64(moovBox.count) != size, movie.moovBox.totalRange.upperBound != fileSize else { return moovBox }
+        return makeBox(
+            type: movie.moovBox.type, content: movie.content + makeFreeBox(size: MediaFileRewriter.rewritePadding)
+        )
     }
 
     /// An edit that leaves every other box in place, so no chunk or fragment offset changes; nil when none fits.

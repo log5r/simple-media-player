@@ -25,6 +25,10 @@ nonisolated enum MediaFileRewriter {
     /// new bytes and the original for rollback. Tags with a typical cover are far smaller; larger regions take the
     /// replacement, which keeps no rollback copy. A test hook so tests need no large files.
     @TaskLocal static var inPlaceTagLimit: UInt64 = 16 * 1_048_576
+    /// The free space a full rewrite leaves in the metadata region when it changes the region's size, which moves
+    /// the audio anyway, so a later save that grows the metadata a little fits in place. A rewrite that keeps the
+    /// size adds none. 4 KiB holds typical text edits; larger growth, such as new artwork, takes another rewrite.
+    static let rewritePadding = 4_096
 
     /// Overwrites only the range `plan` returns, or rewrites the whole file through `rewrite(at:_:)` when it returns
     /// nil or the file cannot be opened for writing. Cancellation is honored until the first write; after a failed
