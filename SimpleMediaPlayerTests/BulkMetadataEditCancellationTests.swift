@@ -112,6 +112,36 @@ struct BulkMetadataEditCancellationTests {
         }
     }
 
+    /// A stop that arrives while the first item's save is failing must not hide that failure.
+    @Test func aFailureAfterCancellationIsReportedAndTheRemainingFilesStayUntouched() async throws {
+        let probe = MetadataDraftReadProbe(blocks: false)
+        let fixture = try BulkEditFixture(fileCount: 3, probe: probe) { _ in
+            withUnsafeCurrentTask { $0?.cancel() }
+            throw InjectedSaveFailure()
+        }
+        defer { fixture.remove() }
+        let originals = try fixture.urls.map { try Data(contentsOf: $0) }
+        let patch = fixture.titlePatch
+        let task = Task { @MainActor in
+            var reports: [BulkMetadataEditProgress] = []
+            let result = await fixture.service.updateEmbeddedMetadata(
+                for: fixture.items, patch: patch, in: fixture.context
+            ) { reports.append($0) }
+            return (result, reports)
+        }
+        let (result, reports) = await task.value
+
+        #expect(result.updatedCount == 0)
+        #expect(result.failedCount == 1)
+        #expect(result.failures.first?.fileName == fixture.urls[0].lastPathComponent)
+        #expect(result.unprocessedCount == 2)
+        #expect(reports == [BulkMetadataEditProgress(completedCount: 1, totalCount: 3)])
+        for index in 1..<3 {
+            #expect(try Data(contentsOf: fixture.urls[index]) == originals[index])
+            #expect(fixture.items[index].title == "Model title")
+        }
+    }
+
     @Test(arguments: [false, true])
     func bulkEditDoesNotLoadLibraryOrEmbeddedArtwork(patchesArtwork: Bool) async throws {
         let probe = MetadataDraftReadProbe(blocks: false)
@@ -142,6 +172,8 @@ nonisolated private enum BulkWriteInvalidation: CaseIterable {
     case deletion
 }
 
+nonisolated private struct InjectedSaveFailure: Error {}
+
 @MainActor
 private struct BulkEditFixture {
     let directory: URL
@@ -158,7 +190,10 @@ private struct BulkEditFixture {
     }
 
     /// `missingFileIndex` adds an item whose file does not exist, inserted at that position.
-    init(fileCount: Int, probe: MetadataDraftReadProbe, useWAV: Bool = true, missingFileIndex: Int? = nil) throws {
+    init(
+        fileCount: Int, probe: MetadataDraftReadProbe, useWAV: Bool = true, missingFileIndex: Int? = nil,
+        saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         embeddedArtwork = try makeDraftArtwork()
@@ -199,7 +234,8 @@ private struct BulkEditFixture {
         service = LibraryService(
             mediaDirectoryURL: directory,
             artworkProcessor: ArtworkProcessor(downsample: probe.thumbnail),
-            artworkLoader: LibraryArtworkLoader(read: probe.read)
+            artworkLoader: LibraryArtworkLoader(read: probe.read),
+            saveContext: saveContext
         )
     }
 

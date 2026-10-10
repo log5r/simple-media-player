@@ -344,7 +344,7 @@ final class LibraryService {
         guard let url = resolvedURL(for: item) else {
             if draft.editsArtwork {
                 item.artworkData = draft.artworkData
-                try context.save()
+                try saveContext(context)
                 return
             }
             throw MediaMetadataEditError.cannotResolveFile
@@ -376,7 +376,7 @@ final class LibraryService {
         }
 
         applyMetadataValues(draft, to: item, fileURL: url, canWriteMetadata: canWriteMetadata)
-        try context.save()
+        try saveContext(context)
     }
 
     private func applyMetadataValues(
@@ -432,7 +432,8 @@ extension LibraryService {
     }
 
     /// Items are written one at a time. Cancelling the calling task stops before the next item; an item
-    /// whose file write has started still finishes and counts as updated.
+    /// whose file write has started still finishes and counts as updated, or as failed if the write or
+    /// save fails. Only the items that were never attempted count as unprocessed.
     func updateEmbeddedMetadata(
         for items: [MediaItem],
         patch: MediaMetadataEditPatch,
@@ -454,9 +455,11 @@ extension LibraryService {
                 try await updateEmbeddedMetadata(for: item, draft: patchedDraft, in: context)
                 result.updatedCount += 1
             } catch {
-                // A stopped request leaves this item unprocessed. Otherwise a cancellation means the item
-                // was deleted or replaced while it was read, which is reported as a failure.
-                guard Task.isCancelled == false else {
+                // Only the cancellation of a stopped request leaves this item unprocessed. Any other error
+                // is a failure even after a stop, since the file may already have been rewritten; the stop
+                // then takes effect before the next item. Without a stop, a cancellation means the item
+                // was deleted or replaced while it was read, which is also a failure.
+                if error is CancellationError, Task.isCancelled {
                     result.unprocessedCount = items.count - index
                     break
                 }
