@@ -217,8 +217,9 @@ private extension LibraryService {
 extension LibraryService {
     /// Best effort: the import override still applies the same values when a format has no writer or
     /// the write fails. The rewriters replace the file atomically, so a failure leaves it unchanged.
+    /// Cancelling the caller cancels the rewrite, whose cancellation checks run in the detached task.
     nonisolated static func embedMusicLibraryMetadata(of track: MusicLibraryTrack, into url: URL) async -> Bool {
-        await Task.detached(priority: .utility) {
+        let rewrite = Task.detached(priority: .utility) {
             let values = track.metadataValues
             let draft = MediaMetadataEditDraft(
                 title: values.title ?? "", artist: values.artist ?? "", album: values.album ?? "",
@@ -245,6 +246,11 @@ extension LibraryService {
             } catch {
                 return false
             }
-        }.value
+        }
+        return await withTaskCancellationHandler {
+            await rewrite.value
+        } onCancel: {
+            rewrite.cancel()
+        }
     }
 }
