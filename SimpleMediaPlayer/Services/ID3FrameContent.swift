@@ -2,21 +2,22 @@ import Foundation
 
 /// Decodes the readable content of an ID3v2 frame from its raw bytes, header included.
 nonisolated enum ID3FrameContent {
-    /// Returns the frame data without its header additions and per-frame unsynchronisation,
+    /// Returns the frame data without per-frame unsynchronisation and its header additions,
     /// or `nil` when the content is compressed, encrypted, or its additions do not fit in the frame.
     static func readableContent(of frame: Data, version: UInt8) -> Data? {
         // ID3v2.2 frames have a 6-byte header without flags.
         guard version != 2 else { return frame.dropFirst(6) }
         guard frame.count >= 10 else { return nil }
         let formatFlags = frame[frame.startIndex + 9]
-        let body = frame.dropFirst(10)
-        guard let additionsLength = additionsLength(formatFlags: formatFlags, version: version),
-              additionsLength <= body.count
-        else { return nil }
+        guard let additionsLength = additionsLength(formatFlags: formatFlags, version: version) else { return nil }
 
-        let data = body.dropFirst(additionsLength)
-        // ID3v2.4 §4.1.2 %0h00kmnp: n marks per-frame unsynchronisation, applied after the additions.
-        return version == 4 && formatFlags & 0x02 != 0 ? removingUnsynchronisation(from: data) : data
+        // ID3v2.4 §4.1.2 %0h00kmnp: with n, "all data from the end of this header to the end of this frame
+        // has been unsynchronised". §4.1 places the additions after the frame header, so they are
+        // unsynchronised too and must be decoded together with the frame data before being dropped.
+        let body = frame.dropFirst(10)
+        let decodedBody = version == 4 && formatFlags & 0x02 != 0 ? removingUnsynchronisation(from: body) : body
+        guard additionsLength <= decodedBody.count else { return nil }
+        return decodedBody.dropFirst(additionsLength)
     }
 
     /// Returns the number of bytes the format flags add after the frame header,

@@ -37,6 +37,25 @@ struct ID3FrameFlagReadingTests {
         #expect(values.album == "Album")
     }
 
+    /// The group identifier 0xFF followed by the encoding byte 0x00 or the data length indicator is stored
+    /// as 0xFF 0x00 0x00, so the additions can be dropped only after reversing unsynchronisation.
+    @Test(arguments: [UInt8(0x42), 0x43])
+    func readsV24UnsynchronisedFramesWithGroupIdentifierFF(flags: UInt8) throws {
+        let title = textContent("Grouped title", encoding: 0)
+        let content = v24Frame(id: "TIT2", content: title, flags: flags, groupID: 0xFF)
+            + v24Frame(id: "APIC", content: pictureContent(type: 4, image: Data([1, 2, 3])))
+            + v24Frame(
+                id: "APIC", content: pictureContent(type: 3, image: jpegLikeImage), flags: flags, groupID: 0xFF
+            )
+            + v24Frame(id: "TALB", content: textContent("Album", encoding: 3))
+
+        let result = try #require(try ID3TagWriter.readEmbeddedTag(tag(version: 4, content: content)))
+
+        #expect(result.values.title == "Grouped title")
+        #expect(result.values.album == "Album")
+        #expect(result.artworkData == jpegLikeImage)
+    }
+
     @Test func readsV24UnsynchronisedArtworkAndLyrics() throws {
         let lyrics = "First ÿ line\nSecond line"
         let lyricsContent = Data([1]) + Data("eng".utf8) + Data([0xFF, 0xFE, 0, 0])
@@ -152,6 +171,26 @@ struct ID3FrameFlagWritingTests {
         #expect(try file.directoryContents() == [file.url.lastPathComponent])
     }
 
+    @Test(arguments: [UInt8(0x42), 0x43])
+    func replacingArtworkRemovesGroupedUnsynchronisedFrontCover(flags: UInt8) throws {
+        let back = v24Frame(id: "APIC", content: pictureContent(type: 4, image: Data([1, 2, 3])), flags: flags)
+        let oldFront = v24Frame(
+            id: "APIC", content: pictureContent(type: 3, image: jpegLikeImage), flags: flags, groupID: 0xFF
+        )
+        let original = tag(version: 4, content: back + oldFront)
+        let newFront = Data([10, 11, 12])
+        let draft = MediaMetadataEditDraft(
+            title: "", artist: "", album: "", genre: "", artworkData: newFront,
+            editsTextMetadata: false, editsArtwork: true
+        )
+
+        let updated = try ID3TagWriter.updatedTagData(for: draft, existingTagData: original)
+
+        #expect(updated.range(of: back) != nil)
+        #expect(updated.range(of: oldFront) == nil)
+        #expect(try ID3TagWriter.readEmbeddedTag(updated)?.artworkData == newFront)
+    }
+
     @Test func refusesToReplaceArtworkWhenAPictureIsEncrypted() throws {
         let encryptedArtwork = v24Frame(id: "APIC", content: Data("7f3a91c0be5d".utf8), flags: 0x04)
         let content = encryptedArtwork + v24Frame(id: "TIT2", content: textContent("Title", encoding: 3))
@@ -222,12 +261,15 @@ private func tag(version: UInt8, content: Data) -> Data {
 }
 
 /// Builds an ID3v2.4 frame, adding the group byte, encryption method and data length indicator in flag order.
-private func v24Frame(id: String, content: Data, flags: UInt8 = 0, dataLength: Int? = nil) -> Data {
+/// ID3v2.4 §4.1.2: unsynchronisation covers everything after the frame header, so the additions are included.
+private func v24Frame(
+    id: String, content: Data, flags: UInt8 = 0, dataLength: Int? = nil, groupID: UInt8 = 0x01
+) -> Data {
     var additions = Data()
-    if flags & 0x40 != 0 { additions.append(0x01) }
+    if flags & 0x40 != 0 { additions.append(groupID) }
     if flags & 0x04 != 0 { additions.append(0x80) }
     if flags & 0x01 != 0 { additions += synchsafeData(dataLength ?? content.count) }
-    let body = additions + (flags & 0x02 != 0 ? unsynchronised(content) : content)
+    let body = flags & 0x02 != 0 ? unsynchronised(additions + content) : additions + content
     return Data(id.utf8) + synchsafeData(body.count) + Data([0, flags]) + body
 }
 
