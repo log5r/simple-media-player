@@ -73,7 +73,7 @@ struct InPlaceWriteFallbackTests {
         let fileNumber = try fixture.fileNumber()
         let limit = UInt64(metadataEnd - (exceedsLimit ? 1 : 0))
 
-        try FLACMetadataWriter.$inPlaceMetadataLimit.withValue(limit) {
+        try MediaFileRewriter.$inPlaceTagLimit.withValue(limit) {
             try InPlaceTestFormat.flac.write(titleDraft("Short"), to: fixture.url)
         }
 
@@ -82,6 +82,29 @@ struct InPlaceWriteFallbackTests {
         #expect((try fixture.fileNumber() != fileNumber) == exceedsLimit)
         #expect(written[end...] == original[metadataEnd...])
         #expect(try InPlaceTestFormat.flac.title(at: fixture.url) == "Short")
+        #expect(try decodedSamples(at: fixture.url) == samples)
+        #expect(try fixture.temporaryLeftovers().isEmpty)
+    }
+
+    /// An ID3 tag is rewritten in place only while the range to write, here the old frames, is within the limit.
+    @Test(arguments: [false, true])
+    func id3RangeAboveTheLimitIsRewritten(exceedsLimit: Bool) throws {
+        let fixture = try InPlaceTestFormat.mp3.preparedFixture()
+        defer { fixture.remove() }
+        let original = try Data(contentsOf: fixture.url)
+        let tagSize = try id3TagSize(in: original)
+        let contentEnd = try #require(original[10..<tagSize].lastIndex { $0 != 0 }) + 1
+        let samples = try decodedSamples(at: fixture.url)
+        let fileNumber = try fixture.fileNumber()
+
+        try MediaFileRewriter.$inPlaceTagLimit.withValue(UInt64(contentEnd - (exceedsLimit ? 1 : 0))) {
+            try InPlaceTestFormat.mp3.write(titleDraft("Short"), to: fixture.url)
+        }
+
+        let written = try Data(contentsOf: fixture.url)
+        #expect((try fixture.fileNumber() != fileNumber) == exceedsLimit)
+        #expect(written[try id3TagSize(in: written)...] == original[tagSize...])
+        #expect(try InPlaceTestFormat.mp3.title(at: fixture.url) == "Short")
         #expect(try decodedSamples(at: fixture.url) == samples)
         #expect(try fixture.temporaryLeftovers().isEmpty)
     }

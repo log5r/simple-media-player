@@ -138,9 +138,11 @@ struct InPlaceTagWriteTests {
         let samples = try decodedSamples(at: fixture.url)
         let fileNumber = try fixture.fileNumber()
 
-        try InPlaceTestFormat.mp3.write(titleDraft("Short"), to: fixture.url)
+        let sizes = try inPlaceWriteSizes { try InPlaceTestFormat.mp3.write(titleDraft("Short"), to: fixture.url) }
 
         let written = try Data(contentsOf: fixture.url)
+        // A footer leaves no padding, so the whole tag is written.
+        #expect(sizes == [20 + frame.count])
         #expect(try fixture.fileNumber() == fileNumber)
         #expect(written.count == source.count)
         // No footer flag, and the size covers the old footer as padding.
@@ -150,6 +152,39 @@ struct InPlaceTagWriteTests {
         #expect(written[(20 + 1 + 5)..<(20 + frame.count)].allSatisfy { $0 == 0 })
         #expect(written[(20 + frame.count)...] == audio)
         #expect(try InPlaceTestFormat.mp3.title(at: fixture.url) == "Short")
+        #expect(try decodedSamples(at: fixture.url) == samples)
+    }
+
+    /// Beside large padding, only the range up to the end of the old or the new frames, whichever is later, is
+    /// written; the padding after it is already zero.
+    @Test(arguments: ["Short", String(repeating: "Longer title ", count: 12).trimmingCharacters(in: .whitespaces)])
+    func id3EditBesideLargePaddingWritesOnlyTheFrames(title: String) throws {
+        let fixture = try InPlaceTestFormat.mp3.preparedFixture()
+        defer { fixture.remove() }
+        let tagged = try Data(contentsOf: fixture.url)
+        let framesEnd = try id3TagSize(in: tagged)
+        let paddingSize = 4 * 1_048_576
+        let tagSize = framesEnd + paddingSize
+        let source = tagged.prefix(6) + synchsafe(tagSize - 10) + tagged[10..<framesEnd] + Data(count: paddingSize)
+            + tagged[framesEnd...]
+        try source.write(to: fixture.url)
+        let samples = try decodedSamples(at: fixture.url)
+        let fileNumber = try fixture.fileNumber()
+
+        let sizes = try inPlaceWriteSizes { try InPlaceTestFormat.mp3.write(titleDraft(title), to: fixture.url) }
+
+        let written = try Data(contentsOf: fixture.url)
+        let newFramesEnd = 10 + 10 + 3 + 2 * title.utf16.count
+        let oldContentEnd = try #require(source[10..<framesEnd].lastIndex { $0 != 0 }) + 1
+        // The short title leaves old frame bytes to clear; the long one ends after them.
+        #expect(sizes == [max(newFramesEnd, oldContentEnd)])
+        #expect((newFramesEnd < oldContentEnd) == (title == "Short"))
+        #expect(try fixture.fileNumber() == fileNumber)
+        #expect(written.count == source.count)
+        #expect(written[0..<10] == source[0..<10])
+        #expect(written[newFramesEnd..<tagSize].allSatisfy { $0 == 0 })
+        #expect(written[tagSize...] == source[tagSize...])
+        #expect(try InPlaceTestFormat.mp3.title(at: fixture.url) == title)
         #expect(try decodedSamples(at: fixture.url) == samples)
     }
 

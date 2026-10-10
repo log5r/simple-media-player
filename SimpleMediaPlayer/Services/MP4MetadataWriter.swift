@@ -337,13 +337,22 @@ extension MP4MetadataWriter {
         guard let next = movie.topLevelBoxes.first(where: { $0.totalRange.lowerBound == moovRange.upperBound }),
               paddingTypes.contains(next.type) else { return nil }
         let available = next.totalRange.upperBound - moovRange.lowerBound
-        guard newSize == available || (newSize + 8 <= available && available - newSize <= UInt64(UInt32.max)) else {
-            return nil
-        }
+        guard newSize <= available, let freeHeader = freeBoxHeader(size: available - newSize) else { return nil }
+        // ISO/IEC 14496-12 makes the contents of a `free` box irrelevant, so only the header of the box covering the
+        // rest is written; the padding can be gigabytes, and its old bytes stay.
         return .init(
-            offset: moovRange.lowerBound, originalLength: available,
-            data: moov + makeFreeBox(size: Int(available - newSize))
+            offset: moovRange.lowerBound, originalLength: newSize + UInt64(freeHeader.count), data: moov + freeHeader
         )
+    }
+
+    /// The header of a `free` box of `size` bytes, with a 64-bit size when 32 bits cannot hold it; empty for
+    /// no box, and nil when no header fits.
+    nonisolated private static func freeBoxHeader(size: UInt64) -> Data? {
+        if size == 0 { return Data() }
+        if size >= 8, size <= UInt64(UInt32.max) { return uint32Data(UInt32(size)) + BoxType("free").data }
+        guard size > UInt64(UInt32.max) else { return nil }
+        return uint32Data(1) + BoxType("free").data + uint32Data(UInt32(size >> 32))
+            + uint32Data(UInt32(truncatingIfNeeded: size))
     }
 }
 

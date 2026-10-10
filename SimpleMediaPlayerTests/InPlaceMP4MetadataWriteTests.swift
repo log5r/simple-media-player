@@ -42,7 +42,7 @@ struct InPlaceMP4MetadataWriteTests {
 
     @Test(arguments: [0, 20])
     func adjacentFreeBoxAbsorbsGrowth(remainder: Int) async throws {
-        let fixture = try fixtureWithTrailingBox("free", payloadSize: 56)
+        let fixture = try fixtureWithTrailingBox("free", payload: Data(count: 56))
         defer { fixture.remove() }
         let before = try Data(contentsOf: fixture.url)
         let moov = try mp4Box(["moov"], in: before)
@@ -66,10 +66,84 @@ struct InPlaceMP4MetadataWriteTests {
         #expect(try MP4MetadataReader.read(from: fixture.url)?.values.title?.count == 65 - remainder)
     }
 
+    /// Growth beside large padding writes the movie box and the header of a `free` box over the rest; the old
+    /// padding bytes stay, and readers skip them.
+    @Test func growthBesideLargePaddingWritesOnlyANewHeader() async throws {
+        let fixture = try fixtureWithTrailingBox("skip", payload: Data(repeating: 0xA5, count: 4 * 1_048_576))
+        defer { fixture.remove() }
+        let original = try Data(contentsOf: fixture.url)
+        let moov = try mp4Box(["moov"], in: original)
+        let reference = try await playback(at: fixture.url)
+        let fileNumber = try fixture.fileNumber()
+
+        // The second save grows the movie box again into the `free` box the first one wrote.
+        for growth in [64, 100] {
+            let before = try Data(contentsOf: fixture.url)
+            let moovEnd = moov.range.upperBound + growth
+            let sizes = try inPlaceWriteSizes {
+                try MP4MetadataWriter.write(titleDraft("T" + String(repeating: "x", count: growth)), to: fixture.url)
+            }
+
+            let after = try Data(contentsOf: fixture.url)
+            #expect(sizes == [moovEnd + 8 - moov.range.lowerBound])
+            #expect(after.count == original.count)
+            #expect(after.prefix(moov.range.lowerBound) == original.prefix(moov.range.lowerBound))
+            #expect(after[(moovEnd + 8)...] == before[(moovEnd + 8)...])
+            #expect(after.last == 0xA5)
+            let boxes = try parsedMP4Boxes(in: after)
+            #expect(boxes.suffix(2).map(\.type) == ["moov", "free"])
+            #expect(boxes.last?.range == moovEnd..<after.count)
+            let written = try writtenBoxes(at: fixture.url).suffix(2)
+            #expect(written.map(\.type) == ["moov", "free"])
+            #expect(written.map(\.range)
+                == [UInt64(moov.range.lowerBound)..<UInt64(moovEnd), UInt64(moovEnd)..<UInt64(after.count)])
+            #expect(try content(chunkOffsetPath, in: after) == content(chunkOffsetPath, in: original))
+            #expect(try await playback(at: fixture.url) == reference)
+            #expect(try MP4MetadataReader.read(from: fixture.url)?.values.title?.count == growth + 1)
+        }
+        #expect(try fixture.fileNumber() == fileNumber)
+        #expect(try fixture.temporaryLeftovers().isEmpty)
+    }
+
+    /// Padding left beyond 4 GiB takes a `free` header with a 64-bit size. The file is sparse, so it needs
+    /// almost no disk space.
+    @Test func growthBesidePaddingBeyond4GiBWritesA64BitHeader() async throws {
+        let fixture = try InPlaceFixture(copying: InPlaceFixture.resource("untagged-aac", "m4a"))
+        defer { fixture.remove() }
+        try MP4MetadataWriter.write(titleDraft("T"), to: fixture.url)
+        let tagged = try Data(contentsOf: fixture.url)
+        let moov = try mp4Box(["moov"], in: tagged)
+        let paddingSize: UInt64 = (1 << 32) + 4_096
+        try (tagged + bigEndian(1, byteCount: 4) + Data("free".utf8) + bigEndian(paddingSize, byteCount: 8))
+            .write(to: fixture.url)
+        let handle = try FileHandle(forUpdating: fixture.url)
+        try handle.truncate(atOffset: UInt64(tagged.count) + paddingSize)
+        try handle.close()
+        let fileSize = UInt64(tagged.count) + paddingSize
+        let reference = try await playback(at: fixture.url)
+        let fileNumber = try fixture.fileNumber()
+
+        let sizes = try inPlaceWriteSizes {
+            try MP4MetadataWriter.write(titleDraft("T" + String(repeating: "x", count: 64)), to: fixture.url)
+        }
+
+        let moovEnd = UInt64(moov.range.upperBound + 64)
+        #expect(sizes == [Int(moovEnd) + 16 - moov.range.lowerBound])
+        #expect(try fixture.fileNumber() == fileNumber)
+        #expect(try bytes(at: fixture.url, 0..<UInt64(moov.range.lowerBound)) == tagged.prefix(moov.range.lowerBound))
+        #expect(try bytes(at: fixture.url, moovEnd..<(moovEnd + 16))
+            == bigEndian(1, byteCount: 4) + Data("free".utf8) + bigEndian(fileSize - moovEnd, byteCount: 8))
+        let written = try writtenBoxes(at: fixture.url).suffix(2)
+        #expect(written.map(\.type) == ["moov", "free"])
+        #expect(written.map(\.range) == [UInt64(moov.range.lowerBound)..<moovEnd, moovEnd..<fileSize])
+        #expect(try await playback(at: fixture.url) == reference)
+        #expect(try MP4MetadataReader.read(from: fixture.url)?.values.title?.count == 65)
+    }
+
     /// Growth that leaves 1–7 bytes, or more than the padding holds, uses the full rewrite.
     @Test(arguments: [3, -100])
     func growthBeyondAdjacentFreeFallsBack(remainder: Int) async throws {
-        let fixture = try fixtureWithTrailingBox("free", payloadSize: 56)
+        let fixture = try fixtureWithTrailingBox("free", payload: Data(count: 56))
         defer { fixture.remove() }
         let before = try Data(contentsOf: fixture.url)
         let reference = try await playback(at: fixture.url)
@@ -87,7 +161,7 @@ struct InPlaceMP4MetadataWriteTests {
     }
 
     @Test func innerFreeFromShrinkIsReusedForGrowth() async throws {
-        let fixture = try fixtureWithTrailingBox("abcd", payloadSize: 4)
+        let fixture = try fixtureWithTrailingBox("abcd", payload: Data(count: 4))
         defer { fixture.remove() }
         let reference = try await playback(at: fixture.url)
         // Neither at the end nor followed by padding, so growth replaces the file.
@@ -121,7 +195,7 @@ struct InPlaceMP4MetadataWriteTests {
     /// For an unchanged movie box size, the in-place edit writes what the full rewrite writes.
     @Test(arguments: [0, 40])
     func fixedSizeEditMatchesFullRewrite(shrink: Int) throws {
-        let fixture = try fixtureWithTrailingBox("abcd", payloadSize: 4)
+        let fixture = try fixtureWithTrailingBox("abcd", payload: Data(count: 4))
         defer { fixture.remove() }
         try MP4MetadataWriter.write(titleDraft("Title" + String(repeating: "x", count: shrink)), to: fixture.url)
         let replaced = fixture.directory.appendingPathComponent("replaced.m4a")
@@ -143,12 +217,31 @@ struct InPlaceMP4MetadataWriteTests {
     // MARK: - Helpers
 
     /// The AAC fixture tagged once, followed by a top-level box of `type`.
-    private func fixtureWithTrailingBox(_ type: String, payloadSize: Int) throws -> InPlaceFixture {
+    private func fixtureWithTrailingBox(_ type: String, payload: Data) throws -> InPlaceFixture {
         let fixture = try InPlaceFixture(copying: InPlaceFixture.resource("untagged-aac", "m4a"))
         try MP4MetadataWriter.write(titleDraft("T"), to: fixture.url)
-        let data = try Data(contentsOf: fixture.url) + mp4Box(type, Data(count: payloadSize))
+        let data = try Data(contentsOf: fixture.url) + mp4Box(type, payload)
         try data.write(to: fixture.url)
         return fixture
+    }
+
+    /// The top-level boxes as the writer parses them, with their types as text.
+    private func writtenBoxes(at url: URL) throws -> [(type: String?, range: Range<UInt64>)] {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return try MP4MetadataWriter.fileBoxes(in: handle, fileSize: handle.seekToEnd()).map {
+            (String(bytes: $0.type.data, encoding: .isoLatin1), $0.totalRange)
+        }
+    }
+
+    private func bytes(at url: URL, _ range: Range<UInt64>) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return try MediaFileRewriter.read(from: handle, at: range.lowerBound, count: range.count)
+    }
+
+    private func bigEndian(_ value: UInt64, byteCount: Int) -> Data {
+        Data((0..<byteCount).map { UInt8(truncatingIfNeeded: value >> ((byteCount - 1 - $0) * 8)) })
     }
 
     private func content(_ path: [String], in data: Data) throws -> Data {

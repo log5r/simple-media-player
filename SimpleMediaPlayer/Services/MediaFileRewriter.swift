@@ -21,6 +21,10 @@ nonisolated enum MediaFileRewriter {
     }
     /// Test hook: false makes `update` always rewrite, so tests can compare both outputs.
     @TaskLocal static var allowsInPlaceEdits = true
+    /// The largest FLAC or ID3 tag region a planner rewrites in place, which holds the region in memory twice: the
+    /// new bytes and the original for rollback. Tags with a typical cover are far smaller; larger regions take the
+    /// replacement, which keeps no rollback copy. A test hook so tests need no large files.
+    @TaskLocal static var inPlaceTagLimit: UInt64 = 16 * 1_048_576
 
     /// Overwrites only the range `plan` returns, or rewrites the whole file through `rewrite(at:_:)` when it returns
     /// nil or the file cannot be opened for writing. Cancellation is honored until the first write; after a failed

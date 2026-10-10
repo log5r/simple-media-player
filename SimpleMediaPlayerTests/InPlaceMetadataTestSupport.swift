@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import os
 import Testing
 @testable import SimpleMediaPlayer
 
@@ -77,6 +78,16 @@ nonisolated enum InPlaceTestFormat: String, CaseIterable, Sendable {
 
 nonisolated func titleDraft(_ title: String) -> MediaMetadataEditDraft {
     MediaMetadataEditDraft(title: title, artist: "", album: "", genre: "")
+}
+
+/// The byte counts of the in-place writes `body` makes.
+nonisolated func inPlaceWriteSizes(during body: () throws -> Void) throws -> [Int] {
+    let sizes = OSAllocatedUnfairLock(initialState: [Int]())
+    try MediaFileRewriter.$inPlaceWrite.withValue({ handle, data in
+        sizes.withLock { $0.append(data.count) }
+        try handle.write(contentsOf: data)
+    }, operation: body)
+    return sizes.withLock { $0 }
 }
 
 /// Every decoded sample of the first channel.

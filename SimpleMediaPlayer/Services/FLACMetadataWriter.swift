@@ -14,10 +14,6 @@ nonisolated enum FLACMetadataWriter {
     }
     private static let paddingType: UInt8 = 1
     private static let maxBlockLength: UInt64 = 0xFFFFFF
-    /// The largest metadata region rewritten in place, which holds the region in memory twice: the new bytes and
-    /// the original for rollback. Tags with a typical cover are far smaller; larger regions take the streaming
-    /// rewrite, which copies preserved blocks through a 1 MiB buffer. A test hook so tests need no large files.
-    @TaskLocal static var inPlaceMetadataLimit: UInt64 = 16 * 1_048_576
 
     static func canWriteMetadata(to url: URL) -> Bool {
         url.pathExtension.lowercased() == "flac"
@@ -49,7 +45,8 @@ nonisolated enum FLACMetadataWriter {
         try MediaFileRewriter.update(at: url) { source, size in
             let blocks = try parse(source, size: size)
             let metadataEnd = blocks.last!.range.upperBound
-            guard metadataEnd <= inPlaceMetadataLimit else { return nil }
+            // Larger regions take the streaming rewrite, which copies preserved blocks through a 1 MiB buffer.
+            guard metadataEnd <= MediaFileRewriter.inPlaceTagLimit else { return nil }
             return try inPlaceEdit(outputBlocks(for: draft, blocks: blocks, source: source),
                                    metadataEnd: metadataEnd, source: source)
         } rewrite: { source, output, size in
