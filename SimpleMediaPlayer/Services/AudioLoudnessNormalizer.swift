@@ -54,7 +54,7 @@ nonisolated enum AudioLoudnessNormalizer {
         }
         try Task.checkCancellation()
         if let entry {
-            AudioLoudnessCache.write(gain, at: entry)
+            AudioLoudnessCache.store(gain, at: entry, for: url, in: cacheDirectory)
         }
         return gain
     }
