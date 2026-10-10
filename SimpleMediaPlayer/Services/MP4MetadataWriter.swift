@@ -34,25 +34,7 @@ enum MP4MetadataWriter {
         } rewrite: { source, output, fileSize in
             let movie = try rebuiltMovie(draft, source: source, fileSize: fileSize)
             let moovBox = movie.moovBox
-            let oldMoovSize = moovBox.totalRange.upperBound - moovBox.totalRange.lowerBound
-            var rebuiltMoovBox = rewrittenMoovBox(movie, size: oldMoovSize, fileSize: fileSize)
-            let sizeDelta = rebuiltMoovBox.count - Int(oldMoovSize)
-            if sizeDelta != 0 {
-                // Fragment/index offsets are not covered by stco/co64 adjustment.
-                // Fixed-size edits keep those offsets valid; otherwise preserve the source.
-                let fragmentTypes: Set<BoxType> = [BoxType("moof"), BoxType("mfra"), BoxType("sidx")]
-                let movieChildren = try boxes(in: 0..<movie.originalContent.count, data: movie.originalContent)
-                let hasFragments = movie.topLevelBoxes.contains { fragmentTypes.contains($0.type) }
-                    || movieChildren.contains { $0.type == BoxType("mvex") }
-                guard hasFragments == false else {
-                    throw MediaMetadataEditError.unsupportedMP4MetadataLayout
-                }
-                rebuiltMoovBox = try adjustingChunkOffsets(
-                    inMoovBox: rebuiltMoovBox,
-                    by: Int64(sizeDelta),
-                    startingAt: moovBox.totalRange.upperBound
-                )
-            }
+            let rebuiltMoovBox = try rewrittenMoovBox(movie, fileSize: fileSize)
 
             try MediaFileRewriter.copy(from: source, range: 0..<moovBox.totalRange.lowerBound, to: output)
             try output.write(contentsOf: rebuiltMoovBox)
@@ -313,16 +295,42 @@ extension MP4MetadataWriter {
         return makeBox(type: movie.moovBox.type, content: movie.content + makeFreeBox(size: Int(size - unpaddedSize)))
     }
 
-    /// The movie box for the full rewrite: `paddedMoovBox`, or, when its size changes and boxes follow it, which
-    /// then move anyway, the rebuilt box with a trailing `free` child of `MediaFileRewriter.rewritePadding` bytes,
-    /// so a later save that grows it a little takes `inPlaceEdit`. A box at the end of the file needs none, since
-    /// `inPlaceEdit` resizes the file there.
-    nonisolated private static func rewrittenMoovBox(_ movie: RebuiltMovie, size: UInt64, fileSize: UInt64) -> Data {
-        let moovBox = paddedMoovBox(movie, size: size)
-        guard UInt64(moovBox.count) != size, movie.moovBox.totalRange.upperBound != fileSize else { return moovBox }
-        return makeBox(
-            type: movie.moovBox.type, content: movie.content + makeFreeBox(size: MediaFileRewriter.rewritePadding)
-        )
+    /// The movie box for the full rewrite: `paddedMoovBox`, with its chunk offsets moved when its size changes.
+    /// When boxes follow it, which then move anyway, it also gets a trailing `free` child of
+    /// `MediaFileRewriter.rewritePadding` bytes, so a later save that grows it a little takes `inPlaceEdit`. A box at
+    /// the end of the file needs none, since `inPlaceEdit` resizes the file there. Padding never makes the save fail:
+    /// when the larger shift would move a chunk offset out of range, the box is written without it.
+    nonisolated private static func rewrittenMoovBox(_ movie: RebuiltMovie, fileSize: UInt64) throws -> Data {
+        let moovRange = movie.moovBox.totalRange
+        let oldSize = moovRange.upperBound - moovRange.lowerBound
+        let moovBox = paddedMoovBox(movie, size: oldSize)
+        guard UInt64(moovBox.count) != oldSize else { return moovBox }
+        // Fragment/index offsets are not covered by stco/co64 adjustment.
+        // Fixed-size edits keep those offsets valid; otherwise preserve the source.
+        let fragmentTypes: Set<BoxType> = [BoxType("moof"), BoxType("mfra"), BoxType("sidx")]
+        let movieChildren = try boxes(in: 0..<movie.originalContent.count, data: movie.originalContent)
+        let hasFragments = movie.topLevelBoxes.contains { fragmentTypes.contains($0.type) }
+            || movieChildren.contains { $0.type == BoxType("mvex") }
+        guard hasFragments == false else {
+            throw MediaMetadataEditError.unsupportedMP4MetadataLayout
+        }
+        func shifted(_ box: Data) throws -> Data {
+            try adjustingChunkOffsets(
+                inMoovBox: box, by: Int64(box.count) - Int64(oldSize), startingAt: moovRange.upperBound
+            )
+        }
+        let paddedSize = UInt64(movie.content.count) + 8 + UInt64(MediaFileRewriter.rewritePadding)
+        if moovRange.upperBound != fileSize, paddedSize <= UInt64(UInt32.max) {
+            let padded = makeBox(
+                type: movie.moovBox.type, content: movie.content + makeFreeBox(size: MediaFileRewriter.rewritePadding)
+            )
+            do {
+                return try shifted(padded)
+            } catch MediaMetadataEditError.unsupportedMP4MetadataLayout {
+                // A chunk offset near the 32- or 64-bit limit; the shift without padding may still fit.
+            }
+        }
+        return try shifted(moovBox)
     }
 
     /// An edit that leaves every other box in place, so no chunk or fragment offset changes; nil when none fits.

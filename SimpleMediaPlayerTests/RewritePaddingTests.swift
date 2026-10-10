@@ -203,6 +203,48 @@ struct RewritePaddingTests {
         #expect(try MP4MetadataReader.read(from: fixture.url)?.values.title == "Title")
     }
 
+    /// Padding never makes a save fail: when it would move a 32-bit chunk offset past `UInt32.max`, the rewrite
+    /// writes the movie box without it, as before. The writer compares chunk offsets only with the end of the movie
+    /// box and the 32-bit limit, so an offset past the end of this small file stands in for one in a file near
+    /// 4 GiB, which the rewrite would copy in full.
+    @Test func mp4RewriteSkipsPaddingThatWouldOverflowAChunkOffset() throws {
+        let fixture = try InPlaceFixture(copying: InPlaceFixture.resource("untagged-aac", "m4a"))
+        defer { fixture.remove() }
+        // The new metadata fits below the limit; 4 KiB of padding would not.
+        let nearLimit = UInt32.max - 1_000
+        let original = movieWithChunkOffset(nearLimit)
+        try original.write(to: fixture.url)
+        let originalMoov = try mp4Box(["moov"], in: original)
+
+        try MP4MetadataWriter.write(titleDraft("Title"), to: fixture.url)
+
+        let written = try Data(contentsOf: fixture.url)
+        let moov = try mp4Box(["moov"], in: written)
+        let growth = moov.range.count - originalMoov.range.count
+        let children = try parsedMP4Boxes(in: written, range: moov.contentStart..<moov.range.upperBound)
+        #expect(growth > 0 && growth < 1_000)
+        #expect(children.contains { $0.type == "free" } == false)
+        #expect(try chunkOffsets(in: written) == [Int(nearLimit) + growth])
+        #expect(written[moov.range.upperBound...] == original[originalMoov.range.upperBound...])
+        #expect(try MP4MetadataReader.read(from: fixture.url)?.values.title == "Title")
+        #expect(try fixture.temporaryLeftovers().isEmpty)
+    }
+
+    /// When the metadata alone moves a chunk offset past `UInt32.max`, the save still fails and keeps the file.
+    @Test func mp4RewriteThatOverflowsAChunkOffsetWithoutPaddingFails() throws {
+        let fixture = try InPlaceFixture(copying: InPlaceFixture.resource("untagged-aac", "m4a"))
+        defer { fixture.remove() }
+        let original = movieWithChunkOffset(UInt32.max - 10)
+        try original.write(to: fixture.url)
+
+        #expect(throws: MediaMetadataEditError.unsupportedMP4MetadataLayout) {
+            try MP4MetadataWriter.write(titleDraft("Title"), to: fixture.url)
+        }
+
+        #expect(try Data(contentsOf: fixture.url) == original)
+        #expect(try fixture.temporaryLeftovers().isEmpty)
+    }
+
     /// Fragment offsets cannot move, so a rewrite that keeps the movie box's size writes what the in-place edit
     /// writes, and one that changes it is still refused rather than padded.
     @Test(arguments: [0, 8, 40])
@@ -236,7 +278,11 @@ struct RewritePaddingTests {
         #expect(try Data(contentsOf: replaced) == before)
     }
 
-    // MARK: - Helpers
+}
+
+// MARK: - Helpers
+
+extension RewritePaddingTests {
 
     private func artworkDraft(_ artwork: Data) -> MediaMetadataEditDraft {
         MediaMetadataEditDraft(
@@ -262,6 +308,13 @@ struct RewritePaddingTests {
         }
         try (data[..<mdat.range.lowerBound] + movie + data[mdat.range]).write(to: fixture.url)
         return fixture
+    }
+
+    /// An untagged movie box with one chunk offset, followed by the media data.
+    private func movieWithChunkOffset(_ offset: UInt32) -> Data {
+        let stco = mp4Box("stco", Data(count: 4) + bigEndian(1, byteCount: 4) + bigEndian(UInt64(offset), byteCount: 4))
+        return mp4Box("moov", mp4Box("trak", mp4Box("mdia", mp4Box("minf", mp4Box("stbl", stco)))))
+            + mp4Box("mdat", Data([1, 2, 3]))
     }
 
     private func fragmentedMovie(title: String) -> Data {
