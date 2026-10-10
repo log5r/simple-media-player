@@ -36,20 +36,16 @@ nonisolated enum MusicLibraryTemporaryFiles {
         in temporaryDirectory: URL = FileManager.default.temporaryDirectory
     ) -> Task<Void, Never> {
         let root = rootDirectory(in: temporaryDirectory)
-        var trash: [URL] = []
         let trashed = temporaryDirectory
             .appendingPathComponent("\(trashPrefix)\(UUID().uuidString)", isDirectory: true)
-        if (try? FileManager.default.moveItem(at: root, to: trashed)) != nil {
-            trash.append(trashed)
-        }
-        // Earlier launches may have been interrupted before their own trash was removed.
-        let siblings = (try? FileManager.default.contentsOfDirectory(
-            at: temporaryDirectory, includingPropertiesForKeys: nil
-        )) ?? []
-        trash += siblings.filter { $0.lastPathComponent.hasPrefix(trashPrefix) && $0 != trashed }
-        let directories = trash
+        // Only the rename stays synchronous; the directory scan and removals may be slow.
+        try? FileManager.default.moveItem(at: root, to: trashed)
         return Task.detached(priority: .utility) {
-            for directory in directories {
+            // Includes trash from earlier launches that were interrupted before removing their own.
+            let siblings = (try? FileManager.default.contentsOfDirectory(
+                at: temporaryDirectory, includingPropertiesForKeys: nil
+            )) ?? []
+            for directory in siblings where directory.lastPathComponent.hasPrefix(trashPrefix) {
                 try? FileManager.default.removeItem(at: directory)
             }
         }

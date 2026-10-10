@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import SimpleMediaPlayer
 
-/// Skipping by Music persistent ID and playback artwork, kept apart from the main suite to bound its length.
+/// Skipping by Music persistent ID, playback artwork and startup cleanup, kept apart to bound the main suite.
 @MainActor
 struct MusicLibraryImportSkipTests {
     @Test func skipsSongsAlreadyImportedFromMusic() async throws {
@@ -65,6 +65,42 @@ struct MusicLibraryImportSkipTests {
         #expect(try fixture.managedFiles().count == seeded.count)
         #expect(await fixture.temporaryFilesAreGone())
         #expect(fixture.service.musicLibraryPreparation == nil)
+    }
+
+    /// The pre-check only looks at the selected IDs; an unrelated Music import with a missing file is ignored.
+    @Test func otherMusicImportsDoNotAffectTheSelection() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let other = fixture.makeTrack(id: 50, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
+        _ = await fixture.service.importMusicLibraryTracks([other], into: fixture.context, existingItems: [])
+        for name in try fixture.managedFiles() {
+            try FileManager.default.removeItem(at: fixture.mediaDirectory.appendingPathComponent(name))
+        }
+        let track = fixture.makeTrack(id: 51, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
+
+        let result = try #require(await fixture.service.importMusicLibraryTracks(
+            [track], into: fixture.context, existingItems: try fixture.items()
+        ))
+
+        #expect(result.importedCount == 1)
+        #expect(result.skippedCount == 0)
+        #expect(result.messages.isEmpty)
+        #expect(try fixture.items().count == 2)
+    }
+
+    /// Trash left by an interrupted earlier launch is found by the background scan and removed.
+    @Test func startupCleanupRemovesEarlierTrash() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let earlierTrash = fixture.temporaryDirectory
+            .appendingPathComponent("MusicLibrary-Trash-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: earlierTrash, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: earlierTrash.appendingPathComponent("stale.wav"))
+
+        await MusicLibraryTemporaryFiles.removeLeftoversInBackground(in: fixture.temporaryDirectory).value
+
+        #expect(FileManager.default.fileExists(atPath: earlierTrash.path) == false)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.temporaryDirectory.path).isEmpty)
     }
 
     /// Playback never imports, so the deferred Music artwork must be resolved for the transient item.

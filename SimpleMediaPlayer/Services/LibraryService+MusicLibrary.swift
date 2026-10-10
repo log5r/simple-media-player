@@ -70,7 +70,7 @@ extension LibraryService {
         // The pre-check runs in the attached task so cancelling the panel also stops its file probes.
         let task = Task {
             let alreadyImported = try await self.musicLibraryItemIDsWithAvailableFiles(
-                in: context, existingItems: existingItems
+                among: Set(tracks.map(\.libraryItemID)), in: context, existingItems: existingItems
             )
             return try await self.stageMusicLibraryTracks(
                 tracks, skipping: alreadyImported, in: directory, context: context, preparation: preparation
@@ -161,19 +161,23 @@ private extension LibraryService {
     }
 
     /// Songs already imported from Music are skipped by their persistent ID, because every export
-    /// produces different bytes and the fingerprint check cannot recognize them.
+    /// produces different bytes and the fingerprint check cannot recognize them. Only the selected IDs
+    /// are fetched and probed, so the cost follows the selection rather than the whole library.
     func musicLibraryItemIDsWithAvailableFiles(
-        in context: ModelContext, existingItems: [MediaItem]
+        among candidateIDs: Set<String>, in context: ModelContext, existingItems: [MediaItem]
     ) async throws -> Set<String> {
         try Task.checkCancellation()
-        // Lets the preparation panel render before the store fetch. Only Music imports matter here, so
-        // the filtered fetch keeps a large library from being materialized on the main actor.
+        // Lets the preparation panel render before the store fetch.
         await Task.yield()
-        let descriptor = FetchDescriptor<MediaItem>(predicate: #Predicate { $0.musicLibraryItemID != nil })
+        // Optional elements let the predicate compare the optional attribute directly; SwiftData cannot
+        // translate a nil-coalesced attribute into SQL.
+        let ids: [String?] = candidateIDs.map(\.self)
+        let descriptor = FetchDescriptor<MediaItem>(predicate: #Predicate { ids.contains($0.musicLibraryItemID) })
         let fetched = (try? context.fetch(descriptor)) ?? []
         var itemsByMusicID: [String: [MediaItem]] = [:]
         for item in existingItems + fetched {
-            guard let musicID = item.musicLibraryItemID, isLibraryItemLive(item, in: context) else { continue }
+            guard let musicID = item.musicLibraryItemID, candidateIDs.contains(musicID),
+                  isLibraryItemLive(item, in: context) else { continue }
             if itemsByMusicID[musicID]?.contains(where: { $0.id == item.id }) != true {
                 itemsByMusicID[musicID, default: []].append(item)
             }
