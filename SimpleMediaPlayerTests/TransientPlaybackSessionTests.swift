@@ -259,6 +259,28 @@ extension TransientPlaybackSessionTests {
         fixture.player.stop()
         session.end()
     }
+
+    @Test func selectingAnotherTrackSupersedesADeferredRequest() {
+        let item = MediaItem(title: "Library", duration: 1, isVideo: false, bookmarkData: Data(), fileName: "l.wav")
+        let fixture = makePlayerFixture(urlsByID: [item.id: URL(fileURLWithPath: "/tmp/library.wav")])
+        let request = fixture.player.beginDeferredPlaybackRequest()
+
+        fixture.player.play(item: item, in: [item])
+
+        #expect(fixture.player.isLatestDeferredRequest(request) == false)
+        #expect(fixture.player.canApply(request) == false)
+        fixture.player.stop()
+    }
+
+    @Test func clearingThePlayerSupersedesADeferredRequest() {
+        let fixture = makePlayerFixture()
+        let request = fixture.player.beginDeferredPlaybackRequest()
+
+        fixture.player.clearCurrentItem()
+
+        #expect(fixture.player.isLatestDeferredRequest(request) == false)
+        #expect(fixture.player.canApply(request) == false)
+    }
 }
 
 private actor BlockingAnalysis {

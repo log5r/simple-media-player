@@ -78,7 +78,8 @@ extension MainView {
 
     /// The exported copy plays only if it is still the latest Music selection (from any scene) and no
     /// transport action (play, pause, resume, stop, clear) happened meanwhile; a late result must not
-    /// override what the user did in between. A failure is reported unless a newer selection superseded it.
+    /// override what the user did in between. A failure is reported unless a newer Music request, another
+    /// track, or clearing the player superseded it.
     func playMusicLibraryTrack(_ track: MusicLibraryTrack) {
         let request = player.beginDeferredPlaybackRequest()
         Task {
