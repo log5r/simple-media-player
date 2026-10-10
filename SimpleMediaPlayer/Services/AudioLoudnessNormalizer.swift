@@ -13,6 +13,15 @@ nonisolated enum AudioLoudnessNormalizer {
     private static let maximumCacheEntryCount = 256
     private static let cacheLock = NSLock()
 
+    /// Returns the stored gain without reading the audio, or nil when the file has not been measured.
+    static func cachedGain(for url: URL, defaults: UserDefaults = .standard) -> Float? {
+        let hasSecurityScopedAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasSecurityScopedAccess { url.stopAccessingSecurityScopedResource() }
+        }
+        return fileCacheKey(for: url).flatMap { cachedGain(forKey: $0, defaults: defaults) }
+    }
+
     static func cachedOrMeasuredGain(for url: URL, defaults: UserDefaults = .standard) throws -> Float {
         try cachedOrMeasuredGain(for: url, defaults: defaults, measure: measuredGain)
     }

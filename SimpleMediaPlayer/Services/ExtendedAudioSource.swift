@@ -144,6 +144,13 @@ nonisolated enum ExtendedAudioSource {
         try Task.checkCancellation()
     }
 
+    /// Wrap synchronous work that calls `readableFile(for:)` so that cancelling the task promptly wakes a wait
+    /// for another decode of the same file.
+    static func withCancellableCacheWaits<T, E: Error>(_ work: () throws(E) -> T) async throws(E) -> T {
+        try await cache.wakingWaitsOnCancellation(work)
+    }
+
+    /// Call from inside `withCancellableCacheWaits(_:)`; see there.
     static func readableFile(for url: URL) throws -> ExtendedAudioCache.ReadableFile {
         try Task.checkCancellation()
         guard let kind = try kind(for: url) else { return ExtendedAudioCache.ReadableFile(url: url) }
