@@ -78,7 +78,9 @@ struct MusicAnalysisCacheTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let decoder = BlockingDecoder()
-        let service = MusicAnalysisService(cacheDirectory: directory, readableFile: decoder.decode)
+        let service = MusicAnalysisService(
+            cacheDirectory: directory, readableFile: decoder.decode, waitBeforeAnalyzing: {}
+        )
         let task = Task { try await service.analyze(url: directory.appendingPathComponent("first.ape")) }
         await decoder.waitUntilStarted()
         // Before the fix this waited for the decode to finish.
@@ -102,7 +104,7 @@ struct MusicAnalysisCacheTests {
         let entry = try #require(MusicAnalysisCache.entryURL(for: second, in: cache))
         MusicAnalysisCache.write(MusicAnalysis(duration: 8, bpm: 140), at: entry)
         let decoder = BlockingDecoder()
-        let service = MusicAnalysisService(cacheDirectory: cache, readableFile: decoder.decode)
+        let service = MusicAnalysisService(cacheDirectory: cache, readableFile: decoder.decode, waitBeforeAnalyzing: {})
         let controller = MusicAnalysisController(analyzeWithProgress: { url, progress in
             try await service.analyze(url: url, onProgress: progress)
         })

@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import Foundation
 
@@ -103,12 +104,11 @@ nonisolated enum AudioLoudnessNormalizer {
             return 0
         }
 
-        let blockFrameCapacity = max(1, Int(format.sampleRate * 0.4))
-        var blockMeanSquares: [Double] = []
-        blockMeanSquares.reserveCapacity(max(1, Int(file.length) / blockFrameCapacity))
-        var blockSquareSum = 0.0
-        var blockFrameCount = 0
-        var peakAmplitude: Float = 0
+        var accumulator = BlockAccumulator(
+            channelCount: channelCount,
+            blockFrameCapacity: max(1, Int(format.sampleRate * 0.4)),
+            expectedFrameCount: Int(file.length)
+        )
 
         while file.framePosition < file.length {
             try Task.checkCancellation()
@@ -116,20 +116,36 @@ nonisolated enum AudioLoudnessNormalizer {
             try Task.checkCancellation()
             let frameLength = Int(buffer.frameLength)
             guard frameLength > 0, let channelData = buffer.floatChannelData else { break }
+            accumulator.add(channelData, frameCount: frameLength)
+        }
 
+        let measurement = accumulator.finish()
+        try Task.checkCancellation()
+        return gainDecibels(forBlockMeanSquares: measurement.blockMeanSquares, peakAmplitude: measurement.peakAmplitude)
+    }
+
+    /// Splits deinterleaved samples into 0.4-second blocks and keeps the peak magnitude and each block's mean square.
+    nonisolated struct BlockAccumulator {
+        private let channelCount: Int
+        private let blockFrameCapacity: Int
+        private var blockMeanSquares: [Double] = []
+        private var blockSquareSum = 0.0
+        private var blockFrameCount = 0
+        private var peakAmplitude: Float = 0
+
+        init(channelCount: Int, blockFrameCapacity: Int, expectedFrameCount: Int = 0) {
+            self.channelCount = channelCount
+            self.blockFrameCapacity = blockFrameCapacity
+            blockMeanSquares.reserveCapacity(max(1, expectedFrameCount / blockFrameCapacity))
+        }
+
+        /// Adds `frameCount` frames from each of `channelCount` channels. A block may continue into the next call.
+        mutating func add(_ channelData: UnsafePointer<UnsafeMutablePointer<Float>>, frameCount: Int) {
             var frameOffset = 0
-            while frameOffset < frameLength {
-                let framesToConsume = min(blockFrameCapacity - blockFrameCount, frameLength - frameOffset)
-                let frameRange = frameOffset..<(frameOffset + framesToConsume)
-
+            while frameOffset < frameCount {
+                let framesToConsume = min(blockFrameCapacity - blockFrameCount, frameCount - frameOffset)
                 for channelIndex in 0..<channelCount {
-                    let samples = channelData[channelIndex]
-                    for frameIndex in frameRange {
-                        let sample = samples[frameIndex]
-                        let magnitude = abs(sample)
-                        peakAmplitude = max(peakAmplitude, magnitude)
-                        blockSquareSum += Double(sample) * Double(sample)
-                    }
+                    accumulate(channelData[channelIndex] + frameOffset, count: framesToConsume)
                 }
 
                 blockFrameCount += framesToConsume
@@ -143,12 +159,37 @@ nonisolated enum AudioLoudnessNormalizer {
             }
         }
 
-        if blockFrameCount > 0 {
-            blockMeanSquares.append(blockSquareSum / Double(blockFrameCount * channelCount))
+        /// Closes the trailing partial block.
+        mutating func finish() -> (blockMeanSquares: [Double], peakAmplitude: Float) {
+            if blockFrameCount > 0 {
+                blockMeanSquares.append(blockSquareSum / Double(blockFrameCount * channelCount))
+                blockSquareSum = 0
+                blockFrameCount = 0
+            }
+            return (blockMeanSquares, peakAmplitude)
         }
 
-        try Task.checkCancellation()
-        return gainDecibels(forBlockMeanSquares: blockMeanSquares, peakAmplitude: peakAmplitude)
+        // vDSP sums the squares in Float. A span holds at most one buffer, so the relative error stays far below
+        // 0.01 dB. A non-finite sum means a NaN or infinite sample, or squares beyond the Float range; such a span
+        // falls back to the Double loop, which keeps the earlier results: a NaN leaves the peak unchanged and makes
+        // the block non-finite, so the gain calculation drops that block.
+        private mutating func accumulate(_ samples: UnsafePointer<Float>, count: Int) {
+            guard count > 0 else { return }
+            var squareSum: Float = 0
+            vDSP_svesq(samples, 1, &squareSum, vDSP_Length(count))
+            if squareSum.isFinite {
+                var spanPeak: Float = 0
+                vDSP_maxmgv(samples, 1, &spanPeak, vDSP_Length(count))
+                peakAmplitude = max(peakAmplitude, spanPeak)
+                blockSquareSum += Double(squareSum)
+                return
+            }
+            for index in 0..<count {
+                let sample = samples[index]
+                peakAmplitude = max(peakAmplitude, abs(sample))
+                blockSquareSum += Double(sample) * Double(sample)
+            }
+        }
     }
 
     private static func fileCacheKey(for url: URL) -> String? {
