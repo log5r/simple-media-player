@@ -10,6 +10,12 @@ struct PlaylistAddItemsView: View {
     @State private var searchText = ""
 
     var body: some View {
+        // Evaluate the filter once per body pass; both the empty check and the list read the result.
+        let candidates = PlaylistAddCandidateFilter.candidates(
+            from: items,
+            excluding: Set(playlist.entries.compactMap { $0.item?.id }),
+            searchText: searchText
+        )
         NavigationStack {
             Group {
                 if candidates.isEmpty {
@@ -78,19 +84,6 @@ struct PlaylistAddItemsView: View {
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 420)
         #endif
-    }
-
-    private var candidates: [MediaItem] {
-        let existingIDs = Set(playlist.entries.compactMap { $0.item?.id })
-        return items
-            .filter { existingIDs.contains($0.id) == false }
-            .filter { item in
-                guard searchText.isEmpty == false else { return true }
-                let query = searchText.localizedLowercase
-                return [item.title, item.artist, item.album, item.genre ?? ""].contains {
-                    $0.localizedLowercase.contains(query)
-                }
-            }
     }
 
     private func toggle(_ item: MediaItem) {

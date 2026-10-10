@@ -165,13 +165,11 @@ struct ExportMissingTitlesView: View {
     }
 
     private var trimmedNames: [UUID: String] {
-        names.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        MediaExportPlan.trimmedNames(names)
     }
 
     private var canExport: Bool {
-        plan.missingTitleFiles.allSatisfy { file in
-            trimmedNames[file.id]?.isEmpty == false
-        }
+        plan.hasNamesForMissingTitles(names)
     }
 
     private func binding(for id: UUID) -> Binding<String> {
@@ -185,6 +183,22 @@ struct ExportMissingTitlesView: View {
         let date = Date()
         for (index, file) in plan.missingTitleFiles.enumerated() {
             names[file.id] = MediaExportNaming.timestampName(date: date, index: index + 1)
+        }
+    }
+}
+
+/// Name entry rules for files without embedded titles. The checks run on every keystroke,
+/// so each name is trimmed once per check.
+extension MediaExportPlan {
+    /// Trims the names entered for files without embedded titles.
+    static func trimmedNames(_ names: [UUID: String]) -> [UUID: String] {
+        names.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    /// Whether every file without an embedded title has a name that is not blank after trimming.
+    func hasNamesForMissingTitles(_ names: [UUID: String]) -> Bool {
+        missingTitleFiles.allSatisfy { file in
+            names[file.id]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         }
     }
 }
