@@ -17,6 +17,8 @@ enum MP4MetadataWriter {
     ]
     nonisolated private static let artworkItemType = BoxType("covr")
     nonisolated private static let lyricsItemType = BoxType([0xA9, 0x6C, 0x79, 0x72])
+    /// Boxes ISO/IEC 14496-12 lets readers ignore; the writer reuses their space.
+    nonisolated private static let paddingTypes: Set<BoxType> = [BoxType("free"), BoxType("skip")]
 
     nonisolated static func canWriteMetadata(to url: URL) -> Bool {
         ["m4a", "m4v", "mp4", "mov"].contains(url.pathExtension.lowercased())
@@ -27,39 +29,20 @@ enum MP4MetadataWriter {
             throw MediaMetadataEditError.unsupportedFileFormat
         }
 
-        try MediaFileRewriter.rewrite(at: url) { source, output, fileSize in
-            let topLevelBoxes = try fileBoxes(in: source, fileSize: fileSize)
-            guard let moovBox = topLevelBoxes.first(where: { $0.type == BoxType("moov") }) else {
-                throw MediaMetadataEditError.unsupportedMP4MetadataLayout
-            }
-            let contentSize = moovBox.contentRange.upperBound - moovBox.contentRange.lowerBound
-            let originalSize = moovBox.totalRange.upperBound - moovBox.totalRange.lowerBound
-            guard contentSize <= UInt64(Int.max), originalSize <= UInt64(Int.max) else {
-                throw MediaMetadataEditError.unsupportedMP4MetadataLayout
-            }
-            let data = try MediaFileRewriter.read(
-                from: source,
-                at: moovBox.contentRange.lowerBound,
-                count: Int(contentSize)
-            )
-            let rebuiltMoovContent = try rewriteMoovContent(draft, in: 0..<data.count, data: data)
-            var rebuiltMoovBox = makeBox(type: moovBox.type, content: rebuiltMoovContent)
-            let oldMoovSize = Int(originalSize)
-
-            if rebuiltMoovBox.count < oldMoovSize, oldMoovSize - rebuiltMoovBox.count >= 8 {
-                let paddingSize = oldMoovSize - rebuiltMoovBox.count
-                rebuiltMoovBox = makeBox(
-                    type: moovBox.type,
-                    content: rebuiltMoovContent + makeFreeBox(size: paddingSize)
-                )
-            }
-            let sizeDelta = rebuiltMoovBox.count - oldMoovSize
+        try MediaFileRewriter.update(at: url) { handle, fileSize in
+            try inPlaceEdit(for: rebuiltMovie(draft, source: handle, fileSize: fileSize), fileSize: fileSize)
+        } rewrite: { source, output, fileSize in
+            let movie = try rebuiltMovie(draft, source: source, fileSize: fileSize)
+            let moovBox = movie.moovBox
+            let oldMoovSize = moovBox.totalRange.upperBound - moovBox.totalRange.lowerBound
+            var rebuiltMoovBox = paddedMoovBox(movie, size: oldMoovSize)
+            let sizeDelta = rebuiltMoovBox.count - Int(oldMoovSize)
             if sizeDelta != 0 {
                 // Fragment/index offsets are not covered by stco/co64 adjustment.
                 // Fixed-size edits keep those offsets valid; otherwise preserve the source.
                 let fragmentTypes: Set<BoxType> = [BoxType("moof"), BoxType("mfra"), BoxType("sidx")]
-                let movieChildren = try boxes(in: 0..<data.count, data: data)
-                let hasFragments = topLevelBoxes.contains { fragmentTypes.contains($0.type) }
+                let movieChildren = try boxes(in: 0..<movie.originalContent.count, data: movie.originalContent)
+                let hasFragments = movie.topLevelBoxes.contains { fragmentTypes.contains($0.type) }
                     || movieChildren.contains { $0.type == BoxType("mvex") }
                 guard hasFragments == false else {
                     throw MediaMetadataEditError.unsupportedMP4MetadataLayout
@@ -281,6 +264,104 @@ enum MP4MetadataWriter {
             UInt8(value & 0xFF)
         ])
     }
+}
+
+extension MP4MetadataWriter {
+    /// The movie box with `rewriteMoovContent` applied. Its `free` and `skip` children are dropped, so space the
+    /// writer left in an earlier save can be reused.
+    nonisolated private static func rebuiltMovie(
+        _ draft: MediaMetadataEditDraft,
+        source: FileHandle,
+        fileSize: UInt64
+    ) throws -> RebuiltMovie {
+        let topLevelBoxes = try fileBoxes(in: source, fileSize: fileSize)
+        guard let moovBox = topLevelBoxes.first(where: { $0.type == BoxType("moov") }) else {
+            throw MediaMetadataEditError.unsupportedMP4MetadataLayout
+        }
+        let contentSize = moovBox.contentRange.upperBound - moovBox.contentRange.lowerBound
+        let originalSize = moovBox.totalRange.upperBound - moovBox.totalRange.lowerBound
+        guard contentSize <= UInt64(Int.max), originalSize <= UInt64(Int.max) else {
+            throw MediaMetadataEditError.unsupportedMP4MetadataLayout
+        }
+        let data = try MediaFileRewriter.read(
+            from: source,
+            at: moovBox.contentRange.lowerBound,
+            count: Int(contentSize)
+        )
+        var compacted = Data()
+        var offset = 0
+        for child in try boxes(in: 0..<data.count, data: data) {
+            compacted.append(data[offset..<child.totalRange.lowerBound])
+            if paddingTypes.contains(child.type) == false {
+                compacted.append(data[child.totalRange])
+            }
+            offset = child.totalRange.upperBound
+        }
+        compacted.append(data[offset...])
+        return RebuiltMovie(
+            topLevelBoxes: topLevelBoxes,
+            moovBox: moovBox,
+            originalContent: data,
+            content: try rewriteMoovContent(draft, in: 0..<compacted.count, data: compacted)
+        )
+    }
+
+    /// The rebuilt movie box, with a trailing `free` child that keeps it at `size` bytes when it shrinks by 8 or more.
+    nonisolated private static func paddedMoovBox(_ movie: RebuiltMovie, size: UInt64) -> Data {
+        let unpaddedSize = UInt64(movie.content.count) + 8
+        guard unpaddedSize + 8 <= size else { return makeBox(type: movie.moovBox.type, content: movie.content) }
+        return makeBox(type: movie.moovBox.type, content: movie.content + makeFreeBox(size: Int(size - unpaddedSize)))
+    }
+
+    /// An edit that leaves every other box in place, so no chunk or fragment offset changes; nil when none fits.
+    nonisolated private static func inPlaceEdit(
+        for movie: RebuiltMovie,
+        fileSize: UInt64
+    ) -> MediaFileRewriter.InPlaceEdit? {
+        let moovRange = movie.moovBox.totalRange
+        let oldSize = moovRange.upperBound - moovRange.lowerBound
+        let newSize = UInt64(movie.content.count) + 8
+        if newSize == oldSize || newSize + 8 <= oldSize {
+            // The same bytes the full rewrite writes for an unchanged size.
+            return .init(
+                offset: moovRange.lowerBound, originalLength: oldSize, data: paddedMoovBox(movie, size: oldSize)
+            )
+        }
+        let moov = makeBox(type: movie.moovBox.type, content: movie.content)
+        if moovRange.upperBound == fileSize {
+            return .init(
+                offset: moovRange.lowerBound, originalLength: oldSize, data: moov,
+                newFileLength: moovRange.lowerBound + newSize
+            )
+        }
+        guard let next = movie.topLevelBoxes.first(where: { $0.totalRange.lowerBound == moovRange.upperBound }),
+              paddingTypes.contains(next.type) else { return nil }
+        let available = next.totalRange.upperBound - moovRange.lowerBound
+        guard newSize <= available, let freeHeader = freeBoxHeader(size: available - newSize) else { return nil }
+        // ISO/IEC 14496-12 makes the contents of a `free` box irrelevant, so only the header of the box covering the
+        // rest is written; the padding can be gigabytes, and its old bytes stay.
+        return .init(
+            offset: moovRange.lowerBound, originalLength: newSize + UInt64(freeHeader.count), data: moov + freeHeader
+        )
+    }
+
+    /// The header of a `free` box of `size` bytes, with a 64-bit size when 32 bits cannot hold it; empty for
+    /// no box, and nil when no header fits.
+    nonisolated private static func freeBoxHeader(size: UInt64) -> Data? {
+        if size == 0 { return Data() }
+        if size >= 8, size <= UInt64(UInt32.max) { return uint32Data(UInt32(size)) + BoxType("free").data }
+        guard size > UInt64(UInt32.max) else { return nil }
+        return uint32Data(1) + BoxType("free").data + uint32Data(UInt32(size >> 32))
+            + uint32Data(UInt32(truncatingIfNeeded: size))
+    }
+}
+
+nonisolated private struct RebuiltMovie {
+    let topLevelBoxes: [MP4MetadataWriter.MP4FileBox]
+    let moovBox: MP4MetadataWriter.MP4FileBox
+    let originalContent: Data
+    /// The children with the rewritten `udta`, without `free` and `skip` boxes.
+    let content: Data
 }
 
 nonisolated private struct MP4MetadataItem: Sendable {

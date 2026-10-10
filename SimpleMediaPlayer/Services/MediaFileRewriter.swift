@@ -1,12 +1,165 @@
 import Foundation
+import Synchronization
 
 nonisolated enum MediaFileRewriter {
     static let copyBufferSize = 1_048_576
+    /// A lock per file, with the number of saves holding or waiting for it.
+    private static let fileLocks = Mutex<[FileKey: (lock: NSLock, users: Int)]>([:])
+
+    /// Replaces the `originalLength` bytes at `offset` with `data`, which must be the same length unless the range
+    /// ends at the end of the file; the file then ends at `newFileLength`, the end of `data`.
+    struct InPlaceEdit {
+        let offset: UInt64
+        let originalLength: UInt64
+        let data: Data
+        var newFileLength: UInt64?
+    }
+
+    /// Test hook: performs the write of an in-place edit, so tests can fail after a partial write.
+    @TaskLocal static var inPlaceWrite: @Sendable (FileHandle, Data) throws -> Void = { handle, data in
+        try handle.write(contentsOf: data)
+    }
+    /// Test hook: false makes `update` always rewrite, so tests can compare both outputs.
+    @TaskLocal static var allowsInPlaceEdits = true
+    /// The largest FLAC or ID3 tag region a planner rewrites in place, which holds the region in memory twice: the
+    /// new bytes and the original for rollback. Tags with a typical cover are far smaller; larger regions take the
+    /// replacement, which keeps no rollback copy. A test hook so tests need no large files.
+    @TaskLocal static var inPlaceTagLimit: UInt64 = 16 * 1_048_576
+
+    /// Overwrites only the range `plan` returns, or rewrites the whole file through `rewrite(at:_:)` when it returns
+    /// nil or the file cannot be opened for writing. Cancellation is honored until the first write; after a failed
+    /// write the original bytes and modification date are restored.
+    /// Unlike the replacement, an interruption during the write (a crash or power loss) can leave a partial edit.
+    /// Saves of the same file run one at a time; see `withExclusiveAccess(to:_:)`.
+    static func update(
+        at url: URL,
+        analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        plan: (FileHandle, UInt64) throws -> InPlaceEdit?,
+        rewrite write: (FileHandle, FileHandle, UInt64) throws -> Void
+    ) throws {
+        try withExclusiveAccess(to: url) {
+            try updateHoldingLock(at: url, analysisCacheDirectory: analysisCacheDirectory, plan: plan, rewrite: write)
+        }
+    }
+
+    private static func updateHoldingLock(
+        at url: URL,
+        analysisCacheDirectory: URL?,
+        plan: (FileHandle, UInt64) throws -> InPlaceEdit?,
+        rewrite write: (FileHandle, FileHandle, UInt64) throws -> Void
+    ) throws {
+        guard allowsInPlaceEdits else {
+            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+        }
+        let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
+        // The replacement only reads the source, so a file that cannot be opened for writing, such as a read-only
+        // one, takes that path and fails or succeeds as the replacement does.
+        guard let handle = try? FileHandle(forUpdating: url) else {
+            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+        }
+        defer { try? handle.close() }
+        let fileSize = try handle.seekToEnd()
+        guard let edit = try plan(handle, fileSize), isValid(edit, fileSize: fileSize) else {
+            try handle.close()
+            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+        }
+        let original = try read(from: handle, at: edit.offset, count: Int(edit.originalLength))
+        var status = stat()
+        let modified = fstat(handle.fileDescriptor, &status) == 0 ? status.st_mtimespec : nil
+        try Task.checkCancellation()
+        // Once writing starts, finish or restore instead of stopping for cancellation.
+        do {
+            try handle.seek(toOffset: edit.offset)
+            try inPlaceWrite(handle, edit.data)
+            if let newFileLength = edit.newFileLength { try handle.truncate(atOffset: newFileLength) }
+            try handle.synchronize()
+        } catch {
+            guard (try? restore(original, at: edit.offset, fileSize: fileSize, in: handle)) != nil else { throw error }
+            // With the original bytes back, the original date keeps date-keyed caches valid; the carry-over
+            // covers a date that could not be restored.
+            if let modified {
+                _ = futimens(handle.fileDescriptor, [timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT)), modified])
+            }
+            MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
+            throw error
+        }
+        try handle.close()
+        MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
+    }
+
+    private static func restore(_ original: Data, at offset: UInt64, fileSize: UInt64, in handle: FileHandle) throws {
+        try handle.truncate(atOffset: fileSize)
+        try handle.seek(toOffset: offset)
+        try handle.write(contentsOf: original)
+        try handle.synchronize()
+    }
+
+    private static func isValid(_ edit: InPlaceEdit, fileSize: UInt64) -> Bool {
+        let (end, overflow) = edit.offset.addingReportingOverflow(edit.originalLength)
+        let isValid = overflow == false && end <= fileSize && edit.originalLength <= UInt64(Int.max)
+            && (edit.newFileLength.map { $0 == edit.offset + UInt64(edit.data.count) && end == fileSize }
+                ?? (UInt64(edit.data.count) == edit.originalLength))
+        assert(isValid, "Invalid in-place edit")
+        return isValid
+    }
 
     /// `write` may change metadata only; the music analysis cache follows the rewritten file.
+    /// Saves of the same file run one at a time; see `withExclusiveAccess(to:_:)`.
     static func rewrite(
         at url: URL,
         analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        _ write: (FileHandle, FileHandle, UInt64) throws -> Void
+    ) throws {
+        try withExclusiveAccess(to: url) {
+            try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+        }
+    }
+
+    /// Two windows can save the same item. Without serializing, an in-place edit planned before another save
+    /// finished could overwrite part of it or truncate it, a failed edit could restore a stale snapshot over it,
+    /// and a replacement could copy bytes an in-place edit is changing.
+    /// Waiting blocks the thread and ignores cancellation, which is checked once the lock is held. The holder
+    /// does only synchronous file work, so it never needs the waiting thread. `body` must not save the same file.
+    /// The lock follows the file, so hard links and symbolic links to it share one; saves from other processes
+    /// are not coordinated.
+    private static func withExclusiveAccess(to url: URL, _ body: () throws -> Void) throws {
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        while true {
+            let key = FileKey(path: path)
+            let lock = fileLocks.withLock { locks in
+                let entry = locks[key] ?? (NSLock(), 0)
+                locks[key] = (entry.lock, entry.users + 1)
+                return entry.lock
+            }
+            defer {
+                fileLocks.withLock { locks in
+                    guard let entry = locks[key] else { return }
+                    locks[key] = entry.users > 1 ? (entry.lock, entry.users - 1) : nil
+                }
+            }
+            lock.lock()
+            defer { lock.unlock() }
+            // A replacement by an earlier holder can give the path a new file, which another lock guards.
+            guard FileKey(path: path) == key else { continue }
+            try Task.checkCancellation()
+            return try body()
+        }
+    }
+
+    /// The file at `path` by device and inode, or the path itself while no file is there.
+    private enum FileKey: Hashable {
+        case file(device: dev_t, inode: ino_t)
+        case path(String)
+
+        init(path: String) {
+            var status = stat()
+            self = stat(path, &status) == 0 ? .file(device: status.st_dev, inode: status.st_ino) : .path(path)
+        }
+    }
+
+    private static func replace(
+        at url: URL,
+        analysisCacheDirectory: URL?,
         _ write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
         let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
