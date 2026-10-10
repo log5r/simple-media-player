@@ -106,11 +106,14 @@ actor MusicAnalysisService {
         self.readableFile = readableFile
     }
 
-    /// Runs blocking file work on a detached task so the actor keeps serving other callers.
+    /// Runs blocking file work on a detached task so the actor keeps serving other callers. The work blocks a
+    /// thread, so it runs outside Swift's cooperative pool.
     nonisolated private static func offActor<T: Sendable>(
-        _ work: @escaping @Sendable () throws -> T
+        _ work: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        let task = Task.detached(priority: .utility, operation: work)
+        let task = Task.detached(executorPreference: BlockingWorkExecutor.shared, priority: .utility) {
+            try await work()
+        }
         return try await withTaskCancellationHandler {
             try await task.value
         } onCancel: {
@@ -151,7 +154,9 @@ actor MusicAnalysisService {
         let wholeSongStarted = ContinuousClock.now
         let readableFile = readableFile
         // Extended formats decode the whole song here on a cache miss.
-        let source = try await Self.offActor { try readableFile(url) }
+        let source = try await Self.offActor {
+            try await ExtendedAudioSource.withCancellableCacheWaits { try readableFile(url) }
+        }
         defer { source.release() }
         try Task.checkCancellation()
         let asset = AVURLAsset(url: source.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])

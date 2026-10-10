@@ -72,26 +72,28 @@ final class TransformedTrackExporter {
             let draft = try await metadataDraft(for: item, title: trimmedTitle, libraryService: libraryService)
             try libraryService.validateCopySource(item, in: sourceContext)
             sourceSnapshot.artworkData = draft.artworkData
-            let renderTask = Task.detached(priority: .userInitiated) {
+            let renderTask = Task.detached(executorPreference: BlockingWorkExecutor.shared, priority: .userInitiated) {
                 try Task.checkCancellation()
-                let result = try renderer.render(
-                    sourceURL: sourceURL,
-                    pitchCents: pitchCents,
-                    rate: renderRate,
-                    maxSampleRate: format.maxSampleRate,
-                    makeEncoder: { processingFormat in
-                        if format == .mp3 {
-                            try MP3Encoder(outputURL: outputURL, processingFormat: processingFormat)
-                        } else {
-                            try CoreAudioFileEncoder(
-                                outputURL: outputURL,
-                                format: format,
-                                processingFormat: processingFormat
-                            )
-                        }
-                    },
-                    progress: reportProgress
-                )
+                let result = try await ExtendedAudioSource.withCancellableCacheWaits {
+                    try renderer.render(
+                        sourceURL: sourceURL,
+                        pitchCents: pitchCents,
+                        rate: renderRate,
+                        maxSampleRate: format.maxSampleRate,
+                        makeEncoder: { processingFormat in
+                            if format == .mp3 {
+                                try MP3Encoder(outputURL: outputURL, processingFormat: processingFormat)
+                            } else {
+                                try CoreAudioFileEncoder(
+                                    outputURL: outputURL,
+                                    format: format,
+                                    processingFormat: processingFormat
+                                )
+                            }
+                        },
+                        progress: reportProgress
+                    )
+                }
                 try Task.checkCancellation()
                 try format.writeMetadata(draft, to: outputURL)
                 try Task.checkCancellation()

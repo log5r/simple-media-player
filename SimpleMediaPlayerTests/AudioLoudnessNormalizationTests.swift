@@ -285,7 +285,9 @@ struct AudioLoudnessNormalizationTests {
         queue.sync {
             owner.normalization = AudioLoudnessNormalization(
                 controlQueue: queue,
+                cachedGain: { _ in nil },
                 measure: { url in try recording.measure(url: url) },
+                waitBeforeMeasuring: {},
                 applyGain: { gain in recording.recordAppliedGain(gain) }
             )
             owner.normalization?.setEnabled(true)
@@ -347,7 +349,9 @@ private final class LoudnessNormalizationFixture: @unchecked Sendable {
         self.recording = recording
         normalization = AudioLoudnessNormalization(
             controlQueue: controlQueue,
+            cachedGain: { _ in nil },
             measure: { url in try recording.measure(url: url) },
+            waitBeforeMeasuring: {},
             applyGain: { gain in recording.recordAppliedGain(gain) }
         )
     }

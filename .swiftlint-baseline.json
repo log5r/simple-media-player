@@ -1162,7 +1162,7 @@
         "file": "SimpleMediaPlayerTests/AudioLoudnessNormalizationTests.swift",
         "line": 5
       },
-      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 288 lines",
+      "reason": "Struct body should span 250 lines or less excluding comments and whitespace: currently spans 290 lines",
       "ruleDescription": "Type bodies should not span too many lines",
       "ruleIdentifier": "type_body_length",
       "ruleName": "Type Body Length",
@@ -1175,9 +1175,9 @@
       "location": {
         "character": 1,
         "file": "SimpleMediaPlayerTests/AudioLoudnessNormalizationTests.swift",
-        "line": 452
+        "line": 456
       },
-      "reason": "File should contain 400 lines or less: currently contains 452",
+      "reason": "File should contain 400 lines or less: currently contains 456",
       "ruleDescription": "Files should not span too many lines.",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",

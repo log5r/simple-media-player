@@ -21,6 +21,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private var graphicEQ = AVAudioUnitEQ(numberOfBands: EqualizerSettings.bandCount)
     private var reverb = AVAudioUnitReverb()
     private let analyzer: SpectrumAnalyzer
+    private let openReadableFile: @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile
+    private let waitForFadeStep: @Sendable (useconds_t) -> Void
     private let controlQueue = DispatchQueue(label: "SimpleMediaPlayer.AudioEngineService.control", qos: .userInitiated)
 
     // controlQueue 上でのみ触る状態
@@ -57,8 +59,16 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     var onError: (@MainActor (String) -> Void)?
     var onFormatLoaded: (@MainActor (_ duration: TimeInterval, _ formatInfo: MediaFormatInfo) -> Void)?
 
-    init(analyzer: SpectrumAnalyzer) {
+    init(
+        analyzer: SpectrumAnalyzer,
+        openReadableFile: @escaping @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile = {
+            try ExtendedAudioSource.readableFile(for: $0)
+        },
+        waitForFadeStep: @escaping @Sendable (useconds_t) -> Void = { usleep($0) }
+    ) {
         self.analyzer = analyzer
+        self.openReadableFile = openReadableFile
+        self.waitForFadeStep = waitForFadeStep
         buildEngineGraph()
     }
 
@@ -160,20 +170,26 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
             self.preparationTask?.cancel()
             self.loadGeneration += 1
             let generation = self.loadGeneration
+            // 旧曲のフェードアウトと並行して新しいファイルを開く。結果の適用は controlQueue に積むため
+            // このブロックの後に実行され、そこで世代と要求 ID を照合する
+            self.preparationTask = Task.detached(
+                executorPreference: BlockingWorkExecutor.shared, priority: .userInitiated
+            ) {
+                await ExtendedAudioSource.withCancellableCacheWaits {
+                    self.prepareAudio(url: url, generation: generation, requestID: requestID)
+                }
+            }
             self.performStop(reset: true)
             self.releaseLoadedAudio()
             self.currentURL = url
             self.playWhenReady = false
             self.setCachedDuration(0)
-            self.preparationTask = Task.detached(priority: .userInitiated) {
-                self.prepareAudio(url: url, generation: generation, requestID: requestID)
-            }
         }
     }
 
     private func prepareAudio(url: URL, generation: Int, requestID: UUID) {
         do {
-            let readableFile = try ExtendedAudioSource.readableFile(for: url)
+            let readableFile = try openReadableFile(url)
             do {
                 try Task.checkCancellation()
                 let file = try AVAudioFile(forReading: readableFile.url)
@@ -524,11 +540,11 @@ nonisolated extension AudioEngineService {
             let steps = 10
             for step in 1...steps {
                 playerNode.volume = original * Float(steps - step) / Float(steps)
-                usleep(6000)
+                waitForFadeStep(6000)
             }
             // 最後の音量変更(→0)のミキサー内部平滑が完了するのを待ってから止める。
             // 待ちが足りないと小さな段差が残って微かにプツッと鳴る
-            usleep(15000)
+            waitForFadeStep(15000)
         }
         playerNode.stop()
         timePitch.reset()

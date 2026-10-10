@@ -3,6 +3,8 @@ import Foundation
 
 // State uses condition; filesystem operations use fileLock and never hold condition.
 // Workers take fileLock before briefly inspecting state; decoding holds neither lock.
+// A reader of an entry another worker is decoding waits on condition without a timeout. Decode completion,
+// invalidation and removal broadcast; cancellation does so only inside wakingWaitsOnCancellation.
 nonisolated final class ExtendedAudioCache: @unchecked Sendable {
     final class ReadableFile: @unchecked Sendable {
         let url: URL
@@ -100,6 +102,21 @@ nonisolated final class ExtendedAudioCache: @unchecked Sendable {
 
     private func lease(_ request: Request, at destination: URL) -> ReadableFile {
         ReadableFile(url: destination) { self.scheduleEndRequest(request, at: destination) }
+    }
+
+    /// Runs synchronous work that may wait in `acquireReadableFile` while another worker decodes the same entry.
+    /// Cancelling the calling task wakes that wait so it can throw `CancellationError` without waiting for the
+    /// decode. Outside this scope a cancelled waiter wakes only when the decode finishes or is invalidated.
+    func wakingWaitsOnCancellation<T, E: Error>(_ work: () throws(E) -> T) async throws(E) -> T {
+        try await withTaskCancellationHandler { () throws(E) -> T in
+            try work()
+        } onCancel: {
+            // The task is already marked cancelled here. A waiter checks that mark under this lock before it
+            // waits, so the broadcast either finds it waiting or it sees the mark before waiting.
+            condition.lock()
+            condition.broadcast()
+            condition.unlock()
+        }
     }
 
     func invalidate(at destination: URL) {
@@ -223,8 +240,8 @@ nonisolated final class ExtendedAudioCache: @unchecked Sendable {
                 request.decoding = true
                 return
             }
-            // Poll cancellation only for the same key; other tracks never wait here.
-            _ = condition.wait(until: Date(timeIntervalSinceNow: 0.05))
+            // Only readers of the same key wait here; see wakingWaitsOnCancellation for cancellation.
+            condition.wait()
         }
     }
 

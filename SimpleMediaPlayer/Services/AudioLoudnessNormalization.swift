@@ -3,7 +3,9 @@ import Foundation
 // State and gain application belong to the playback control queue; measurement does not.
 nonisolated final class AudioLoudnessNormalization: @unchecked Sendable {
     private let controlQueue: DispatchQueue
-    private let measure: @Sendable (URL) throws -> Float
+    private let cachedGain: @Sendable (URL) -> Float?
+    private let measure: @Sendable (URL) async throws -> Float
+    private let waitBeforeMeasuring: @Sendable () async throws -> Void
     private let applyGain: @Sendable (Float) -> Void
     private var currentURL: URL?
     private var isEnabled = false
@@ -11,15 +13,23 @@ nonisolated final class AudioLoudnessNormalization: @unchecked Sendable {
     private var generation = 0
     private var task: Task<Void, Never>?
 
+    /// A stored gain applies at once. Reading the whole file waits `waitBeforeMeasuring` first, so that it does
+    /// not compete with the first reads of the track that has just started.
     init(
         controlQueue: DispatchQueue,
-        measure: @escaping @Sendable (URL) throws -> Float = {
-            try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: $0)
+        cachedGain: @escaping @Sendable (URL) -> Float? = { AudioLoudnessNormalizer.cachedGain(for: $0) },
+        measure: @escaping @Sendable (URL) async throws -> Float = { url in
+            try await ExtendedAudioSource.withCancellableCacheWaits {
+                try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url)
+            }
         },
+        waitBeforeMeasuring: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(1)) },
         applyGain: @escaping @Sendable (Float) -> Void
     ) {
         self.controlQueue = controlQueue
+        self.cachedGain = cachedGain
         self.measure = measure
+        self.waitBeforeMeasuring = waitBeforeMeasuring
         self.applyGain = applyGain
     }
 
@@ -66,13 +76,21 @@ nonisolated final class AudioLoudnessNormalization: @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(controlQueue))
         guard isEnabled, measuredGain == nil, task == nil, let url = currentURL else { return }
         let generation = generation
-        task = Task.detached(priority: .utility) { [weak self, measure, controlQueue] in
+        task = Task.detached(
+            executorPreference: BlockingWorkExecutor.shared, priority: .utility
+        ) { [weak self, cachedGain, measure, waitBeforeMeasuring, controlQueue] in
             let gain: Float?
             do {
                 try Task.checkCancellation()
-                let measuredGain = try measure(url)
-                try Task.checkCancellation()
-                gain = measuredGain
+                if let storedGain = cachedGain(url) {
+                    gain = storedGain
+                } else {
+                    try await waitBeforeMeasuring()
+                    try Task.checkCancellation()
+                    let measuredGain = try await measure(url)
+                    try Task.checkCancellation()
+                    gain = measuredGain
+                }
             } catch {
                 gain = Task.isCancelled || error is CancellationError ? nil : 0
             }

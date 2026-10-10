@@ -79,7 +79,9 @@ struct ExtendedAudioCacheTests {
         let waiter = Task.detached(executorPreference: CacheTestExecutor.shared) {
             defer { completed.signal() }
             entered.signal()
-            return try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
+            return try await cache.wakingWaitsOnCancellation {
+                try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
+            }
         }
         defer { waiter.cancel() }
         try #require(await entered.waitAsync(timeout: .now() + 2) == .success)
@@ -247,6 +249,68 @@ struct ExtendedAudioCacheTests {
 }
 
 extension ExtendedAudioCacheTests {
+    // A waiter outside the waking scope has no cancellation wakeup, so this shows that the wait does not poll.
+    @Test func cancelledWaiterWithoutWakingScopeSleepsUntilDecodeFinishes() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.cleanup() }
+        let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
+        let destination = fixture.url("unpolled")
+        let probe = BlockingCacheDecode()
+        let producer = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
+        }
+        defer { producer.cancel(); probe.release() }
+        try #require(await probe.waitUntilStarted())
+
+        let entered = DispatchSemaphore(value: 0)
+        let completed = DispatchSemaphore(value: 0)
+        let waiter = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            defer { completed.signal() }
+            entered.signal()
+            return try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
+        }
+        defer { waiter.cancel() }
+        try #require(await entered.waitAsync(timeout: .now() + 2) == .success)
+        // Cancel only after the waiter has had time to reach the wait; a waiter cancelled earlier never waits.
+        #expect(await completed.waitAsync(timeout: .now() + 0.1) == .timedOut)
+        waiter.cancel()
+        // The previous implementation woke every 50 ms and returned here.
+        #expect(await completed.waitAsync(timeout: .now() + 0.5) == .timedOut)
+        probe.release()
+
+        #expect(await completed.waitAsync(timeout: .now() + 2) == .success)
+        await #expect(throws: CancellationError.self) { try await waiter.value }
+        #expect((try await producer.value).url == destination)
+        #expect(probe.createCount == 1)
+    }
+
+    @Test func waiterCancelledBeforeEnteringWakingScopeDoesNotWait() async throws {
+        let fixture = try CacheFixture()
+        defer { fixture.cleanup() }
+        let cache = ExtendedAudioCache(maximumBytes: 1_000_000)
+        let destination = fixture.url("cancelled-first")
+        let probe = BlockingCacheDecode()
+        let producer = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
+        }
+        defer { producer.cancel(); probe.release() }
+        try #require(await probe.waitUntilStarted())
+
+        let completed = DispatchSemaphore(value: 0)
+        let waiter = Task.detached(executorPreference: CacheTestExecutor.shared) {
+            defer { completed.signal() }
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await cache.wakingWaitsOnCancellation {
+                try cache.acquireReadableFile(at: destination, create: probe.create, isSourceCurrent: { true })
+            }
+        }
+        #expect(await completed.waitAsync(timeout: .now() + 2) == .success)
+        await #expect(throws: CancellationError.self) { try await waiter.value }
+        probe.release()
+        #expect((try await producer.value).url == destination)
+        #expect(probe.createCount == 1)
+    }
+
     @Test func cancellationDuringSourceValidationRejectsPublication() async throws {
         let fixture = try CacheFixture()
         defer { fixture.cleanup() }
