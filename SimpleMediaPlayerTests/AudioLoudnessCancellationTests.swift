@@ -11,7 +11,7 @@ struct AudioLoudnessCancellationTests {
         if hasCachedGain {
             _ = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
                 for: fixture.url,
-                defaults: fixture.defaults,
+                cacheDirectory: fixture.cacheDirectory,
                 measure: { _ in 3 }
             )
         }
@@ -20,7 +20,7 @@ struct AudioLoudnessCancellationTests {
             withUnsafeCurrentTask { $0?.cancel() }
             return try AudioLoudnessNormalizer.cachedOrMeasuredGain(
                 for: fixture.url,
-                defaults: fixture.defaults,
+                cacheDirectory: fixture.cacheDirectory,
                 measure: { _ in
                     Issue.record("A cancelled task unexpectedly started measuring audio.")
                     return 7
@@ -42,7 +42,7 @@ struct AudioLoudnessCancellationTests {
         let task = Task.detached {
             try AudioLoudnessNormalizer.cachedOrMeasuredGain(
                 for: fixture.url,
-                defaults: fixture.defaults,
+                cacheDirectory: fixture.cacheDirectory,
                 measure: { _ in
                     switch behavior {
                     case .throwsCancellation:
@@ -62,7 +62,9 @@ struct AudioLoudnessCancellationTests {
         #expect(isCancellation(result))
         #expect(fixture.cache.isEmpty)
 
-        let gain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: fixture.url, defaults: fixture.defaults)
+        let gain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
+            for: fixture.url, cacheDirectory: fixture.cacheDirectory
+        )
         #expect(abs(gain - 2) < 0.01)
         #expect(fixture.cache.count == 1)
     }
@@ -72,11 +74,11 @@ struct AudioLoudnessCancellationTests {
         defer { fixture.cleanup() }
 
         let measuredGain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
-            for: fixture.url, defaults: fixture.defaults
+            for: fixture.url, cacheDirectory: fixture.cacheDirectory
         )
         let cachedGain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
             for: fixture.url,
-            defaults: fixture.defaults,
+            cacheDirectory: fixture.cacheDirectory,
             measure: { _ in
                 Issue.record("A cached audio file was unexpectedly measured again.")
                 return 0
@@ -93,12 +95,12 @@ struct AudioLoudnessCancellationTests {
         defer { fixture.cleanup() }
         let gain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
             for: fixture.url,
-            defaults: fixture.defaults,
+            cacheDirectory: fixture.cacheDirectory,
             measure: { _ in throw CocoaError(.fileReadCorruptFile) }
         )
         let cachedGain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
             for: fixture.url,
-            defaults: fixture.defaults,
+            cacheDirectory: fixture.cacheDirectory,
             measure: { _ in
                 Issue.record("A cached fallback was unexpectedly measured again.")
                 return 5
@@ -124,7 +126,7 @@ struct AudioLoudnessCancellationTests {
                 group.addTask {
                     let gain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
                         for: url,
-                        defaults: fixture.defaults,
+                        cacheDirectory: fixture.cacheDirectory,
                         measure: { _ in Float(index) }
                     )
                     #expect(gain == Float(index))
@@ -134,7 +136,7 @@ struct AudioLoudnessCancellationTests {
         }
 
         #expect(fixture.cache.count == urls.count)
-        #expect(Set(fixture.cache.values) == Set((0..<urls.count).map(Double.init)))
+        #expect(Set(fixture.cache.values) == Set((0..<urls.count).map(Float.init)))
     }
 
     private func isCancellation<Value>(_ result: Result<Value, Error>) -> Bool {
@@ -151,18 +153,22 @@ struct AudioLoudnessCancellationTests {
     private struct Fixture: @unchecked Sendable {
         let directory: URL
         let url: URL
-        let suiteName: String
-        let defaults: UserDefaults
+        let cacheDirectory: URL
 
-        var cache: [String: Double] {
-            defaults.dictionary(forKey: "audioLoudnessNormalizationCache.v1") as? [String: Double] ?? [:]
+        /// The stored gains by entry name.
+        var cache: [String: Float] {
+            let entries = (try? FileManager.default.contentsOfDirectory(
+                at: cacheDirectory, includingPropertiesForKeys: nil
+            )) ?? []
+            return entries.reduce(into: [:]) { cache, entry in
+                cache[entry.lastPathComponent] = AudioLoudnessCache.read(at: entry)
+            }
         }
 
         init() throws {
             directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             url = directory.appendingPathComponent("source.caf")
-            suiteName = "AudioLoudnessCancellationTests.\(UUID().uuidString)"
-            defaults = try #require(UserDefaults(suiteName: suiteName))
+            cacheDirectory = directory.appendingPathComponent("cache", isDirectory: true)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
             let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 44_100))
@@ -177,7 +183,6 @@ struct AudioLoudnessCancellationTests {
 
         func cleanup() {
             try? FileManager.default.removeItem(at: directory)
-            defaults.removePersistentDomain(forName: suiteName)
         }
     }
 }

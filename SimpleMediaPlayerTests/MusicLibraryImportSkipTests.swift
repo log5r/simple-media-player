@@ -114,14 +114,19 @@ struct MusicLibraryImportSkipTests {
         try Data("audio".utf8).write(to: file)
         let entry = try #require(MusicAnalysisCache.entryURL(for: file, in: cacheDirectory))
         try Data("{}".utf8).write(to: entry)
+        let loudnessEntry = try #require(AudioLoudnessCache.entryURL(for: file, in: cacheDirectory))
+        AudioLoudnessCache.write(3, at: loudnessEntry)
         let unrelated = cacheDirectory.appendingPathComponent("unrelated.json")
         try Data("{}".utf8).write(to: unrelated)
 
         await MusicLibraryTemporaryFiles.removeLeftoversInBackground(
-            in: fixture.temporaryDirectory, analysisCacheDirectory: cacheDirectory
+            in: fixture.temporaryDirectory,
+            analysisCacheDirectory: cacheDirectory,
+            loudnessCacheDirectory: cacheDirectory
         ).value
 
         #expect(FileManager.default.fileExists(atPath: entry.path) == false)
+        #expect(FileManager.default.fileExists(atPath: loudnessEntry.path) == false)
         #expect(FileManager.default.fileExists(atPath: unrelated.path))
         #expect(FileManager.default.fileExists(atPath: session.path) == false)
         #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.temporaryDirectory.path).isEmpty)

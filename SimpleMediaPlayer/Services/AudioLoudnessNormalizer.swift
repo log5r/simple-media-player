@@ -10,26 +10,25 @@ nonisolated enum AudioLoudnessNormalizer {
     private static let absoluteGateDecibels = -70.0
     private static let relativeGateDecibels = -10.0
     private static let maximumPeakAmplitude = 0.95
-    private static let cacheKey = "audioLoudnessNormalizationCache.v1"
-    private static let maximumCacheEntryCount = 256
-    private static let cacheLock = NSLock()
 
     /// Returns the stored gain without reading the audio, or nil when the file has not been measured.
-    static func cachedGain(for url: URL, defaults: UserDefaults = .standard) -> Float? {
+    static func cachedGain(for url: URL, cacheDirectory: URL? = AudioLoudnessCache.defaultDirectory) -> Float? {
         let hasSecurityScopedAccess = url.startAccessingSecurityScopedResource()
         defer {
             if hasSecurityScopedAccess { url.stopAccessingSecurityScopedResource() }
         }
-        return fileCacheKey(for: url).flatMap { cachedGain(forKey: $0, defaults: defaults) }
+        return AudioLoudnessCache.entryURL(for: url, in: cacheDirectory).flatMap(AudioLoudnessCache.read(at:))
     }
 
-    static func cachedOrMeasuredGain(for url: URL, defaults: UserDefaults = .standard) throws -> Float {
-        try cachedOrMeasuredGain(for: url, defaults: defaults, measure: measuredGain)
+    static func cachedOrMeasuredGain(
+        for url: URL, cacheDirectory: URL? = AudioLoudnessCache.defaultDirectory
+    ) throws -> Float {
+        try cachedOrMeasuredGain(for: url, cacheDirectory: cacheDirectory, measure: measuredGain)
     }
 
     static func cachedOrMeasuredGain(
         for url: URL,
-        defaults: UserDefaults,
+        cacheDirectory: URL?,
         measure: (URL) throws -> Float
     ) throws -> Float {
         try Task.checkCancellation()
@@ -38,9 +37,8 @@ nonisolated enum AudioLoudnessNormalizer {
             if hasSecurityScopedAccess { url.stopAccessingSecurityScopedResource() }
         }
 
-        let fileKey = fileCacheKey(for: url)
-        if let fileKey,
-           let cachedGain = cachedGain(forKey: fileKey, defaults: defaults) {
+        let entry = AudioLoudnessCache.entryURL(for: url, in: cacheDirectory)
+        if let entry, let cachedGain = AudioLoudnessCache.read(at: entry) {
             try Task.checkCancellation()
             return cachedGain
         }
@@ -55,8 +53,8 @@ nonisolated enum AudioLoudnessNormalizer {
             gain = 0
         }
         try Task.checkCancellation()
-        if let fileKey {
-            try store(gain: gain, forKey: fileKey, defaults: defaults)
+        if let entry {
+            AudioLoudnessCache.write(gain, at: entry)
         }
         return gain
     }
@@ -190,37 +188,5 @@ nonisolated enum AudioLoudnessNormalizer {
                 blockSquareSum += Double(sample) * Double(sample)
             }
         }
-    }
-
-    private static func fileCacheKey(for url: URL) -> String? {
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
-              let fileSize = values.fileSize,
-              let modificationDate = values.contentModificationDate
-        else {
-            return nil
-        }
-        return "\(url.path)|\(fileSize)|\(modificationDate.timeIntervalSince1970)"
-    }
-
-    private static func cachedGain(forKey fileKey: String, defaults: UserDefaults) -> Float? {
-        cacheLock.withLock {
-            guard let number = defaults.dictionary(forKey: cacheKey)?[fileKey] as? NSNumber else { return nil }
-            return Float(truncating: number)
-        }
-    }
-
-    private static func store(gain: Float, forKey fileKey: String, defaults: UserDefaults) throws {
-        cacheLock.lock()
-        defer { cacheLock.unlock() }
-        try Task.checkCancellation()
-        var cache = defaults.dictionary(forKey: cacheKey) ?? [:]
-        if cache[fileKey] == nil, cache.count >= maximumCacheEntryCount {
-            for key in cache.keys.sorted().prefix(maximumCacheEntryCount / 4) {
-                cache.removeValue(forKey: key)
-            }
-        }
-        cache[fileKey] = Double(gain)
-        try Task.checkCancellation()
-        defaults.set(cache, forKey: cacheKey)
     }
 }

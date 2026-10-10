@@ -13,19 +13,29 @@ final class TransientPlaybackSession: Identifiable {
     private(set) var isEnded = false
     private var cleanupTask: Task<Void, Never>?
     private let analysisCacheDirectory: URL?
+    private let loudnessCacheDirectory: URL?
     /// Captured at creation so the nonisolated deinit can clean up without touching the items.
     private let fileURLs: [URL]
 
-    init(directory: URL, items: [MediaItem], analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory) {
+    init(
+        directory: URL,
+        items: [MediaItem],
+        analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        loudnessCacheDirectory: URL? = AudioLoudnessCache.defaultDirectory
+    ) {
         self.directory = directory
         self.items = items
         self.analysisCacheDirectory = analysisCacheDirectory
+        self.loudnessCacheDirectory = loudnessCacheDirectory
         fileURLs = items.map { directory.appendingPathComponent($0.fileName) }
     }
 
     deinit {
         guard cleanupTask == nil else { return }
-        Self.removeFiles(in: directory, items: fileURLs, analysisCacheDirectory: analysisCacheDirectory)
+        Self.removeFiles(
+            in: directory, items: fileURLs,
+            analysisCacheDirectory: analysisCacheDirectory, loudnessCacheDirectory: loudnessCacheDirectory
+        )
     }
 
     func contains(_ itemID: UUID) -> Bool {
@@ -35,17 +45,25 @@ final class TransientPlaybackSession: Identifiable {
     func end() {
         guard isEnded == false else { return }
         isEnded = true
-        cleanupTask = Self.removeFiles(in: directory, items: fileURLs, analysisCacheDirectory: analysisCacheDirectory)
+        cleanupTask = Self.removeFiles(
+            in: directory, items: fileURLs,
+            analysisCacheDirectory: analysisCacheDirectory, loudnessCacheDirectory: loudnessCacheDirectory
+        )
     }
 
-    /// Analysis cache entries are keyed by each file's path and attributes, which only this session's
-    /// files ever match, so they are removed together with the files; the key is read first.
+    /// Analysis and loudness cache entries are keyed by each file's path and attributes, which only this
+    /// session's files ever match, so they are removed together with the files; the keys are read first.
     @discardableResult
     nonisolated private static func removeFiles(
-        in directory: URL, items: [URL], analysisCacheDirectory: URL?
+        in directory: URL, items: [URL], analysisCacheDirectory: URL?, loudnessCacheDirectory: URL?
     ) -> Task<Void, Never> {
         Task.detached(priority: .utility) {
-            let entries = items.compactMap { MusicAnalysisCache.entryURL(for: $0, in: analysisCacheDirectory) }
+            let entries = items.flatMap { item in
+                [
+                    MusicAnalysisCache.entryURL(for: item, in: analysisCacheDirectory),
+                    AudioLoudnessCache.entryURL(for: item, in: loudnessCacheDirectory)
+                ].compactMap(\.self)
+            }
             try? FileManager.default.removeItem(at: directory)
             for entry in entries {
                 try? FileManager.default.removeItem(at: entry)

@@ -128,11 +128,15 @@ struct TransientPlaybackSessionTests {
             .appendingPathComponent("TransientPlaybackSessionTests-cache-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: cacheDirectory) }
-        let session = try makeSession(titles: ["One"], analysisCacheDirectory: cacheDirectory)
+        let session = try makeSession(
+            titles: ["One"], analysisCacheDirectory: cacheDirectory, loudnessCacheDirectory: cacheDirectory
+        )
         let fileURL = session.directory.appendingPathComponent("One.wav")
         try Data("audio".utf8).write(to: fileURL)
         let entry = try #require(MusicAnalysisCache.entryURL(for: fileURL, in: cacheDirectory))
         try Data("{}".utf8).write(to: entry)
+        let loudnessEntry = try #require(AudioLoudnessCache.entryURL(for: fileURL, in: cacheDirectory))
+        AudioLoudnessCache.write(3, at: loudnessEntry)
         let unrelated = cacheDirectory.appendingPathComponent("unrelated.json")
         try Data("{}".utf8).write(to: unrelated)
 
@@ -140,6 +144,7 @@ struct TransientPlaybackSessionTests {
         await session.awaitCleanup()
 
         #expect(FileManager.default.fileExists(atPath: entry.path) == false)
+        #expect(FileManager.default.fileExists(atPath: loudnessEntry.path) == false)
         #expect(FileManager.default.fileExists(atPath: unrelated.path))
         #expect(FileManager.default.fileExists(atPath: session.directory.path) == false)
     }
@@ -180,7 +185,7 @@ struct TransientPlaybackSessionTests {
     }
 
     private func makeSession(
-        titles: [String], analysisCacheDirectory: URL? = nil
+        titles: [String], analysisCacheDirectory: URL? = nil, loudnessCacheDirectory: URL? = nil
     ) throws -> TransientPlaybackSession {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("TransientPlaybackSessionTests-\(UUID().uuidString)", isDirectory: true)
@@ -192,7 +197,8 @@ struct TransientPlaybackSessionTests {
             )
         }
         return TransientPlaybackSession(
-            directory: directory, items: items, analysisCacheDirectory: analysisCacheDirectory
+            directory: directory, items: items,
+            analysisCacheDirectory: analysisCacheDirectory, loudnessCacheDirectory: loudnessCacheDirectory
         )
     }
 

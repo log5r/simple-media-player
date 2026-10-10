@@ -79,19 +79,16 @@ struct AudioLoudnessMeasurementTests {
     @Test func measuringAFileMatchesTheScalarReference() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("AudioLoudnessMeasurementTests-\(UUID().uuidString)", isDirectory: true)
-        let suiteName = "AudioLoudnessMeasurementTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-            defaults.removePersistentDomain(forName: suiteName)
-        }
+        defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("noise.caf")
         // Blocks of 17,640 frames straddle the 16,384-frame read buffer, and the last block is partial.
         let channels = TestSignal.noise(channelCount: 2, frameCount: 44_100 * 3 + 5_000, amplitude: 0.1, seed: 3)
         try write(channels, sampleRate: 44_100, to: url)
 
-        let gain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, defaults: defaults)
+        let gain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(
+            for: url, cacheDirectory: directory.appendingPathComponent("cache", isDirectory: true)
+        )
         let expected = ScalarReference.measure(channels, blockFrameCapacity: 17_640, bufferFrameCount: 16_384)
         let expectedGain = AudioLoudnessNormalizer.gainDecibels(
             forBlockMeanSquares: expected.blockMeanSquares, peakAmplitude: expected.peakAmplitude
