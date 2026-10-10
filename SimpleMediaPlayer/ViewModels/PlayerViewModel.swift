@@ -63,6 +63,10 @@ final class PlayerViewModel {
         }
     }
     private(set) var playbackGeneration: UInt64 = 0
+    /// Advances on every transport action, including pause and resume, which keep `playbackGeneration`.
+    /// A deferred playback request compares it so a pause/resume pair in between is not mistaken for
+    /// an unchanged state.
+    private(set) var transportGeneration: UInt64 = 0
     @ObservationIgnored private let playbackClock = PlaybackClock()
     var currentTime: TimeInterval {
         get { playbackClock.time }
@@ -323,6 +327,7 @@ extension PlayerViewModel {
 
     func play(item: MediaItem, in queue: [MediaItem]) {
         playbackGeneration &+= 1
+        transportGeneration &+= 1
         releaseTransientSession(unlessContaining: item)
         guard let url = libraryService.resolvedURL(for: item) else {
             clearCurrentItem()
@@ -376,6 +381,7 @@ extension PlayerViewModel {
 
     func resume() {
         guard currentItem != nil, isPlaying == false else { return }
+        transportGeneration &+= 1
         resetSpectrumFrameRate()
         if isVideoMode {
             videoService.play()
@@ -387,6 +393,7 @@ extension PlayerViewModel {
 
     func pause() {
         guard currentItem != nil, isPlaying else { return }
+        transportGeneration &+= 1
         if isVideoMode {
             videoService.pause()
         } else {
@@ -399,6 +406,7 @@ extension PlayerViewModel {
 
     func stop() {
         playbackGeneration &+= 1
+        transportGeneration &+= 1
         isPaused = false
         if isVideoMode {
             closeVideoSession()

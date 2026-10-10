@@ -2,7 +2,7 @@ import Foundation
 
 /// A value snapshot of one Music library item. MediaPlayer objects stay on the main actor; preparation
 /// and import work only with this copy, so a late result cannot read a changed or released item.
-nonisolated struct MusicLibraryTrack: Identifiable, Sendable, Equatable {
+nonisolated struct MusicLibraryTrack: Identifiable, Sendable {
     let id: UInt64
     var assetURL: URL?
     var hasProtectedAsset = false
@@ -21,6 +21,9 @@ nonisolated struct MusicLibraryTrack: Identifiable, Sendable, Equatable {
     var lyrics: String?
     var duration: TimeInterval = 0
     var artworkData: Data?
+    /// Decodes and encodes the artwork on demand, so a large selection does not block the picker's
+    /// delegate callback; the preparation calls it per song while its panel is visible.
+    var loadArtwork: (@MainActor () -> Data?)?
 
     init(id: UInt64, assetURL: URL? = nil) {
         self.id = id
@@ -55,6 +58,11 @@ nonisolated struct MusicLibraryTrack: Identifiable, Sendable, Equatable {
 
     var normalizedLyrics: String? {
         Self.nonblank(lyrics)
+    }
+
+    @MainActor
+    func resolvedArtworkData() -> Data? {
+        artworkData ?? loadArtwork?()
     }
 
     /// Checks the picker-level flags before any asset is opened. Readability and exportability of the

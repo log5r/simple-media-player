@@ -39,7 +39,8 @@ enum MusicLibraryAccess {
 }
 
 extension MusicLibraryTrack {
-    /// Copies every value the app stores while the item is still valid on the main actor.
+    /// Copies every text value while the item is still valid on the main actor. Artwork is only
+    /// referenced here and rendered later by `resolvedArtworkData()`.
     @MainActor
     init(mediaItem: MPMediaItem, artworkPixelSize: CGFloat = 600) {
         self.init(id: mediaItem.persistentID, assetURL: mediaItem.assetURL)
@@ -58,8 +59,10 @@ extension MusicLibraryTrack {
         isCompilation = mediaItem.isCompilation
         lyrics = mediaItem.lyrics
         duration = mediaItem.playbackDuration
-        let artworkSize = CGSize(width: artworkPixelSize, height: artworkPixelSize)
-        artworkData = mediaItem.artwork?.image(at: artworkSize)?.jpegData(compressionQuality: 0.9)
+        if let artwork = mediaItem.artwork {
+            let artworkSize = CGSize(width: artworkPixelSize, height: artworkPixelSize)
+            loadArtwork = { artwork.image(at: artworkSize)?.jpegData(compressionQuality: 0.9) }
+        }
     }
 
     /// Release dates are calendar dates; reading them in UTC avoids shifting the year at midnight.

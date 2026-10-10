@@ -1,4 +1,5 @@
 import AVFoundation
+import ImageIO
 import Foundation
 import SwiftData
 import Testing
@@ -17,6 +18,8 @@ struct MusicLibraryImportTests {
         track.year = "1999"
         track.trackNumber = "3/12"
         track.lyrics = "La la"
+        let artwork = try makeArtworkPNG()
+        track.loadArtwork = { artwork }
 
         let result = try #require(await fixture.service.importMusicLibraryTracks(
             [track], into: fixture.context, existingItems: []
@@ -37,6 +40,7 @@ struct MusicLibraryImportTests {
         #expect(item.trackNumber == "3/12")
         #expect(item.lyricsRaw == "La la")
         #expect(item.musicLibraryItemID == "7")
+        #expect(item.hasArtwork)
         #expect(item.hasEditedTextMetadata == false)
         #expect(item.fileName.hasSuffix(".m4a"))
         #expect(try fixture.managedFiles().count == 1)
@@ -260,6 +264,21 @@ struct MusicLibraryImportTests {
         #expect(item.hasEditedTextMetadata)
         #expect(item.editedArtist == "")
     }
+}
+
+private func makeArtworkPNG() throws -> Data {
+    let context = try #require(CGContext(
+        data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ))
+    context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+    return data as Data
 }
 
 @MainActor

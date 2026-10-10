@@ -106,6 +106,23 @@ struct TransientPlaybackSessionTests {
         #expect(fixture.player.errorMessage != nil)
     }
 
+    @Test func pauseAndResumeAdvanceTheTransportGenerationButNotThePlaybackGeneration() throws {
+        let session = try makeSession(titles: ["One"])
+        let fixture = makePlayerFixture(urlsByID: urls(for: session))
+        fixture.player.play(transientSession: session)
+        let playback = fixture.player.playbackGeneration
+        let transport = fixture.player.transportGeneration
+
+        fixture.player.pause()
+        fixture.player.resume()
+
+        #expect(fixture.player.playbackGeneration == playback)
+        #expect(fixture.player.transportGeneration == transport &+ 2)
+        fixture.player.stop()
+        #expect(fixture.player.transportGeneration == transport &+ 3)
+        session.end()
+    }
+
     private func makeSession(titles: [String]) throws -> TransientPlaybackSession {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("TransientPlaybackSessionTests-\(UUID().uuidString)", isDirectory: true)

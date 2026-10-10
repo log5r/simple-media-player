@@ -177,16 +177,18 @@ private extension LibraryService {
         in directory: URL, preparation: MusicLibraryPreparation
     ) async throws -> MusicLibraryStaging {
         var staging = MusicLibraryStaging()
-        for (index, track) in tracks.enumerated() {
+        for (index, selected) in tracks.enumerated() {
             try Task.checkCancellation()
-            preparation.advance(to: index, title: track.displayTitle)
-            if alreadyImported.contains(track.libraryItemID) {
+            preparation.advance(to: index, title: selected.displayTitle)
+            if alreadyImported.contains(selected.libraryItemID) {
                 staging.skippedCount += 1
-                staging.messages.append(L10n.format("“%@” is already in your library.", track.displayTitle))
+                staging.messages.append(L10n.format("“%@” is already in your library.", selected.displayTitle))
                 continue
             }
+            var track = selected
             do {
                 let assetURL = try track.validatedAssetURL()
+                track.artworkData = selected.resolvedArtworkData()
                 let output = try await MusicLibraryTrackExporter.export(
                     assetURL: assetURL, to: directory, baseName: track.exportBaseName
                 )
