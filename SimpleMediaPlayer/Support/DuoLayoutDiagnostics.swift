@@ -38,6 +38,8 @@ struct DuoLayoutDiagnostics: ViewModifier {
                                 .accessibilityIdentifier("duoPlaybackMetrics")
                                 .accessibilityLabel("Playback diagnostics")
                                 .accessibilityValue(playbackMetrics(for: player))
+                                // The metrics report audio levels, so they keep the analysis running.
+                                .modifier(VisualizationConsumer(player: player))
                         }
                     }
                     .font(.system(size: 8, design: .monospaced))

@@ -27,11 +27,28 @@ nonisolated enum VUMeterScale {
     }
 
     nonisolated struct Ballistics {
+        /// The longest single integration step. Longer frame intervals are split into equal sub-steps,
+        /// so the needle moves at the same real-time speed at 10, 30, and 60 fps.
+        static let maximumSubstep: Float = 1.0 / 60
+        /// The longest interval integrated at once. It covers one late frame in the 10 fps mode, but keeps the
+        /// first frame after drawing was paused from jumping ahead by the whole pause.
+        static let maximumElapsedTime: Float = 0.2
+
         var position: Float = 0
         var velocity: Float = 0
 
-        mutating func step(toward target: Float, dt timeStep: Float) {
-            let timeStep = min(max(timeStep, 0), 1.0 / 20)
+        mutating func step(toward target: Float, dt elapsedTime: Float) {
+            let elapsedTime = min(max(elapsedTime, 0), Self.maximumElapsedTime)
+            guard elapsedTime > 0 else { return }
+            // The tolerance keeps an interval of exactly 1/60 s in one sub-step despite rounding.
+            let substeps = max(1, Int((elapsedTime / Self.maximumSubstep - 0.001).rounded(.up)))
+            let timeStep = elapsedTime / Float(substeps)
+            for _ in 0..<substeps {
+                integrate(toward: target, timeStep: timeStep)
+            }
+        }
+
+        private mutating func integrate(toward target: Float, timeStep: Float) {
             let omega: Float = 2 * .pi * 1.6
             let zeta: Float = 0.7
             velocity += (omega * omega * (target - position) - 2 * zeta * omega * velocity) * timeStep

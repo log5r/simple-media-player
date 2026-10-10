@@ -15,6 +15,8 @@ struct SimpleMediaPlayerApp: App {
     @State private var player: PlayerViewModel
     @State private var isImporterPresented = false
     @State private var libraryPreparation = LibraryPreparation()
+    // Read in the App, this is the aggregate of all scenes: background only when every scene is.
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         BundledFontRegistry.registerFonts()
@@ -100,6 +102,11 @@ struct SimpleMediaPlayerApp: App {
         #if os(macOS)
         .defaultSize(width: 1100, height: 720)
         #endif
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            // Not `!= .active`: an inactive scene can still be visible, so its visualizer keeps running.
+            // A macOS window behind another app stays active; one hidden with the app is in the background.
+            player.setInBackground(phase == .background)
+        }
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Import...") {

@@ -58,6 +58,7 @@ final class PlayerViewModel {
             if isPlaying { isPaused = false }
             guard isPlaying != oldValue else { return }
             audioFrame.isPlaying = isPlaying
+            updateVisualizerIdle()
             analyzer.setPlaybackActive(isPlaying, currentTime: currentTime)
             updateClock()
         }
@@ -79,6 +80,9 @@ final class PlayerViewModel {
     }
     var duration: TimeInterval = 0
     var audioFrame = AudioFrameData.silent()
+    /// True while nothing plays and the last frame is silent. It is assigned only when it changes, so a view
+    /// that pauses its timeline with it is not invalidated by every analysis frame.
+    private(set) var isVisualizerIdle = true
     var isVideoMode = false
     var showVideoArea = false
     var errorMessage: String?
@@ -144,6 +148,12 @@ final class PlayerViewModel {
     @ObservationIgnored let videoService: any VideoPlaybackControlling
     @ObservationIgnored private let equalizerDefaults: UserDefaults
     @ObservationIgnored private var timer: Timer?
+    /// The repeating interval of the playback clock, or nil while it rests or is disabled.
+    @ObservationIgnored private(set) var playbackClockInterval: TimeInterval?
+    /// Views on screen that draw `audioFrame`. Analysis stops while there are none or the app is in the background.
+    @ObservationIgnored private var visualizationConsumers: Set<UUID> = []
+    @ObservationIgnored private(set) var isInBackground = false
+    @ObservationIgnored private(set) var isVisualizationSuspended = false
     @ObservationIgnored private let clockEnabled: Bool
     /// Alive while a transient item is current or queued; see `TransientPlaybackSession`.
     @ObservationIgnored private(set) var transientSession: TransientPlaybackSession?
@@ -213,6 +223,7 @@ final class PlayerViewModel {
             self?.formatInfo = formatInfo
         }
         configureAudioSession()
+        updateVisualizationSuspension()
         audioEngine.setVolumeNormalizationEnabled(volumeNormalizationEnabled)
         audioEngine.setEqualizer(equalizer)
         videoService.setEqualizer(equalizer)
@@ -580,11 +591,15 @@ extension PlayerViewModel {
     private func updateClock() {
         timer?.invalidate()
         timer = nil
+        playbackClockInterval = nil
         guard clockEnabled else { return }
         // .common モードで登録しないと、マウストラッキング中（ボタン長押しなど）に
         // RunLoop が .eventTracking モードになりタイマーが発火しない
         // After the engine's asynchronous pause, synchronize the clock once, then rest.
-        let timer = Timer(timeInterval: isPlaying ? 1.0 / 30 : 0.5, repeats: isPlaying) { [weak self] timer in
+        // In the background only the position is kept roughly current; track ends arrive through onFinished.
+        let interval = isPlaying ? (isInBackground ? 1.0 : 1.0 / 30) : 0.5
+        if isPlaying { playbackClockInterval = interval }
+        let timer = Timer(timeInterval: interval, repeats: isPlaying) { [weak self] timer in
             guard let self else {
                 timer.invalidate()
                 return
@@ -641,6 +656,7 @@ extension PlayerViewModel {
 
     private func acceptAudioFrame(_ frame: AudioFrameData) {
         audioFrame = frame
+        updateVisualizerIdle()
         guard frame.isPlaying else {
             resetSpectrumFrameRate()
             return
@@ -653,6 +669,11 @@ extension PlayerViewModel {
     private func resetSpectrumFrameRate() {
         spectrumFrameRate = 0
         spectrumFrameRateCounter.reset()
+    }
+
+    private func updateVisualizerIdle() {
+        let idle = isPlaying == false && audioFrame.isSilent
+        if isVisualizerIdle != idle { isVisualizerIdle = idle }
     }
 
     private func closeVideoSession() {
@@ -668,6 +689,48 @@ extension PlayerViewModel {
         isVideoMode = false
         showVideoArea = false
         analyzer.setPlaybackActive(false, currentTime: 0)
+        resetSpectrumFrameRate()
+    }
+}
+
+// MARK: - Visualization suppression
+
+extension PlayerViewModel {
+    /// Registers a view on screen that draws `audioFrame`. Registering the same ID again has no effect.
+    func addVisualizationConsumer(_ id: UUID) {
+        visualizationConsumers.insert(id)
+        updateVisualizationSuspension()
+    }
+
+    func removeVisualizationConsumer(_ id: UUID) {
+        visualizationConsumers.remove(id)
+        updateVisualizationSuspension()
+    }
+
+    /// Only the background phase counts: on iOS a locked device or another app in front, on macOS a hidden
+    /// app. Inactive scenes can still be seen, such as an iPhone app behind Control Center or in the app
+    /// switcher.
+    func setInBackground(_ background: Bool) {
+        guard isInBackground != background else { return }
+        isInBackground = background
+        updateVisualizationSuspension()
+        guard isPlaying else { return }
+        updateClock()
+        // The 1 Hz clock may be up to a second behind; show the current position at once.
+        if background == false { synchronizePlaybackClock() }
+    }
+
+    private func updateVisualizationSuspension() {
+        let suspended = isInBackground || visualizationConsumers.isEmpty
+        guard isVisualizationSuspended != suspended else { return }
+        isVisualizationSuspended = suspended
+        analyzer.setAnalysisEnabled(suspended == false)
+        guard suspended else { return }
+        // No frames arrive while suspended. Drop the last one so a returning display does not freeze on it.
+        audioFrame = .silent(
+            bandCount: audioFrame.bandsL.count, currentTime: audioFrame.currentTime, isPlaying: isPlaying
+        )
+        updateVisualizerIdle()
         resetSpectrumFrameRate()
     }
 }
