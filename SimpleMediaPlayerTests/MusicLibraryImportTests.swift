@@ -18,7 +18,7 @@ struct MusicLibraryImportTests {
         track.year = "1999"
         track.trackNumber = "3/12"
         track.lyrics = "La la"
-        let artwork = try makeArtworkPNG()
+        let artwork = try makeArtworkImage()
         track.loadArtwork = { artwork }
 
         let result = try #require(await fixture.service.importMusicLibraryTracks(
@@ -47,24 +47,6 @@ struct MusicLibraryImportTests {
         #expect(try AVAudioFile(forReading: #require(fixture.service.resolvedURL(for: item))).length > 0)
         #expect(await fixture.temporaryFilesAreGone())
         #expect(fixture.service.musicLibraryPreparation == nil)
-    }
-
-    @Test func skipsSongsAlreadyImportedFromMusic() async throws {
-        let fixture = try MusicLibraryFixture()
-        defer { fixture.remove() }
-        let track = fixture.makeTrack(id: 8, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
-        _ = await fixture.service.importMusicLibraryTracks([track], into: fixture.context, existingItems: [])
-
-        let result = try #require(await fixture.service.importMusicLibraryTracks(
-            [track], into: fixture.context, existingItems: try fixture.items()
-        ))
-
-        #expect(result.importedCount == 0)
-        #expect(result.skippedCount == 1)
-        #expect(result.messages == [L10n.format("“%@” is already in your library.", track.displayTitle)])
-        #expect(try fixture.items().count == 1)
-        #expect(try fixture.managedFiles().count == 1)
-        #expect(await fixture.temporaryFilesAreGone())
     }
 
     @Test func rejectedSongsAreReportedWithoutTouchingTheLibrary() async throws {
@@ -287,19 +269,54 @@ struct MusicLibraryImportTests {
     }
 }
 
-private func makeArtworkPNG() throws -> Data {
+/// Skipping by Music persistent ID, kept apart from the main suite to bound its length.
+@MainActor
+struct MusicLibraryImportSkipTests {
+    @Test func skipsSongsAlreadyImportedFromMusic() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let track = fixture.makeTrack(id: 8, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
+        _ = await fixture.service.importMusicLibraryTracks([track], into: fixture.context, existingItems: [])
+
+        let result = try #require(await fixture.service.importMusicLibraryTracks(
+            [track], into: fixture.context, existingItems: try fixture.items()
+        ))
+
+        #expect(result.importedCount == 0)
+        #expect(result.skippedCount == 1)
+        #expect(result.messages == [L10n.format("“%@” is already in your library.", track.displayTitle)])
+        #expect(try fixture.items().count == 1)
+        #expect(try fixture.managedFiles().count == 1)
+        #expect(await fixture.temporaryFilesAreGone())
+    }
+
+    /// The pre-check list from before a deletion must not skip the song whose library copy is gone.
+    @Test func staleExistingItemsDoNotSkipADeletedSong() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let track = fixture.makeTrack(id: 13, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
+        _ = await fixture.service.importMusicLibraryTracks([track], into: fixture.context, existingItems: [])
+        let staleItems = try fixture.items()
+        await fixture.service.delete(try #require(staleItems.first), from: fixture.context)?.value
+
+        let result = try #require(await fixture.service.importMusicLibraryTracks(
+            [track], into: fixture.context, existingItems: staleItems
+        ))
+
+        #expect(result.importedCount == 1)
+        #expect(result.skippedCount == 0)
+        #expect(try fixture.items().count == 1)
+    }
+}
+
+private func makeArtworkImage() throws -> CGImage {
     let context = try #require(CGContext(
         data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
     ))
     context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
-    let image = try #require(context.makeImage())
-    let data = NSMutableData()
-    let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
-    CGImageDestinationAddImage(destination, image, nil)
-    #expect(CGImageDestinationFinalize(destination))
-    return data as Data
+    return try #require(context.makeImage())
 }
 
 @MainActor

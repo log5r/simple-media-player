@@ -1,4 +1,7 @@
+import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 /// A value snapshot of one Music library item. MediaPlayer objects stay on the main actor; preparation
 /// and import work only with this copy, so a late result cannot read a changed or released item.
@@ -21,9 +24,9 @@ nonisolated struct MusicLibraryTrack: Identifiable, Sendable {
     var lyrics: String?
     var duration: TimeInterval = 0
     var artworkData: Data?
-    /// Decodes and encodes the artwork on demand, so a large selection does not block the picker's
-    /// delegate callback; the preparation calls it per song while its panel is visible.
-    var loadArtwork: (@MainActor () -> Data?)?
+    /// Renders the artwork on demand, so a large selection does not block the picker's delegate callback.
+    /// Only the image access runs on the main actor; `resolvedArtworkData()` encodes it on a worker.
+    var loadArtwork: (@MainActor () -> CGImage?)?
 
     init(id: UInt64, assetURL: URL? = nil) {
         self.id = id
@@ -61,8 +64,20 @@ nonisolated struct MusicLibraryTrack: Identifiable, Sendable {
     }
 
     @MainActor
-    func resolvedArtworkData() -> Data? {
-        artworkData ?? loadArtwork?()
+    func resolvedArtworkData() async -> Data? {
+        if let artworkData { return artworkData }
+        guard let image = loadArtwork?() else { return nil }
+        return await Task.detached(priority: .utility) { Self.jpegData(from: image) }.value
+    }
+
+    private static func jpegData(from image: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            data, UTType.jpeg.identifier as CFString, 1, nil
+        ) else { return nil }
+        let options = [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary
+        CGImageDestinationAddImage(destination, image, options)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     /// Checks the picker-level flags before any asset is opened. Readability and exportability of the

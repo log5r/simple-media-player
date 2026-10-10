@@ -61,7 +61,7 @@ extension MusicLibraryTrack {
         duration = mediaItem.playbackDuration
         if let artwork = mediaItem.artwork {
             let artworkSize = CGSize(width: artworkPixelSize, height: artworkPixelSize)
-            loadArtwork = { artwork.image(at: artworkSize)?.jpegData(compressionQuality: 0.9) }
+            loadArtwork = { artwork.image(at: artworkSize)?.cgImage }
         }
     }
 

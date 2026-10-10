@@ -73,7 +73,7 @@ extension LibraryService {
         }
         let task = Task {
             try await self.stageMusicLibraryTracks(
-                tracks, skipping: alreadyImported, in: directory, preparation: preparation
+                tracks, skipping: alreadyImported, in: directory, context: context, preparation: preparation
             )
         }
         preparation.attach(task)
@@ -174,15 +174,25 @@ private extension LibraryService {
         return available
     }
 
+    /// The pre-check runs before staging starts; another scene may delete the item meanwhile, so a skip is
+    /// confirmed against the current library. The serialized import still makes the final decision.
+    func isMusicLibraryTrackStillImported(_ musicID: String, in context: ModelContext) async -> Bool {
+        let descriptor = FetchDescriptor<MediaItem>(predicate: #Predicate { $0.musicLibraryItemID == musicID })
+        let items = (try? context.fetch(descriptor)) ?? []
+        return await hasAvailableFile(for: items, in: context)
+    }
+
     func stageMusicLibraryTracks(
         _ tracks: [MusicLibraryTrack], skipping alreadyImported: Set<String>,
-        in directory: URL, preparation: MusicLibraryPreparation
+        in directory: URL, context: ModelContext, preparation: MusicLibraryPreparation
     ) async throws -> MusicLibraryStaging {
         var staging = MusicLibraryStaging()
         for (index, selected) in tracks.enumerated() {
             try Task.checkCancellation()
             preparation.advance(to: index, title: selected.displayTitle)
-            if alreadyImported.contains(selected.libraryItemID) {
+            if alreadyImported.contains(selected.libraryItemID),
+               await isMusicLibraryTrackStillImported(selected.libraryItemID, in: context) {
+                try Task.checkCancellation()
                 staging.skippedCount += 1
                 staging.messages.append(L10n.format("“%@” is already in your library.", selected.displayTitle))
                 continue
@@ -190,7 +200,8 @@ private extension LibraryService {
             var track = selected
             do {
                 let assetURL = try track.validatedAssetURL()
-                track.artworkData = selected.resolvedArtworkData()
+                track.artworkData = await selected.resolvedArtworkData()
+                try Task.checkCancellation()
                 let output = try await MusicLibraryTrackExporter.export(
                     assetURL: assetURL, to: directory, baseName: track.exportBaseName
                 )
