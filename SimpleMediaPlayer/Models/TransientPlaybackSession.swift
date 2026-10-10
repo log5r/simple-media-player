@@ -12,15 +12,20 @@ final class TransientPlaybackSession: Identifiable {
     let items: [MediaItem]
     private(set) var isEnded = false
     private var cleanupTask: Task<Void, Never>?
+    private let analysisCacheDirectory: URL?
+    /// Captured at creation so the nonisolated deinit can clean up without touching the items.
+    private let fileURLs: [URL]
 
-    init(directory: URL, items: [MediaItem]) {
+    init(directory: URL, items: [MediaItem], analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory) {
         self.directory = directory
         self.items = items
+        self.analysisCacheDirectory = analysisCacheDirectory
+        fileURLs = items.map { directory.appendingPathComponent($0.fileName) }
     }
 
     deinit {
         guard cleanupTask == nil else { return }
-        MusicLibraryTemporaryFiles.removeDirectoryInBackground(directory)
+        Self.removeFiles(in: directory, items: fileURLs, analysisCacheDirectory: analysisCacheDirectory)
     }
 
     func contains(_ itemID: UUID) -> Bool {
@@ -30,9 +35,21 @@ final class TransientPlaybackSession: Identifiable {
     func end() {
         guard isEnded == false else { return }
         isEnded = true
-        let directory = directory
-        cleanupTask = Task.detached(priority: .utility) {
+        cleanupTask = Self.removeFiles(in: directory, items: fileURLs, analysisCacheDirectory: analysisCacheDirectory)
+    }
+
+    /// Analysis cache entries are keyed by each file's path and attributes, which only this session's
+    /// files ever match, so they are removed together with the files; the key is read first.
+    @discardableResult
+    nonisolated private static func removeFiles(
+        in directory: URL, items: [URL], analysisCacheDirectory: URL?
+    ) -> Task<Void, Never> {
+        Task.detached(priority: .utility) {
+            let entries = items.compactMap { MusicAnalysisCache.entryURL(for: $0, in: analysisCacheDirectory) }
             try? FileManager.default.removeItem(at: directory)
+            for entry in entries {
+                try? FileManager.default.removeItem(at: entry)
+            }
         }
     }
 

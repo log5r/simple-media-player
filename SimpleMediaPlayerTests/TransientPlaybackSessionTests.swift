@@ -123,7 +123,30 @@ struct TransientPlaybackSessionTests {
         session.end()
     }
 
-    private func makeSession(titles: [String]) throws -> TransientPlaybackSession {
+    @Test func endingTheSessionRemovesItsAnalysisCacheEntries() async throws {
+        let cacheDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TransientPlaybackSessionTests-cache-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: cacheDirectory) }
+        let session = try makeSession(titles: ["One"], analysisCacheDirectory: cacheDirectory)
+        let fileURL = session.directory.appendingPathComponent("One.wav")
+        try Data("audio".utf8).write(to: fileURL)
+        let entry = try #require(MusicAnalysisCache.entryURL(for: fileURL, in: cacheDirectory))
+        try Data("{}".utf8).write(to: entry)
+        let unrelated = cacheDirectory.appendingPathComponent("unrelated.json")
+        try Data("{}".utf8).write(to: unrelated)
+
+        session.end()
+        await session.awaitCleanup()
+
+        #expect(FileManager.default.fileExists(atPath: entry.path) == false)
+        #expect(FileManager.default.fileExists(atPath: unrelated.path))
+        #expect(FileManager.default.fileExists(atPath: session.directory.path) == false)
+    }
+
+    private func makeSession(
+        titles: [String], analysisCacheDirectory: URL? = nil
+    ) throws -> TransientPlaybackSession {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("TransientPlaybackSessionTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -133,7 +156,9 @@ struct TransientPlaybackSessionTests {
                 musicLibraryItemID: title
             )
         }
-        return TransientPlaybackSession(directory: directory, items: items)
+        return TransientPlaybackSession(
+            directory: directory, items: items, analysisCacheDirectory: analysisCacheDirectory
+        )
     }
 
     private func urls(for session: TransientPlaybackSession) -> [UUID: URL] {

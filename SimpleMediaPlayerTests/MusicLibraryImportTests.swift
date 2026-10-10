@@ -240,6 +240,27 @@ struct MusicLibraryImportTests {
         #expect(summary == MediaImportSummary(createdCount: 2, duplicateCount: 0, errors: []))
     }
 
+    /// Two queued requests for one song may both pass the pre-check; the serialized import still sees the ID.
+    @Test func serializedImportRejectsASecondCopyOfTheSameMusicSong() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let first = try writeAudio(named: "first.wav", in: fixture.directory, formatID: kAudioFormatLinearPCM)
+        let second = try writeAudio(named: "second.m4a", in: fixture.directory, formatID: kAudioFormatMPEG4AAC)
+        let override = MediaImportOverride(musicLibraryItemID: "77")
+
+        let firstSummary = await fixture.service.importFiles(
+            from: [first], overrides: [first: override], into: fixture.context, existingItems: []
+        )
+        let secondSummary = await fixture.service.importFiles(
+            from: [second], overrides: [second: override], into: fixture.context, existingItems: []
+        )
+
+        #expect(firstSummary == MediaImportSummary(createdCount: 1))
+        #expect(secondSummary == MediaImportSummary(duplicateCount: 1))
+        #expect(try fixture.items().count == 1)
+        #expect(try fixture.managedFiles().count == 1)
+    }
+
     /// Music's text set is authoritative even when it could not be written into the file.
     @Test func completeTextOverrideClearsEmbeddedValues() async throws {
         let fixture = try MusicLibraryFixture()
