@@ -1,7 +1,10 @@
 import Foundation
+import Synchronization
 
 nonisolated enum MediaFileRewriter {
     static let copyBufferSize = 1_048_576
+    /// A lock per canonical file path, with the number of saves holding or waiting for it.
+    private static let fileLocks = Mutex<[String: (lock: NSLock, users: Int)]>([:])
 
     /// Replaces the `originalLength` bytes at `offset` with `data`, which must be the same length unless the range
     /// ends at the end of the file; the file then ends at `newFileLength`, the end of `data`.
@@ -22,14 +25,26 @@ nonisolated enum MediaFileRewriter {
     /// Overwrites only the range `plan` returns, or rewrites the whole file through `rewrite(at:_:)` when it returns
     /// nil. Cancellation is honored until the first write; after a failed write the original bytes are restored.
     /// Unlike the replacement, an interruption during the write (a crash or power loss) can leave a partial edit.
+    /// Saves of the same file run one at a time; see `withExclusiveAccess(to:_:)`.
     static func update(
         at url: URL,
         analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
         plan: (FileHandle, UInt64) throws -> InPlaceEdit?,
         rewrite write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
+        try withExclusiveAccess(to: url) {
+            try updateHoldingLock(at: url, analysisCacheDirectory: analysisCacheDirectory, plan: plan, rewrite: write)
+        }
+    }
+
+    private static func updateHoldingLock(
+        at url: URL,
+        analysisCacheDirectory: URL?,
+        plan: (FileHandle, UInt64) throws -> InPlaceEdit?,
+        rewrite write: (FileHandle, FileHandle, UInt64) throws -> Void
+    ) throws {
         guard allowsInPlaceEdits else {
-            return try rewrite(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
         }
         let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
         let handle = try FileHandle(forUpdating: url)
@@ -37,7 +52,7 @@ nonisolated enum MediaFileRewriter {
         let fileSize = try handle.seekToEnd()
         guard let edit = try plan(handle, fileSize), isValid(edit, fileSize: fileSize) else {
             try handle.close()
-            return try rewrite(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
         }
         let original = try read(from: handle, at: edit.offset, count: Int(edit.originalLength))
         try Task.checkCancellation()
@@ -68,9 +83,45 @@ nonisolated enum MediaFileRewriter {
     }
 
     /// `write` may change metadata only; the music analysis cache follows the rewritten file.
+    /// Saves of the same file run one at a time; see `withExclusiveAccess(to:_:)`.
     static func rewrite(
         at url: URL,
         analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        _ write: (FileHandle, FileHandle, UInt64) throws -> Void
+    ) throws {
+        try withExclusiveAccess(to: url) {
+            try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+        }
+    }
+
+    /// Two windows can save the same item. Without serializing, an in-place edit planned before another save
+    /// finished could overwrite part of it or truncate it, a failed edit could restore a stale snapshot over it,
+    /// and a replacement could copy bytes an in-place edit is changing.
+    /// Waiting blocks the thread and ignores cancellation, which is checked once the lock is held. The holder
+    /// does only synchronous file work, so it never needs the waiting thread. `body` must not save the same file.
+    /// Saves from other processes, and paths that differ only in case, are not coordinated.
+    private static func withExclusiveAccess(to url: URL, _ body: () throws -> Void) throws {
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let lock = fileLocks.withLock { locks in
+            let entry = locks[path] ?? (NSLock(), 0)
+            locks[path] = (entry.lock, entry.users + 1)
+            return entry.lock
+        }
+        defer {
+            fileLocks.withLock { locks in
+                guard let entry = locks[path] else { return }
+                locks[path] = entry.users > 1 ? (entry.lock, entry.users - 1) : nil
+            }
+        }
+        try lock.withLock {
+            try Task.checkCancellation()
+            try body()
+        }
+    }
+
+    private static func replace(
+        at url: URL,
+        analysisCacheDirectory: URL?,
         _ write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
         let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
