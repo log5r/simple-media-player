@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import SimpleMediaPlayer
 
-/// Skipping by Music persistent ID, kept apart from the main suite to bound its length.
+/// Skipping by Music persistent ID and playback artwork, kept apart from the main suite to bound its length.
 @MainActor
 struct MusicLibraryImportSkipTests {
     @Test func skipsSongsAlreadyImportedFromMusic() async throws {
@@ -65,5 +65,27 @@ struct MusicLibraryImportSkipTests {
         #expect(try fixture.managedFiles().count == seeded.count)
         #expect(await fixture.temporaryFilesAreGone())
         #expect(fixture.service.musicLibraryPreparation == nil)
+    }
+
+    /// Playback never imports, so the deferred Music artwork must be resolved for the transient item.
+    @Test func playbackItemCarriesTheMusicArtwork() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        var track = fixture.makeTrack(id: 31, fileName: "song.m4a", formatID: kAudioFormatMPEG4AAC)
+        let artwork = try makeArtworkImage()
+        track.loadArtwork = { artwork }
+
+        let outcome = await fixture.service.prepareMusicLibraryPlayback(of: track)
+
+        guard case let .ready(session) = outcome else {
+            Issue.record("Expected a session, got \(outcome)")
+            return
+        }
+        let item = try #require(session.items.first)
+        #expect(item.hasArtwork)
+        #expect(item.artworkData != nil)
+        #expect(try fixture.items().isEmpty)
+        session.end()
+        await session.awaitCleanup()
     }
 }

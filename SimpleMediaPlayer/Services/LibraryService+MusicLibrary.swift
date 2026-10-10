@@ -115,7 +115,10 @@ private extension LibraryService {
                 assetURL: assetURL, to: directory, baseName: track.exportBaseName
             )
             try Task.checkCancellation()
-            let item = try makeTransientItem(for: track, output: output)
+            // Music artwork is already bounded to a 600 px JPEG, so it is passed to the item as-is.
+            let artwork = await track.resolvedArtworkData()
+            try Task.checkCancellation()
+            let item = try makeTransientItem(for: track, output: output, artworkData: artwork)
             return TransientPlaybackSession(directory: directory, items: [item])
         } catch {
             MusicLibraryTemporaryFiles.removeDirectoryInBackground(directory)
@@ -123,7 +126,9 @@ private extension LibraryService {
         }
     }
 
-    func makeTransientItem(for track: MusicLibraryTrack, output: MusicLibraryTrackExporter.Output) throws -> MediaItem {
+    func makeTransientItem(
+        for track: MusicLibraryTrack, output: MusicLibraryTrackExporter.Output, artworkData: Data?
+    ) throws -> MediaItem {
         #if os(macOS)
         let bookmarkOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
         #else
@@ -149,6 +154,7 @@ private extension LibraryService {
             isVideo: false,
             lyricsRaw: track.normalizedLyrics,
             bookmarkData: bookmark,
+            artworkData: artworkData,
             fileName: output.url.lastPathComponent,
             musicLibraryItemID: track.libraryItemID
         )

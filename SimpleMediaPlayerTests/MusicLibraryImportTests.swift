@@ -294,7 +294,7 @@ struct MusicLibraryImportTests {
     }
 }
 
-private func makeArtworkImage(red: CGFloat = 0.2, green: CGFloat = 0.4, blue: CGFloat = 0.8) throws -> CGImage {
+func makeArtworkImage(red: CGFloat = 0.2, green: CGFloat = 0.4, blue: CGFloat = 0.8) throws -> CGImage {
     let context = try #require(CGContext(
         data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
