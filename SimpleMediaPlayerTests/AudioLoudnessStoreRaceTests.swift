@@ -13,7 +13,7 @@ struct AudioLoudnessStoreRaceTests {
         let url = try makeFile(in: directory)
         let original = try #require(AudioLoudnessCache.entryURL(for: url, in: cache))
 
-        let gain = try AudioLoudnessCache.$willStore.withValue({
+        let gain = try FileAttributeCacheKey.$willStore.withValue({
             if moment == .betweenCheckAndWrite { try? change.apply(to: url, cache: cache) }
         }, operation: {
             try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, cacheDirectory: cache) { _ in
@@ -69,7 +69,7 @@ struct AudioLoudnessStoreRaceTests {
 
         // The gate blocks a dispatch worker, as measurement does, not a cooperative thread.
         let measurement = Task.detached(executorPreference: BlockingWorkExecutor.shared) {
-            try AudioLoudnessCache.$willStore.withValue({ gate.reachAndWait() }, operation: {
+            try FileAttributeCacheKey.$willStore.withValue({ gate.reachAndWait() }, operation: {
                 try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, cacheDirectory: cache) { _ in 4.5 }
             })
         }

@@ -96,19 +96,23 @@ actor MusicAnalysisService {
     private let cacheDirectory: URL?
     private let readableFile: @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile
     private let waitBeforeAnalyzing: @Sendable () async throws -> Void
+    private let analyzeReadableFile: (@Sendable (URL) async throws -> MusicAnalysis)?
 
     /// A cached analysis returns at once. Reading the whole file waits `waitBeforeAnalyzing` first, so that it does
-    /// not compete with the first reads of the track that has just started.
+    /// not compete with the first reads of the track that has just started. `analyzeReadableFile` replaces the
+    /// analysis of the readable file for tests; `nil` analyzes it with MusicUnderstanding.
     init(
         cacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
         readableFile: @escaping @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile = {
             try ExtendedAudioSource.readableFile(for: $0)
         },
-        waitBeforeAnalyzing: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(1)) }
+        waitBeforeAnalyzing: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(1)) },
+        analyzeReadableFile: (@Sendable (URL) async throws -> MusicAnalysis)? = nil
     ) {
         self.cacheDirectory = cacheDirectory
         self.readableFile = readableFile
         self.waitBeforeAnalyzing = waitBeforeAnalyzing
+        self.analyzeReadableFile = analyzeReadableFile
     }
 
     /// Runs blocking file work on a detached task so the actor keeps serving other callers. The work blocks a
@@ -164,30 +168,21 @@ actor MusicAnalysisService {
         }
         defer { source.release() }
         try Task.checkCancellation()
-        let asset = AVURLAsset(url: source.url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        let duration = try await asset.load(.duration).seconds
-        guard duration.isFinite, duration > 0 else { throw MusicUnderstandingError.invalidAsset }
-        let session = try await MusicUnderstandingSession(asset: asset)
-        let result = try await withTaskCancellationHandler {
-            try Task.checkCancellation()
-            return try await session.analyze(for: [.structure, .pace, .rhythm, .key])
-        } onCancel: {
-            Task { await session.cancel() }
+        let analysis = if let analyzeReadableFile {
+            try await analyzeReadableFile(source.url)
+        } else {
+            try await analyzeWholeSong(at: source.url, since: wholeSongStarted, onProgress: onProgress)
         }
         try Task.checkCancellation()
-        let base = convert(result, duration: duration)
-        logDuration("Whole song (including asset preparation)", since: wholeSongStarted)
-        let analysis = try await refineAnalysis(in: base, analyzeRhythm: { context in
-            try await self.analyzeRhythm(asset: asset, context: context)
-        }, analyzeKey: { range in
-            try await self.analyzeKey(asset: asset, range: range)
-        }, onProgress: onProgress)
-        try Task.checkCancellation()
         if let cacheURL {
-            try await Self.offActor {
+            // A detached task does not inherit task-local values; keep the test hook of the store.
+            let willStore = FileAttributeCacheKey.willStore
+            try await Self.offActor { [cacheDirectory] in
                 // A cancelled analysis must not recreate an entry its caller may be about to remove.
                 try Task.checkCancellation()
-                MusicAnalysisCache.write(analysis, at: cacheURL)
+                FileAttributeCacheKey.$willStore.withValue(willStore) {
+                    MusicAnalysisCache.store(analysis, at: cacheURL, for: url, in: cacheDirectory)
+                }
             }
         }
         return analysis
@@ -367,5 +362,34 @@ actor MusicAnalysisService {
             bars: times(result.rhythm?.bars ?? []),
             bpm: result.rhythm?.beatsPerMinute.map(Double.init)
         )
+    }
+}
+
+extension MusicAnalysisService {
+    /// The MusicUnderstanding analysis that `analyze` runs on the readable file unless a test replaces it.
+    @available(macOS 27, iOS 27, *)
+    private func analyzeWholeSong(
+        at url: URL,
+        since wholeSongStarted: ContinuousClock.Instant,
+        onProgress: @Sendable (MusicAnalysis) async -> Void
+    ) async throws -> MusicAnalysis {
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let duration = try await asset.load(.duration).seconds
+        guard duration.isFinite, duration > 0 else { throw MusicUnderstandingError.invalidAsset }
+        let session = try await MusicUnderstandingSession(asset: asset)
+        let result = try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await session.analyze(for: [.structure, .pace, .rhythm, .key])
+        } onCancel: {
+            Task { await session.cancel() }
+        }
+        try Task.checkCancellation()
+        let base = convert(result, duration: duration)
+        logDuration("Whole song (including asset preparation)", since: wholeSongStarted)
+        return try await refineAnalysis(in: base, analyzeRhythm: { context in
+            try await self.analyzeRhythm(asset: asset, context: context)
+        }, analyzeKey: { range in
+            try await self.analyzeKey(asset: asset, range: range)
+        }, onProgress: onProgress)
     }
 }
