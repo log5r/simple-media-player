@@ -64,11 +64,13 @@ extension LibraryService {
     }
 
     /// The unpatched artist and album of an unedited item that show the placeholder for a missing value, which
-    /// `MediaMetadataEditDraft(item:)` maps to an empty value.
-    private func unpatchedPlaceholderFields(
+    /// `MediaMetadataEditDraft(item:)` maps to an empty value. None when the patch has no text field, since such a
+    /// patch records no text edits.
+    func unpatchedPlaceholderFields(
         of item: MediaItem, patching fields: Set<MediaMetadataEditField>
     ) -> Set<MediaMetadataEditField> {
-        guard item.hasEditedTextMetadata == false else { return [] }
+        guard item.hasEditedTextMetadata == false,
+              fields.isDisjoint(with: MediaMetadataEditDraft.allTextFields) == false else { return [] }
         var result: Set<MediaMetadataEditField> = []
         if fields.contains(.artist) == false, item.editedArtist == nil, item.artist == "Unknown Artist" {
             result.insert(.artist)

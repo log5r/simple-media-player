@@ -145,6 +145,24 @@ struct BulkMetadataPatchTests {
     }
 }
 
+extension BulkMetadataPatchTests {
+    /// Only these fields make the bulk path read the file, so a patch without text fields reads none.
+    @Test func onlyPatchesWithTextFieldsLookUpUnpatchedPlaceholders() throws {
+        let service = LibraryService(mediaDirectoryURL: FileManager.default.temporaryDirectory)
+        let item = MediaItem(title: "Title", duration: 0.1, isVideo: false, bookmarkData: Data(), fileName: "a.mp3")
+
+        #expect(service.unpatchedPlaceholderFields(of: item, patching: [.artwork]).isEmpty)
+        #expect(service.unpatchedPlaceholderFields(of: item, patching: []).isEmpty)
+        #expect(service.unpatchedPlaceholderFields(of: item, patching: [.comment]) == [.artist, .album])
+        #expect(service.unpatchedPlaceholderFields(of: item, patching: [.artwork, .artist]) == [.album])
+        #expect(service.unpatchedPlaceholderFields(of: item, patching: [.artist, .album]).isEmpty)
+        item.artist = "Artist"
+        #expect(service.unpatchedPlaceholderFields(of: item, patching: [.comment]) == [.album])
+        item.setEditedTextMetadata(MediaMetadataEditDraft(item: item))
+        #expect(service.unpatchedPlaceholderFields(of: item, patching: [.comment]).isEmpty)
+    }
+}
+
 nonisolated enum PlaceholderSource: CaseIterable, Sendable {
     /// The file holds the literal text, and the item has no edits.
     case literalInFile
