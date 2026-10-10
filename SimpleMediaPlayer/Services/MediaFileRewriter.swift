@@ -3,8 +3,8 @@ import Synchronization
 
 nonisolated enum MediaFileRewriter {
     static let copyBufferSize = 1_048_576
-    /// A lock per canonical file path, with the number of saves holding or waiting for it.
-    private static let fileLocks = Mutex<[String: (lock: NSLock, users: Int)]>([:])
+    /// A lock per file, with the number of saves holding or waiting for it.
+    private static let fileLocks = Mutex<[FileKey: (lock: NSLock, users: Int)]>([:])
 
     /// Replaces the `originalLength` bytes at `offset` with `data`, which must be the same length unless the range
     /// ends at the end of the file; the file then ends at `newFileLength`, the end of `data`.
@@ -24,7 +24,7 @@ nonisolated enum MediaFileRewriter {
 
     /// Overwrites only the range `plan` returns, or rewrites the whole file through `rewrite(at:_:)` when it returns
     /// nil or the file cannot be opened for writing. Cancellation is honored until the first write; after a failed
-    /// write the original bytes are restored.
+    /// write the original bytes and modification date are restored.
     /// Unlike the replacement, an interruption during the write (a crash or power loss) can leave a partial edit.
     /// Saves of the same file run one at a time; see `withExclusiveAccess(to:_:)`.
     static func update(
@@ -60,6 +60,8 @@ nonisolated enum MediaFileRewriter {
             return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
         }
         let original = try read(from: handle, at: edit.offset, count: Int(edit.originalLength))
+        var status = stat()
+        let modified = fstat(handle.fileDescriptor, &status) == 0 ? status.st_mtimespec : nil
         try Task.checkCancellation()
         // Once writing starts, finish or restore instead of stopping for cancellation.
         do {
@@ -68,14 +70,24 @@ nonisolated enum MediaFileRewriter {
             if let newFileLength = edit.newFileLength { try handle.truncate(atOffset: newFileLength) }
             try handle.synchronize()
         } catch {
-            try? handle.truncate(atOffset: fileSize)
-            try? handle.seek(toOffset: edit.offset)
-            try? handle.write(contentsOf: original)
-            try? handle.synchronize()
+            guard (try? restore(original, at: edit.offset, fileSize: fileSize, in: handle)) != nil else { throw error }
+            // With the original bytes back, the original date keeps date-keyed caches valid; the carry-over
+            // covers a date that could not be restored.
+            if let modified {
+                _ = futimens(handle.fileDescriptor, [timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT)), modified])
+            }
+            MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
             throw error
         }
         try handle.close()
         MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
+    }
+
+    private static func restore(_ original: Data, at offset: UInt64, fileSize: UInt64, in handle: FileHandle) throws {
+        try handle.truncate(atOffset: fileSize)
+        try handle.seek(toOffset: offset)
+        try handle.write(contentsOf: original)
+        try handle.synchronize()
     }
 
     private static func isValid(_ edit: InPlaceEdit, fileSize: UInt64) -> Bool {
@@ -104,23 +116,40 @@ nonisolated enum MediaFileRewriter {
     /// and a replacement could copy bytes an in-place edit is changing.
     /// Waiting blocks the thread and ignores cancellation, which is checked once the lock is held. The holder
     /// does only synchronous file work, so it never needs the waiting thread. `body` must not save the same file.
-    /// Saves from other processes, and paths that differ only in case, are not coordinated.
+    /// The lock follows the file, so hard links and symbolic links to it share one; saves from other processes
+    /// are not coordinated.
     private static func withExclusiveAccess(to url: URL, _ body: () throws -> Void) throws {
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
-        let lock = fileLocks.withLock { locks in
-            let entry = locks[path] ?? (NSLock(), 0)
-            locks[path] = (entry.lock, entry.users + 1)
-            return entry.lock
-        }
-        defer {
-            fileLocks.withLock { locks in
-                guard let entry = locks[path] else { return }
-                locks[path] = entry.users > 1 ? (entry.lock, entry.users - 1) : nil
+        while true {
+            let key = FileKey(path: path)
+            let lock = fileLocks.withLock { locks in
+                let entry = locks[key] ?? (NSLock(), 0)
+                locks[key] = (entry.lock, entry.users + 1)
+                return entry.lock
             }
-        }
-        try lock.withLock {
+            defer {
+                fileLocks.withLock { locks in
+                    guard let entry = locks[key] else { return }
+                    locks[key] = entry.users > 1 ? (entry.lock, entry.users - 1) : nil
+                }
+            }
+            lock.lock()
+            defer { lock.unlock() }
+            // A replacement by an earlier holder can give the path a new file, which another lock guards.
+            guard FileKey(path: path) == key else { continue }
             try Task.checkCancellation()
-            try body()
+            return try body()
+        }
+    }
+
+    /// The file at `path` by device and inode, or the path itself while no file is there.
+    private enum FileKey: Hashable {
+        case file(device: dev_t, inode: ino_t)
+        case path(String)
+
+        init(path: String) {
+            var status = stat()
+            self = stat(path, &status) == 0 ? .file(device: status.st_dev, inode: status.st_ino) : .path(path)
         }
     }
 

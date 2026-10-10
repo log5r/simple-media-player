@@ -58,6 +58,71 @@ struct MetadataSaveSerializationTests {
         #expect(try fixture.temporaryLeftovers().isEmpty)
     }
 
+    @Test(arguments: SaveKind.allCases)
+    func savesThroughHardLinksOfTheSameFileRunOneAtATime(second secondKind: SaveKind) throws {
+        let fixture = try rawFixture()
+        defer { fixture.remove() }
+        let link = fixture.directory.appendingPathComponent("link.mp3")
+        try FileManager.default.linkItem(at: fixture.url, to: link)
+        let original = try Data(contentsOf: fixture.url)
+        let gate = WriteGate()
+        defer { gate.release() }
+        let observed = ObservedBytes()
+
+        let first = BackgroundSave { try save(.update, marker: "AAAA", to: fixture.url, holdingAt: gate) }
+        try #require(gate.waitUntilHeld())
+        let second = BackgroundSave { try save(secondKind, marker: "BBBB", to: link, observe: observed.record) }
+        #expect(try second.finished(within: 0.5) == false)
+        #expect(observed.values.isEmpty)
+        gate.release()
+
+        #expect(try first.finished(within: 10))
+        #expect(try second.finished(within: 10))
+        #expect(observed.values == [Data("AAAA".utf8)])
+        #expect(try Data(contentsOf: link) == Data("BBBB".utf8) + original.dropFirst(4))
+        // A replacement gives the link its own file; an in-place edit changes both names.
+        let marker = secondKind == .update ? "BBBB" : "AAAA"
+        #expect(try Data(contentsOf: fixture.url) == Data(marker.utf8) + original.dropFirst(4))
+    }
+
+    /// A save waiting for a file that another save then replaces waits for the new file instead, so a save
+    /// started after the replacement still waits for it.
+    @Test func saveWaitingForAReplacedFileWaitsForTheNewFile() throws {
+        let fixture = try rawFixture()
+        defer { fixture.remove() }
+        let url = fixture.url
+        let original = try Data(contentsOf: url)
+        let fileNumber = try fixture.fileNumber()
+        let firstGate = WriteGate()
+        defer { firstGate.release() }
+        let secondGate = WriteGate()
+        defer { secondGate.release() }
+        let observedBySecond = ObservedBytes()
+        let observedByThird = ObservedBytes()
+
+        let first = BackgroundSave { try save(.rewrite, marker: "AAAA", to: url, holdingAt: firstGate) }
+        try #require(firstGate.waitUntilHeld())
+        let second = BackgroundSave {
+            try save(.update, marker: "BBBB", to: url, holdingAt: secondGate, observe: observedBySecond.record)
+        }
+        #expect(try second.finished(within: 0.5) == false)
+        firstGate.release()
+        #expect(try first.finished(within: 10))
+        #expect(try fixture.fileNumber() != fileNumber)
+
+        try #require(secondGate.waitUntilHeld())
+        let third = BackgroundSave { try save(.update, marker: "CCCC", to: url, observe: observedByThird.record) }
+        #expect(try third.finished(within: 0.5) == false)
+        #expect(observedByThird.values.isEmpty)
+        secondGate.release()
+
+        #expect(try second.finished(within: 10))
+        #expect(try third.finished(within: 10))
+        #expect(observedBySecond.values == [Data("AAAA".utf8)])
+        #expect(observedByThird.values == [Data("BBBB".utf8)])
+        #expect(try Data(contentsOf: url) == Data("CCCC".utf8) + original.dropFirst(4))
+    }
+
     @Test func saveOfAnotherFileDoesNotWait() throws {
         let fixture = try rawFixture()
         defer { fixture.remove() }

@@ -161,6 +161,7 @@ struct InPlaceTagWriteTests {
         defer { fixture.remove() }
         let original = try Data(contentsOf: fixture.url)
         let fileNumber = try fixture.fileNumber()
+        let analysisEntry = try #require(MusicAnalysisCache.entryURL(for: fixture.url, in: fixture.directory))
         // MP4 grows at the end of the file, so a complete write also extends it.
         let draft = format == .mp4 ? titleDraft(String(repeating: "Grown ", count: 20)) : titleDraft("Short")
 
@@ -176,6 +177,8 @@ struct InPlaceTagWriteTests {
         #expect(try Data(contentsOf: fixture.url) == original)
         #expect(try fixture.fileNumber() == fileNumber)
         #expect(try fixture.temporaryLeftovers().isEmpty)
+        // The restored modification date keeps the analysis cache key.
+        #expect(MusicAnalysisCache.entryURL(for: fixture.url, in: fixture.directory) == analysisEntry)
     }
 
     @Test(arguments: InPlaceTestFormat.allCases)
