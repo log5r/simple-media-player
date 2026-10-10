@@ -462,13 +462,21 @@ private extension LibraryService {
         return draft
     }
 
-    /// Applied before the item is inserted. Non-empty override values replace the embedded ones; a
-    /// nil field keeps the embedded value. When the override could not be written into the file, the
-    /// item records the text as edited so later edits start from these values, not the file's tags.
+    /// Applied before the item is inserted. Override values replace the embedded ones; a nil text
+    /// field keeps the embedded value unless the override replaces the whole set, and nil lyrics or
+    /// artwork keep the embedded ones. When the override could not be written into the file, the item
+    /// records the text as edited so later edits start from these values, not the file's tags.
     private func apply(_ override: MediaImportOverride?, to item: MediaItem) async {
         guard let override else { return }
-        applyPrimaryValues(override.values, to: item)
-        applySecondaryValues(override.values, to: item)
+        var values = override.values
+        if override.replacesTextFields {
+            values.title = values.title ?? item.title
+            values.artist = values.artist ?? "Unknown Artist"
+            values.album = values.album ?? "Unknown Album"
+            values.isCompilation = values.isCompilation ?? false
+        }
+        applyPrimaryValues(values, replacesAll: override.replacesTextFields, to: item)
+        applySecondaryValues(values, replacesAll: override.replacesTextFields, to: item)
         if let lyrics = override.lyrics { item.lyricsRaw = lyrics }
         if let artwork = override.artworkData, let thumbnail = await artworkProcessor.thumbnail(from: artwork) {
             item.artworkData = thumbnail
@@ -480,20 +488,24 @@ private extension LibraryService {
         }
     }
 
-    private func applyPrimaryValues(_ values: MediaMetadataEmbeddedValues, to item: MediaItem) {
+    private func applyPrimaryValues(
+        _ values: MediaMetadataEmbeddedValues, replacesAll: Bool, to item: MediaItem
+    ) {
         if let title = values.title { item.title = title }
         if let artist = values.artist { item.artist = artist }
         if let album = values.album { item.album = album }
-        if let genre = values.genre { item.genre = genre }
-        if let year = values.year { item.year = year }
-        if let trackNumber = values.trackNumber { item.trackNumber = trackNumber }
+        if replacesAll || values.genre != nil { item.genre = values.genre }
+        if replacesAll || values.year != nil { item.year = values.year }
+        if replacesAll || values.trackNumber != nil { item.trackNumber = values.trackNumber }
     }
 
-    private func applySecondaryValues(_ values: MediaMetadataEmbeddedValues, to item: MediaItem) {
-        if let comment = values.comment { item.comment = comment }
-        if let albumArtist = values.albumArtist { item.albumArtist = albumArtist }
-        if let composer = values.composer { item.composer = composer }
-        if let discNumber = values.discNumber { item.discNumber = discNumber }
+    private func applySecondaryValues(
+        _ values: MediaMetadataEmbeddedValues, replacesAll: Bool, to item: MediaItem
+    ) {
+        if replacesAll || values.comment != nil { item.comment = values.comment }
+        if replacesAll || values.albumArtist != nil { item.albumArtist = values.albumArtist }
+        if replacesAll || values.composer != nil { item.composer = values.composer }
+        if replacesAll || values.discNumber != nil { item.discNumber = values.discNumber }
         if let isCompilation = values.isCompilation { item.isCompilation = isCompilation }
     }
 

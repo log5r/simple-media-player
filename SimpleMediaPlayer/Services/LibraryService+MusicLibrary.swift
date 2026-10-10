@@ -194,9 +194,11 @@ private extension LibraryService {
                 let isEmbedded = await Self.embedMusicLibraryMetadata(of: track, into: output.url)
                 try Task.checkCancellation()
                 staging.urls.append(output.url)
+                // Music's text fields are authoritative even when embedding failed; artwork and lyrics
+                // that Music lacks keep the file's own, matching what the embedding writes.
                 staging.overrides[output.url] = MediaImportOverride(
                     values: track.metadataValues, artworkData: track.artworkData, lyrics: track.normalizedLyrics,
-                    musicLibraryItemID: track.libraryItemID, isEmbeddedInFile: isEmbedded
+                    musicLibraryItemID: track.libraryItemID, replacesTextFields: true, isEmbeddedInFile: isEmbedded
                 )
                 if output.isTranscoded {
                     staging.messages.append(L10n.format("“%@” was converted to AAC.", track.displayTitle))

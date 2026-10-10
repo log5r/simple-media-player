@@ -180,6 +180,23 @@ struct MusicLibraryImportTests {
         #expect(await fixture.temporaryFilesAreGone())
     }
 
+    @Test func startupCleanupLeavesDirectoriesCreatedAfterwardsAlone() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let leftover = try MusicLibraryTemporaryFiles.makeDirectory(for: .playback, in: fixture.temporaryDirectory)
+        try Data("stale".utf8).write(to: leftover.appendingPathComponent("stale.wav"))
+
+        let cleanup = MusicLibraryTemporaryFiles.removeLeftoversInBackground(in: fixture.temporaryDirectory)
+        let fresh = try MusicLibraryTemporaryFiles.makeDirectory(for: .importStaging, in: fixture.temporaryDirectory)
+        try Data("live".utf8).write(to: fresh.appendingPathComponent("live.wav"))
+        await cleanup.value
+
+        #expect(FileManager.default.fileExists(atPath: fresh.appendingPathComponent("live.wav").path))
+        #expect(FileManager.default.fileExists(atPath: leftover.path) == false)
+        let siblings = try FileManager.default.contentsOfDirectory(atPath: fixture.temporaryDirectory.path)
+        #expect(siblings == ["MusicLibrary"])
+    }
+
     @Test func importOverrideOutranksEmbeddedValuesAndMarksUnembeddedTextAsEdited() async throws {
         let fixture = try MusicLibraryFixture()
         defer { fixture.remove() }
@@ -217,6 +234,31 @@ struct MusicLibraryImportTests {
         #expect(plain.hasEditedLyrics)
         #expect(plain.editedTitle == "Override Title")
         #expect(fixture.service.lastImportCreatedCount == 2)
+    }
+
+    /// Music's text set is authoritative even when it could not be written into the file.
+    @Test func completeTextOverrideClearsEmbeddedValues() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let source = try writeAudio(named: "tagged.m4a", in: fixture.directory, formatID: kAudioFormatMPEG4AAC)
+        try MP4MetadataWriter.write(
+            MediaMetadataEditDraft(title: "File Title", artist: "File Artist", album: "File Album", genre: "Rock"),
+            to: source
+        )
+        var override = MediaImportOverride(musicLibraryItemID: "102", replacesTextFields: true)
+        override.values.title = "Music Only Title"
+
+        await fixture.service.importFiles(
+            from: [source], overrides: [source: override], into: fixture.context, existingItems: []
+        )
+
+        let item = try #require(try fixture.items().first)
+        #expect(item.title == "Music Only Title")
+        #expect(item.artist == "Unknown Artist")
+        #expect(item.album == "Unknown Album")
+        #expect(item.genre == nil)
+        #expect(item.hasEditedTextMetadata)
+        #expect(item.editedArtist == "")
     }
 }
 
