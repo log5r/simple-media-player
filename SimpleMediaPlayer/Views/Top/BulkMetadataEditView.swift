@@ -13,6 +13,9 @@ struct BulkMetadataEditView: View {
     @State private var editabilityRequestID: UUID?
     @State private var isCheckingEditability = true
     @State private var isSaving = false
+    @State private var saveTask: Task<Void, Never>?
+    @State private var saveProgress: BulkMetadataEditProgress?
+    @State private var isCancellingSave = false
     @State private var result: BulkMetadataEditResult?
     @State private var isDiscardChangesConfirmationPresented = false
     @State private var isArtworkImporterPresented = false
@@ -185,23 +188,14 @@ struct BulkMetadataEditView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if let result {
-                if result.failedCount == 0 {
-                    Label("\(result.updatedCount) files updated.", systemImage: "checkmark.circle")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Label(
-                        "\(result.updatedCount) files updated, \(result.failedCount) failed.",
-                        systemImage: "exclamationmark.triangle"
-                    )
-                        .foregroundStyle(.red)
-                    ForEach(Array(result.failures.prefix(3))) { failure in
-                        Text("\(failure.fileName): \(failure.message)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+            if isSaving {
+                BulkMetadataEditProgressRow(progress: saveProgress, isCancelling: isCancellingSave) {
+                    isCancellingSave = true
+                    saveTask?.cancel()
                 }
+            }
+            if let result {
+                BulkMetadataEditResultSummary(result: result)
             }
         }
     }
@@ -358,18 +352,24 @@ private extension BulkMetadataEditView {
         let selectedTargets = targetItems
         let patch = patch
         isSaving = true
+        isCancellingSave = false
         result = nil
-        Task {
+        saveProgress = BulkMetadataEditProgress(completedCount: 0, totalCount: selectedTargets.count)
+        saveTask = Task {
             let saveResult = await libraryService.updateEmbeddedMetadata(
                 for: selectedTargets,
                 patch: patch,
                 in: modelContext
-            )
+            ) { progress in
+                saveProgress = progress
+            }
             result = saveResult
-            if saveResult.failedCount == 0 {
+            // Unprocessed files keep the fields so the same edit can be applied again.
+            if saveResult.failedCount == 0, saveResult.unprocessedCount == 0 {
                 appliedFields = []
             }
             isSaving = false
+            saveTask = nil
         }
     }
 
