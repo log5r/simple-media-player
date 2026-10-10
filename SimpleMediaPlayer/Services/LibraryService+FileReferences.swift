@@ -80,11 +80,18 @@ extension LibraryService {
         if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
             ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
         }
+        // These entries are keyed by the file's path and attributes, so nothing can find them once the file is
+        // gone. The keys need the file, so they are read first; the entries are removed after the file, so a
+        // loudness measurement that stores while the file is removed either finds it gone or is removed here.
+        let derivedEntries = [MusicAnalysisCache.entryURL(for: url), AudioLoudnessCache.entryURL(for: url)]
         do {
             try FileManager.default.removeItem(at: url)
         } catch {
             // Keep the entry so the next launch retries; a file that is already gone needs no retry.
             guard FileManager.default.fileExists(atPath: url.path) == false else { return }
+        }
+        for entry in derivedEntries.compactMap(\.self) {
+            try? FileManager.default.removeItem(at: entry)
         }
         removalJournal.remove(id: removal.id)
     }
