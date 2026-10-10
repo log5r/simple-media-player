@@ -183,10 +183,10 @@ final class LibraryService {
                 if isDuplicate || isMusicDuplicate {
                     summary.duplicateCount += 1
                 } else {
-                    let item = try await makeMediaItem(
+                    let (item, importedValues) = try await makeMediaItem(
                         from: url, importFingerprint: fingerprint, musicSession: musicSession
                     )
-                    await apply(overrides[url], to: item)
+                    await apply(overrides[url], to: item, importedValues: importedValues)
                     context.insert(item)
                     Self.index(item, in: &itemsByFingerprint, &itemsByMusicID)
                     summary.createdCount += 1
@@ -441,7 +441,7 @@ extension LibraryService {
                 // The writers replace only the patched fields, and unpatched artwork is never written, so the
                 // patch applies to the item's values. The draft's other text values are the ones the item
                 // already shows, which it records again as its edited values.
-                let baseDraft = try await bulkPatchBaseDraft(for: item, patching: patch.fields)
+                let baseDraft = try await itemDraftResolvingPlaceholders(for: item, patching: patch.fields)
                 let patchedDraft = patch.applying(to: baseDraft)
                 try await updateEmbeddedMetadata(for: item, draft: patchedDraft, in: context)
                 result.updatedCount += 1
@@ -519,7 +519,10 @@ private extension LibraryService {
     /// field keeps the embedded value unless the override replaces the whole set, and nil lyrics or
     /// artwork keep the embedded ones. When the override could not be written into the file, the item
     /// records the text, lyrics, and artwork as edited so later edits start from these values, not the file's tags.
-    private func apply(_ override: MediaImportOverride?, to item: MediaItem) async {
+    /// `importedValues` are the merged import values, with a nil artist or album when no source has one.
+    private func apply(
+        _ override: MediaImportOverride?, to item: MediaItem, importedValues: MediaMetadataEmbeddedValues
+    ) async {
         guard let override else { return }
         var values = override.values
         if override.replacesTextFields {
@@ -538,7 +541,14 @@ private extension LibraryService {
         }
         item.musicLibraryItemID = override.musicLibraryItemID ?? item.musicLibraryItemID
         if override.isEmbeddedInFile == false {
-            item.setEditedTextMetadata(MediaMetadataEditDraft(item: item))
+            // The draft reads `Unknown Artist` and `Unknown Album` as display fallbacks, but a value from the
+            // override or the file with that text is literal and stays an edit of that text.
+            var draft = MediaMetadataEditDraft(item: item)
+            let artist = override.values.artist ?? (override.replacesTextFields ? nil : importedValues.artist)
+            let album = override.values.album ?? (override.replacesTextFields ? nil : importedValues.album)
+            if artist == "Unknown Artist" { draft.artist = "Unknown Artist" }
+            if album == "Unknown Album" { draft.album = "Unknown Album" }
+            item.setEditedTextMetadata(draft)
             if override.lyrics != nil { item.setEditedLyrics(item.lyricsRaw) }
             item.hasEditedArtwork = storedArtwork
         }
@@ -609,9 +619,10 @@ extension LibraryService {
         mediaDirectoryURL().appendingPathComponent(fileName)
     }
 
+    /// Returns the item with the merged values it was made from, before the fallbacks for missing values.
     private func makeMediaItem(
         from sourceURL: URL, importFingerprint: String, musicSession: MusicLibraryMetadataSession
-    ) async throws -> MediaItem {
+    ) async throws -> (MediaItem, MediaMetadataEmbeddedValues) {
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
         let sources = try await readImportSources(from: sourceURL, musicSession: musicSession)
@@ -661,7 +672,7 @@ extension LibraryService {
             importFingerprint: importFingerprint
         )
         didCreateItem = true
-        return item
+        return (item, values)
     }
 
     private func readImportSources(
@@ -726,9 +737,9 @@ extension LibraryService {
                                       music?.title, mp4?.values.title, raw.title)
                 ?? fileURL.deletingPathExtension().lastPathComponent,
             artist: Self.firstNonblank(additional?.values.artist, id3?.artist, extended?.artist,
-                                       music?.artist, mp4?.values.artist, raw.artist) ?? "Unknown Artist",
+                                       music?.artist, mp4?.values.artist, raw.artist),
             album: Self.firstNonblank(additional?.values.album, id3?.album, extended?.album,
-                                      music?.album, mp4?.values.album, raw.album) ?? "Unknown Album",
+                                      music?.album, mp4?.values.album, raw.album),
             genre: Self.firstNonblank(additional?.values.genre, id3?.genre, extended?.genre,
                                       music?.genre, mp4?.values.genre, raw.genre),
             year: Self.firstNonblank(additional?.values.year, id3?.year, extended?.year,

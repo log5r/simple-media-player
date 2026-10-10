@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SwiftData
 import Testing
@@ -34,6 +35,44 @@ struct TransformedExportArtworkReadTests {
         #expect(draft.title == "Rendered")
         #expect(draft.artist == initial.artist)
         #expect(draft.album == initial.album)
+    }
+
+    /// An unedited source shows `Unknown Artist` and `Unknown Album` both for missing tags and for these literal
+    /// tags; the copy keeps the literal ones and leaves the missing ones out.
+    @Test(arguments: [false, true])
+    func transformedCopyOfUneditedSourceKeepsOnlyLiteralUnknownTags(literal: Bool) async throws {
+        let fixture = try TransformedExportFixture()
+        defer { fixture.remove() }
+        try FileManager.default.removeItem(at: fixture.sourceURL)
+        _ = try writeAudio(named: fixture.sourceURL.lastPathComponent, in: fixture.mediaDirectory,
+                           formatID: kAudioFormatLinearPCM)
+        try AdditionalAudioMetadata.write(
+            MediaMetadataEditDraft(
+                title: "Original", artist: literal ? "Unknown Artist" : "",
+                album: literal ? "Unknown Album" : "", genre: ""
+            ),
+            to: fixture.sourceURL
+        )
+        fixture.source.artist = "Unknown Artist"
+        fixture.source.album = "Unknown Album"
+        try fixture.context.save()
+        let renderer = ControlledExportRenderer(behavior: .finishImmediately)
+        let exporter = TransformedTrackExporter(renderer: renderer, temporaryDirectory: fixture.renderDirectory)
+
+        let copy = try await fixture.export(using: exporter)
+
+        let embedded = try AdditionalAudioMetadata.read(
+            from: fixture.mediaDirectory.appendingPathComponent(copy.fileName)
+        )
+        #expect(embedded.values.title == "Rendered")
+        #expect(embedded.values.artist == (literal ? "Unknown Artist" : nil))
+        #expect(embedded.values.album == (literal ? "Unknown Album" : nil))
+        #expect(copy.artist == "Unknown Artist")
+        #expect(copy.album == "Unknown Album")
+        #expect(copy.hasEditedTextMetadata == false)
+        let reopened = try await fixture.service.editableMetadataDraft(for: copy)
+        #expect(reopened.artist == (literal ? "Unknown Artist" : ""))
+        #expect(reopened.album == (literal ? "Unknown Album" : ""))
     }
 
     @Test func artworkReadFailureReportsErrorWithoutStartingRenderer() async throws {

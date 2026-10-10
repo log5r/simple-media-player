@@ -26,13 +26,14 @@ extension LibraryService {
         return draft
     }
 
-    /// The item's values as the base of a bulk patch, read from the file only for an ambiguous placeholder.
+    /// The item's values as the base of a write that replaces `fields`, such as a bulk patch or a transformed
+    /// copy's new title, read from the file only for an ambiguous placeholder.
     /// `MediaMetadataEditDraft(item:)` reads an unedited item's `Unknown Artist` and `Unknown Album` as empty,
-    /// since they are usually display fallbacks, but the file may hold that literal text; recording the empty
-    /// value as an edit would then hide and later delete it. So for an unpatched placeholder, the file's tag
+    /// since they are usually display fallbacks, but the file may hold that literal text; writing or recording
+    /// the empty value would then hide and later delete it. So for an unpatched placeholder, the file's tag
     /// decides, and an unreadable file keeps the empty value. No other file value enters the draft, so the
-    /// recorded edits stay the values the item shows.
-    func bulkPatchBaseDraft(
+    /// written and recorded values stay the values the item shows.
+    func itemDraftResolvingPlaceholders(
         for item: MediaItem, patching fields: Set<MediaMetadataEditField>
     ) async throws -> MediaMetadataEditDraft {
         let placeholders = unpatchedPlaceholderFields(of: item, patching: fields)

@@ -62,14 +62,20 @@ final class TransformedTrackExporter {
             isExporting = false
         }
 
-        var sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
         let pitchCents = Float(pitchSemitones * 100)
         let renderRate = Float(rate)
         let renderer = renderer
         let reportProgress = makeProgressHandler(for: exportID)
 
         do {
-            let draft = try await metadataDraft(for: item, title: trimmedTitle, libraryService: libraryService)
+            // Only the title replaces the source's text, so an unedited `Unknown Artist` or `Unknown Album` is
+            // written only when the source file holds that text.
+            let textDraft = try await libraryService.itemDraftResolvingPlaceholders(for: item, patching: [.title])
+            // Taken with the draft's text values, so the copy's tags and library values agree.
+            var sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
+            let draft = try await metadataDraft(
+                from: textDraft, for: item, title: trimmedTitle, libraryService: libraryService
+            )
             try libraryService.validateCopySource(item, in: sourceContext)
             sourceSnapshot.artworkData = draft.artworkData
             let renderTask = Task.detached(executorPreference: BlockingWorkExecutor.shared, priority: .userInitiated) {
@@ -143,11 +149,12 @@ final class TransformedTrackExporter {
     }
 
     private func metadataDraft(
+        from textDraft: MediaMetadataEditDraft,
         for item: MediaItem,
         title: String,
         libraryService: LibraryService
     ) async throws -> MediaMetadataEditDraft {
-        var draft = MediaMetadataEditDraft(item: item)
+        var draft = textDraft
         draft.artworkData = try await libraryService.libraryArtwork(for: item)
         try Task.checkCancellation()
         draft.title = title
