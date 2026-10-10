@@ -439,9 +439,10 @@ extension LibraryService {
             }
             do {
                 // The writers replace only the patched fields, and unpatched artwork is never written, so the
-                // patch applies to the item's values without reading the file. The draft's other text values
-                // are the ones the item already shows, which it records again as its edited values.
-                let patchedDraft = patch.applying(to: MediaMetadataEditDraft(item: item))
+                // patch applies to the item's values. The draft's other text values are the ones the item
+                // already shows, which it records again as its edited values.
+                let baseDraft = try await bulkPatchBaseDraft(for: item, patching: patch.fields)
+                let patchedDraft = patch.applying(to: baseDraft)
                 try await updateEmbeddedMetadata(for: item, draft: patchedDraft, in: context)
                 result.updatedCount += 1
             } catch {

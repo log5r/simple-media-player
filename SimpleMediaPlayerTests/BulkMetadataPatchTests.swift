@@ -98,4 +98,58 @@ struct BulkMetadataPatchTests {
         #expect(values.trackNumber == "7/9")
         #expect(values.title == "Old title")
     }
+
+    /// An unedited item shows `Unknown Artist` and `Unknown Album` both for missing tags and for these literal
+    /// tags; an unrelated bulk patch must not record the literal ones as empty edits.
+    @Test(arguments: PlaceholderSource.allCases)
+    func bulkPatchKeepsPlaceholderTextOnlyWhenTheFileHoldsIt(source: PlaceholderSource) async throws {
+        let audio = try Data(contentsOf: InPlaceFixture.resource("untagged-mp3", "mp3"))
+        var frames = [TestID3.frame("TIT2", Data([0]) + Data("File title".utf8), version: 3)]
+        if source != .missingInFile {
+            frames.append(TestID3.frame("TPE1", Data([0]) + Data("Unknown Artist".utf8), version: 3))
+            frames.append(TestID3.frame("TALB", Data([0]) + Data("Unknown Album".utf8), version: 3))
+        }
+        let fixture = try TemporaryTagFile(TestID3.tag(version: 3, frames: frames) + audio, fileExtension: "mp3")
+        defer { fixture.remove() }
+        let container = try ModelContainer(for: MediaItem.self, configurations: ModelConfiguration(
+            isStoredInMemoryOnly: true
+        ))
+        let item = MediaItem(
+            title: "File title", duration: 0.1, isVideo: false, bookmarkData: Data([0xFF]),
+            fileName: fixture.url.lastPathComponent
+        )
+        if source == .storedEdits {
+            // An earlier edit cleared both fields; the item shows the placeholders for the empty values.
+            item.setEditedTextMetadata(MediaMetadataEditDraft(title: "File title", artist: "", album: "", genre: ""))
+        }
+        container.mainContext.insert(item)
+        try container.mainContext.save()
+        let service = LibraryService(mediaDirectoryURL: fixture.directory)
+
+        let result = await service.updateEmbeddedMetadata(
+            for: [item], patch: MediaMetadataEditPatch(fields: [.comment], draft: PatchValues.patch),
+            in: container.mainContext
+        )
+
+        #expect(result.updatedCount == 1)
+        let keepsLiteral = source == .literalInFile
+        #expect(item.editedArtist == (keepsLiteral ? "Unknown Artist" : ""))
+        #expect(item.editedAlbum == (keepsLiteral ? "Unknown Album" : ""))
+        #expect(item.artist == "Unknown Artist")
+        #expect(item.album == "Unknown Album")
+        let reopened = try await service.editableMetadataDraft(for: item)
+        #expect(reopened.artist == (keepsLiteral ? "Unknown Artist" : ""))
+        #expect(reopened.album == (keepsLiteral ? "Unknown Album" : ""))
+        let after = try TestID3.parse(Data(contentsOf: fixture.url))
+        #expect(after.excluding(["COMM"]) == (try TestID3.parse(fixture.originalData)).excluding(["COMM"]))
+    }
+}
+
+nonisolated enum PlaceholderSource: CaseIterable, Sendable {
+    /// The file holds the literal text, and the item has no edits.
+    case literalInFile
+    /// The file has neither tag, and the item has no edits.
+    case missingInFile
+    /// The file holds the literal text, but a stored edit cleared both fields.
+    case storedEdits
 }
