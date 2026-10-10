@@ -1,7 +1,7 @@
 import Foundation
 
 nonisolated enum MediaFileRewriter {
-    private static let copyBufferSize = 1_048_576
+    static let copyBufferSize = 1_048_576
 
     /// `write` may change metadata only; the music analysis cache follows the rewritten file.
     static func rewrite(

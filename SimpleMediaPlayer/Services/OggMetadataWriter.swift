@@ -41,7 +41,10 @@ nonisolated enum OggMetadataWriter {
         return XiphMetadata.read(prefix.comment)
     }
 
-    static func write(_ draft: MediaMetadataEditDraft, to url: URL) throws {
+    /// `chunkSize` bounds each buffered read of the audio pages; tests shrink it to split pages across reads.
+    static func write(_ draft: MediaMetadataEditDraft, to url: URL,
+                      chunkSize: Int = MediaFileRewriter.copyBufferSize) throws {
+        precondition(chunkSize > 0)
         guard ["ogg", "oga", "opus"].contains(url.pathExtension.lowercased()) else {
             throw MediaMetadataEditError.unsupportedFileFormat
         }
@@ -82,27 +85,10 @@ nonisolated enum OggMetadataWriter {
                     laceIndex += count
                 }
             }
-            let delta = sequence &- prefix.nextSequence
-            var offset = prefix.nextOffset
-            var expectedSequence = prefix.nextSequence
-            var sawEnd = false
-            while offset < size {
-                try Task.checkCancellation()
-                let page = try readPage(source, at: offset, size: size)
-                guard page.serial == prefix.serial, page.sequence == expectedSequence,
-                      page.flags & 2 == 0, sawEnd == false else {
-                    throw MediaMetadataEditError.invalidAudioMetadata
-                }
-                var bytes = page.bytes
-                writeLittle32(page.sequence &+ delta, to: &bytes, at: 18)
-                writeLittle32(0, to: &bytes, at: 22)
-                writeLittle32(checksum(bytes), to: &bytes, at: 22)
-                try output.write(contentsOf: bytes)
-                expectedSequence = expectedSequence &+ 1
-                offset = page.end
-                sawEnd = page.flags & 4 != 0
-            }
-            guard sawEnd else { throw MediaMetadataEditError.invalidAudioMetadata }
+            let scanner = AudioPageScanner(serial: prefix.serial, sequence: prefix.nextSequence,
+                                           delta: sequence &- prefix.nextSequence)
+            try copyAudioPages(from: source, range: prefix.nextOffset..<size, to: output,
+                               scanner: scanner, chunkSize: chunkSize)
         }
     }
 
@@ -178,9 +164,9 @@ nonisolated enum OggMetadataWriter {
         guard UInt64(length) <= size - offset else { throw MediaMetadataEditError.invalidAudioMetadata }
         let bytes = try MediaFileRewriter.read(from: source, at: offset, count: length)
         let storedCRC = XiphMetadata.uint32(bytes, at: 22, little: true)
-        var unchecked = bytes
-        writeLittle32(0, to: &unchecked, at: 22)
-        guard checksum(unchecked) == storedCRC else { throw MediaMetadataEditError.invalidAudioMetadata }
+        guard bytes.withUnsafeBytes(pageChecksum) == storedCRC else {
+            throw MediaMetadataEditError.invalidAudioMetadata
+        }
         var granule: UInt64 = 0
         for index in 0..<8 { granule |= UInt64(bytes[6 + index]) << (index * 8) }
         return Page(bytes: bytes, serial: XiphMetadata.uint32(bytes, at: 14, little: true),
@@ -212,15 +198,107 @@ nonisolated enum OggMetadataWriter {
     private static func writeLittle32(_ value: UInt32, to data: inout Data, at offset: Int) {
         for index in 0..<4 { data[offset + index] = UInt8((value >> (index * 8)) & 0xff) }
     }
+}
 
-    private static func checksum(_ data: Data) -> UInt32 {
-        var crc: UInt32 = 0
-        for byte in data {
-            crc ^= UInt32(byte) << 24
-            for _ in 0..<8 {
-                crc = crc & 0x8000_0000 != 0 ? (crc << 1) ^ 0x04C1_1DB7 : crc << 1
+// Audio pages are streamed through a buffer; only the comment header pages are rebuilt.
+nonisolated extension OggMetadataWriter {
+    /// Validates the audio pages that follow the comment header and renumbers them by `delta`.
+    private struct AudioPageScanner {
+        let serial: UInt32
+        var sequence: UInt32
+        let delta: UInt32
+        var sawEnd = false
+
+        /// Checks every whole page at the start of `bytes`, renumbering it in place when `delta` is nonzero,
+        /// and returns their total length. A page cut off by the end of `bytes` is left for the next call.
+        mutating func consumePages(in bytes: UnsafeMutableRawBufferPointer) throws -> Int {
+            var start = 0
+            while bytes.count - start >= 27 {
+                let header = UnsafeRawBufferPointer(rebasing: bytes[start..<(start + 27)])
+                guard sawEnd == false, little32(header, at: 0) == capturePattern, header[4] == 0 else {
+                    throw MediaMetadataEditError.invalidAudioMetadata
+                }
+                let segmentCount = Int(header[26])
+                guard bytes.count - start >= 27 + segmentCount else { break }
+                let length = 27 + segmentCount
+                    + bytes[(start + 27)..<(start + 27 + segmentCount)].reduce(0) { $0 + Int($1) }
+                guard bytes.count - start >= length else { break }
+                let page = UnsafeMutableRawBufferPointer(rebasing: bytes[start..<(start + length)])
+                let flags = header[5]
+                guard pageChecksum(UnsafeRawBufferPointer(page)) == little32(header, at: 22),
+                      little32(header, at: 14) == serial, little32(header, at: 18) == sequence,
+                      flags & 2 == 0 else {
+                    throw MediaMetadataEditError.invalidAudioMetadata
+                }
+                if delta != 0 {
+                    storeLittle32(sequence &+ delta, to: page, at: 18)
+                    storeLittle32(pageChecksum(UnsafeRawBufferPointer(page)), to: page, at: 22)
+                }
+                sequence = sequence &+ 1
+                sawEnd = flags & 4 != 0
+                start += length
             }
+            return start
         }
+    }
+
+    private static let capturePattern: UInt32 = 0x5367_674F // "OggS"
+    /// Ogg's CRC-32: polynomial 0x04C11DB7, zero initial value, no reflection and no final XOR.
+    private static let crcTable: [UInt32] = (0..<256).map { index in
+        var crc = UInt32(index) << 24
+        for _ in 0..<8 { crc = crc & 0x8000_0000 != 0 ? (crc << 1) ^ 0x04C1_1DB7 : crc << 1 }
         return crc
+    }
+
+    private static func copyAudioPages(from source: FileHandle, range: Range<UInt64>, to output: FileHandle,
+                                       scanner: AudioPageScanner, chunkSize: Int) throws {
+        var scanner = scanner
+        try source.seek(toOffset: range.lowerBound)
+        var remaining = range.upperBound - range.lowerBound
+        var pending = Data()
+        while remaining > 0 {
+            try Task.checkCancellation()
+            let count = Int(min(UInt64(chunkSize), remaining))
+            // FileHandle may return autoreleased NSData; release it after each chunk.
+            try autoreleasepool {
+                guard let chunk = try source.read(upToCount: count), chunk.count == count else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                pending.append(chunk)
+                let consumed = try pending.withUnsafeMutableBytes { try scanner.consumePages(in: $0) }
+                guard consumed > 0 else { return }
+                try output.write(contentsOf: pending.prefix(consumed))
+                pending = Data(pending.dropFirst(consumed))
+            }
+            remaining -= UInt64(count)
+        }
+        guard pending.isEmpty, scanner.sawEnd else { throw MediaMetadataEditError.invalidAudioMetadata }
+    }
+
+    static func checksum(_ data: Data) -> UInt32 {
+        data.withUnsafeBytes { checksum($0) }
+    }
+
+    static func checksum(_ bytes: UnsafeRawBufferPointer, from initial: UInt32 = 0) -> UInt32 {
+        crcTable.withUnsafeBufferPointer { table in
+            var crc = initial
+            for byte in bytes { crc = (crc << 8) ^ table[Int((crc >> 24) ^ UInt32(byte))] }
+            return crc
+        }
+    }
+
+    /// The CRC of a whole page, computed as if its stored CRC field were zero.
+    static func pageChecksum(_ page: UnsafeRawBufferPointer) -> UInt32 {
+        var crc = checksum(UnsafeRawBufferPointer(rebasing: page[..<22]))
+        for _ in 0..<4 { crc = (crc << 8) ^ crcTable[Int(crc >> 24)] }
+        return checksum(UnsafeRawBufferPointer(rebasing: page[26...]), from: crc)
+    }
+
+    private static func little32(_ bytes: UnsafeRawBufferPointer, at offset: Int) -> UInt32 {
+        (0..<4).reduce(0) { $0 | UInt32(bytes[offset + $1]) << ($1 * 8) }
+    }
+
+    private static func storeLittle32(_ value: UInt32, to bytes: UnsafeMutableRawBufferPointer, at offset: Int) {
+        for index in 0..<4 { bytes[offset + index] = UInt8((value >> (index * 8)) & 0xff) }
     }
 }
