@@ -203,6 +203,46 @@ struct TransientPlaybackSessionTests {
     }
 }
 
+extension TransientPlaybackSessionTests {
+    @Test func aNewerDeferredRequestSupersedesTheOlderOne() {
+        let fixture = makePlayerFixture()
+        let older = fixture.player.beginDeferredPlaybackRequest()
+        let newer = fixture.player.beginDeferredPlaybackRequest()
+
+        #expect(older.transportGeneration == newer.transportGeneration)
+        #expect(fixture.player.canApply(older) == false)
+        #expect(fixture.player.canApply(newer))
+    }
+
+    @Test func aTransportActionInvalidatesADeferredRequest() throws {
+        let session = try makeSession(titles: ["One"])
+        let fixture = makePlayerFixture(urlsByID: urls(for: session))
+        fixture.player.play(transientSession: session)
+        let request = fixture.player.beginDeferredPlaybackRequest()
+
+        fixture.player.pause()
+        fixture.player.resume()
+
+        #expect(fixture.player.canApply(request) == false)
+        fixture.player.stop()
+        session.end()
+    }
+
+    @Test func applyingADeferredRequestConsumesIt() throws {
+        let session = try makeSession(titles: ["One"])
+        let fixture = makePlayerFixture(urlsByID: urls(for: session))
+        let request = fixture.player.beginDeferredPlaybackRequest()
+        #expect(fixture.player.canApply(request))
+
+        fixture.player.play(transientSession: session)
+
+        #expect(fixture.player.deferredPlaybackRequestID == nil)
+        #expect(fixture.player.canApply(request) == false)
+        fixture.player.stop()
+        session.end()
+    }
+}
+
 private actor BlockingAnalysis {
     private var request: CheckedContinuation<MusicAnalysis, Never>?
     private var startWaiter: CheckedContinuation<Void, Never>?

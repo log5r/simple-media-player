@@ -67,6 +67,7 @@ final class PlayerViewModel {
     /// A deferred playback request compares it so a pause/resume pair in between is not mistaken for
     /// an unchanged state.
     private(set) var transportGeneration: UInt64 = 0
+    @ObservationIgnored private(set) var deferredPlaybackRequestID: UUID?
     @ObservationIgnored private let playbackClock = PlaybackClock()
     var currentTime: TimeInterval {
         get { playbackClock.time }
@@ -306,11 +307,31 @@ extension PlayerViewModel {
     }
 }
 
+struct DeferredPlaybackRequest: Equatable {
+    let id: UUID
+    let transportGeneration: UInt64
+}
+
 extension PlayerViewModel {
+    /// Starts a playback request whose result arrives later. Beginning another one supersedes it, so
+    /// only the latest selection, across all scenes, can still apply its result.
+    func beginDeferredPlaybackRequest() -> DeferredPlaybackRequest {
+        let request = DeferredPlaybackRequest(id: UUID(), transportGeneration: transportGeneration)
+        deferredPlaybackRequestID = request.id
+        return request
+    }
+
+    /// True only for the latest deferred request, and only if no transport action happened since it began.
+    func canApply(_ request: DeferredPlaybackRequest) -> Bool {
+        deferredPlaybackRequestID == request.id && transportGeneration == request.transportGeneration
+    }
+
     /// Plays media that is not in the library. The previous transient session ends after the switch,
     /// so its files are removed only once nothing refers to them.
+    /// Consumes the pending deferred request, so its result cannot apply twice.
     func play(transientSession session: TransientPlaybackSession) {
         guard let first = session.items.first else { return }
+        deferredPlaybackRequestID = nil
         let previous = transientSession
         // Taken before `play(item:in:)` starts the new item's analysis, which must not be the task waited on.
         let pending = musicAnalysis.reset()

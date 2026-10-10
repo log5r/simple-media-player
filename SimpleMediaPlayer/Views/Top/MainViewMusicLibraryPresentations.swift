@@ -76,14 +76,15 @@ extension MainView {
         }
     }
 
-    /// The exported copy plays only if no transport action (play, pause, resume, stop, clear) happened
-    /// meanwhile; a late result must not override what the user did in between.
+    /// The exported copy plays only if it is still the latest Music selection (from any scene) and no
+    /// transport action (play, pause, resume, stop, clear) happened meanwhile; a late result must not
+    /// override what the user did in between.
     func playMusicLibraryTrack(_ track: MusicLibraryTrack) {
-        let generation = player.transportGeneration
+        let request = player.beginDeferredPlaybackRequest()
         Task {
             switch await libraryService.prepareMusicLibraryPlayback(of: track) {
             case let .ready(session):
-                guard player.transportGeneration == generation else {
+                guard player.canApply(request) else {
                     session.end()
                     return
                 }
