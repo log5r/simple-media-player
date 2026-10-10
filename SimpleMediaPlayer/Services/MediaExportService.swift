@@ -5,9 +5,13 @@ struct MediaExportPlan: Identifiable {
     let id = UUID()
     let files: [MediaExportFileDraft]
     let preparationErrors: [String]
+    /// Determined once because the name entry sheet reads it while the user types.
+    let missingTitleFiles: [MediaExportFileDraft]
 
-    var missingTitleFiles: [MediaExportFileDraft] {
-        files.filter { $0.embeddedTitle == nil }
+    init(files: [MediaExportFileDraft], preparationErrors: [String]) {
+        self.files = files
+        self.preparationErrors = preparationErrors
+        missingTitleFiles = files.filter { $0.embeddedTitle == nil }
     }
 
     func resolvedFiles(nameOverrides: [UUID: String]) -> [MediaExportFile] {
