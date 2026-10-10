@@ -55,7 +55,7 @@ struct BlockingWorkExecutorTests {
         let service = MusicAnalysisService(cacheDirectory: nil, readableFile: { _ in
             labels.record()
             throw CocoaError(.fileReadUnknown)
-        })
+        }, waitBeforeAnalyzing: {})
         await #expect(throws: CocoaError.self) {
             try await service.analyze(url: URL(fileURLWithPath: "/track-switch-tests/missing.ape"))
         }

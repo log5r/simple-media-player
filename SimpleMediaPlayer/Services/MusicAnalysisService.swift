@@ -95,15 +95,20 @@ actor MusicAnalysisService {
     private let logger = Logger(subsystem: "SimpleMediaPlayer", category: "MusicAnalysis")
     private let cacheDirectory: URL?
     private let readableFile: @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile
+    private let waitBeforeAnalyzing: @Sendable () async throws -> Void
 
+    /// A cached analysis returns at once. Reading the whole file waits `waitBeforeAnalyzing` first, so that it does
+    /// not compete with the first reads of the track that has just started.
     init(
         cacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
         readableFile: @escaping @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile = {
             try ExtendedAudioSource.readableFile(for: $0)
-        }
+        },
+        waitBeforeAnalyzing: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(1)) }
     ) {
         self.cacheDirectory = cacheDirectory
         self.readableFile = readableFile
+        self.waitBeforeAnalyzing = waitBeforeAnalyzing
     }
 
     /// Runs blocking file work on a detached task so the actor keeps serving other callers. The work blocks a
@@ -135,13 +140,12 @@ actor MusicAnalysisService {
     ) async throws -> MusicAnalysis {
         guard #available(macOS 27, iOS 27, *) else { throw CancellationError() }
         let started = ContinuousClock.now
-        defer { logDuration("Total (including cache lookup; may be cancelled or failed)", since: started) }
+        defer { logDuration("Total (including cache lookup and wait; may be cancelled or failed)", since: started) }
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         try Task.checkCancellation()
 
-        let cacheDirectory = cacheDirectory
-        let (cacheURL, cached) = try await Self.offActor {
+        let (cacheURL, cached) = try await Self.offActor { [cacheDirectory] in
             let entry = MusicAnalysisCache.entryURL(for: url, in: cacheDirectory)
             return (entry, entry.flatMap(MusicAnalysisCache.read(at:)))
         }
@@ -151,10 +155,11 @@ actor MusicAnalysisService {
         }
 
         logger.info("Cache miss")
+        try await waitBeforeAnalyzing()
+        try Task.checkCancellation()
         let wholeSongStarted = ContinuousClock.now
-        let readableFile = readableFile
         // Extended formats decode the whole song here on a cache miss.
-        let source = try await Self.offActor {
+        let source = try await Self.offActor { [readableFile] in
             try await ExtendedAudioSource.withCancellableCacheWaits { try readableFile(url) }
         }
         defer { source.release() }
