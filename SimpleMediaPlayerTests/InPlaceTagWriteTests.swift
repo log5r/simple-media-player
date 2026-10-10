@@ -115,12 +115,17 @@ struct InPlaceTagWriteTests {
         #expect(try fixture.fileNumber() == fileNumber)
         #expect(try fixture.temporaryLeftovers().isEmpty)
 
-        let longer = String(repeating: "Longer title ", count: 12).trimmingCharacters(in: .whitespaces)
+        // Longer than the padding the fixture's rewrite left.
+        let longer = String(repeating: "Longer title ", count: 200).trimmingCharacters(in: .whitespaces)
+        #expect(10 + 10 + 3 + 2 * longer.utf16.count > tagSize)
         try InPlaceTestFormat.mp3.write(titleDraft(longer), to: fixture.url)
 
         let grown = try Data(contentsOf: fixture.url)
         #expect(try fixture.fileNumber() != fileNumber)
-        #expect(try id3TagSize(in: grown) == 10 + 10 + 3 + 2 * longer.utf16.count)
+        // The rewrite moves the audio anyway, so it leaves padding after the frames.
+        let grownFrameEnd = 10 + 10 + 3 + 2 * longer.utf16.count
+        #expect(try id3TagSize(in: grown) == grownFrameEnd + MediaFileRewriter.rewritePadding)
+        #expect(grown[grownFrameEnd..<(try id3TagSize(in: grown))].allSatisfy { $0 == 0 })
         #expect(grown[try id3TagSize(in: grown)...] == tagged[tagSize...])
         #expect(try InPlaceTestFormat.mp3.title(at: fixture.url) == longer)
         #expect(try decodedSamples(at: fixture.url) == samples)

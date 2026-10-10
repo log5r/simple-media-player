@@ -51,7 +51,9 @@ nonisolated enum FLACMetadataWriter {
                                    metadataEnd: metadataEnd, source: source)
         } rewrite: { source, output, size in
             let blocks = try parse(source, size: size)
-            let outputBlocks = try outputBlocks(for: draft, blocks: blocks, source: source)
+            let outputBlocks = try rewrittenBlocks(
+                outputBlocks(for: draft, blocks: blocks, source: source), metadataEnd: blocks.last!.range.upperBound
+            )
             try output.write(contentsOf: Data("fLaC".utf8))
             for (index, block) in outputBlocks.enumerated() {
                 try output.write(contentsOf: header(block, isLast: index == outputBlocks.count - 1))
@@ -96,6 +98,16 @@ nonisolated enum FLACMetadataWriter {
             outputBlocks.append(OutputBlock(type: 6, data: try XiphMetadata.pictureBlock(artwork)))
         }
         return outputBlocks
+    }
+
+    /// The blocks for the full rewrite. When they do not end at `metadataEnd`, which moves the audio anyway, the
+    /// PADDING blocks give way to one of `MediaFileRewriter.rewritePadding` bytes at the end (RFC 9639 section
+    /// 8.3), so a later save that grows the metadata a little takes `inPlaceEdit`.
+    private static func rewrittenBlocks(_ outputBlocks: [OutputBlock], metadataEnd: UInt64) throws -> [OutputBlock] {
+        let size = try outputBlocks.reduce(UInt64(4)) { try $0 + 4 + length(of: $1) }
+        guard size != metadataEnd else { return outputBlocks }
+        return outputBlocks.filter { $0.type != paddingType }
+            + [OutputBlock(type: paddingType, data: Data(count: MediaFileRewriter.rewritePadding))]
     }
 
     /// Rewrites the metadata blocks within `0..<metadataEnd` when they fit without the existing PADDING blocks;

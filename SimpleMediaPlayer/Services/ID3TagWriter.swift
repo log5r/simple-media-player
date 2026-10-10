@@ -353,10 +353,10 @@ enum ID3TagWriter {
             try paddedTagEdit(for: draft, existingTagData: readTagData(from: source, at: 0, count: fileSize))
         } rewrite: { source, output, fileSize in
             let data = try readTagData(from: source, at: 0, count: fileSize)
-            let tagData = try updatedTagData(for: draft, existingTagData: data)
-            let audioStart = UInt64(try tagHeader(in: data)?.totalEnd ?? 0)
+            let audioStart = try tagHeader(in: data)?.totalEnd ?? 0
+            let tagData = try rewrittenTag(updatedTagData(for: draft, existingTagData: data), replacing: audioStart)
             try output.write(contentsOf: tagData)
-            try MediaFileRewriter.copy(from: source, range: audioStart..<fileSize, to: output)
+            try MediaFileRewriter.copy(from: source, range: UInt64(audioStart)..<fileSize, to: output)
         }
     }
 
@@ -858,6 +858,18 @@ extension ID3TagWriter {
         tagData.append(Data(count: end - tagData.count))
         tagData.replaceSubrange(6..<10, with: synchsafeData(header.totalEnd - 10))
         return MediaFileRewriter.InPlaceEdit(offset: 0, originalLength: UInt64(end), data: tagData)
+    }
+
+    /// `tagData` for the full rewrite. When it does not take exactly the `oldSize` bytes of the old tag, which moves
+    /// the audio anyway, `MediaFileRewriter.rewritePadding` zero bytes follow the frames, so a later save that grows
+    /// the tag a little takes `paddedTagEdit`. ID3v2.2 to 2.4 allow padding; the tag has no footer, which 2.4
+    /// forbids together with padding.
+    nonisolated private static func rewrittenTag(_ tagData: Data, replacing oldSize: Int) -> Data {
+        let size = tagData.count - 10 + MediaFileRewriter.rewritePadding
+        guard tagData.count != oldSize, size <= 0x0FFF_FFFF else { return tagData }
+        var padded = tagData + Data(count: MediaFileRewriter.rewritePadding)
+        padded.replaceSubrange(6..<10, with: synchsafeData(size))
+        return padded
     }
 }
 
