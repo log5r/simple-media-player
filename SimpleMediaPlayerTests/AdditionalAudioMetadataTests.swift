@@ -235,7 +235,8 @@ struct AdditionalAudioMetadataTests {
         )
 
         let written = try Data(contentsOf: target)
-        #expect(written.range(of: unknown) != nil)
+        // A FLAC block can lose its last-metadata-block flag to the PADDING block written after it.
+        #expect(written.range(of: fileExtension == "flac" ? Data(unknown.dropFirst()) : unknown) != nil)
         #expect(try samples(at: target) == originalSamples)
     }
 

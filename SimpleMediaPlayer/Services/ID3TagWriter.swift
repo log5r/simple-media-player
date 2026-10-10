@@ -349,7 +349,9 @@ enum ID3TagWriter {
             throw MediaMetadataEditError.unsupportedFileFormat
         }
 
-        try MediaFileRewriter.rewrite(at: url) { source, output, fileSize in
+        try MediaFileRewriter.update(at: url) { source, fileSize in
+            try paddedTagEdit(for: draft, existingTagData: readTagData(from: source, at: 0, count: fileSize))
+        } rewrite: { source, output, fileSize in
             let data = try readTagData(from: source, at: 0, count: fileSize)
             let tagData = try updatedTagData(for: draft, existingTagData: data)
             let audioStart = UInt64(try tagHeader(in: data)?.totalEnd ?? 0)
@@ -834,6 +836,22 @@ enum ID3TagWriter {
             data.append(UInt8((value >> (index * 8)) & 0xFF))
         }
         return data
+    }
+}
+
+extension ID3TagWriter {
+    /// A tag padded to the existing tag's size, so it replaces only that tag; nil without a tag or when it grows.
+    nonisolated private static func paddedTagEdit(
+        for draft: MediaMetadataEditDraft,
+        existingTagData data: Data
+    ) throws -> MediaFileRewriter.InPlaceEdit? {
+        guard let header = try tagHeader(in: data) else { return nil }
+        var tagData = try updatedTagData(for: draft, existingTagData: data)
+        // The new tag has no footer, so zero padding may fill the old tag's space, footer included.
+        guard tagData.count <= header.totalEnd, header.totalEnd - 10 <= 0x0FFF_FFFF else { return nil }
+        tagData.append(Data(count: header.totalEnd - tagData.count))
+        tagData.replaceSubrange(6..<10, with: synchsafeData(header.totalEnd - 10))
+        return MediaFileRewriter.InPlaceEdit(offset: 0, originalLength: UInt64(header.totalEnd), data: tagData)
     }
 }
 

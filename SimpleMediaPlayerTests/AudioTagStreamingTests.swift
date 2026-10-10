@@ -23,9 +23,12 @@ struct AudioTagStreamingTests {
         #expect(try ID3TagWriter.readMetadata(from: url)?.title == "Updated title")
 
         try ID3TagWriter.write(draft(title: ""), to: url)
+        // The emptied tag keeps its size as padding, so only the tag is overwritten.
         let cleared = try Data(contentsOf: url)
-        #expect(id3TagEnd(in: cleared) == 10)
-        #expect(Data(cleared[10...]) == audio + trailingTag)
+        #expect(id3TagEnd(in: cleared) == tagEnd)
+        #expect(cleared[10..<tagEnd].allSatisfy { $0 == 0 })
+        #expect(Data(cleared[tagEnd...]) == audio + trailingTag)
+        #expect(try ID3TagWriter.readMetadata(from: url)?.title == nil)
     }
 
     @Test func addingID3PreservesAnUntaggedAudioPayloadAcrossCopyBuffers() throws {
