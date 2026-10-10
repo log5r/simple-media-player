@@ -21,6 +21,26 @@ nonisolated enum FileAttributeCacheKey {
         return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Test hook: runs in `store` between the key check and the write, so tests can change the file there.
+    @TaskLocal static var willStore: @Sendable () -> Void = {}
+
+    /// Calls `write` to fill `entry`, the key `currentEntry` gave when the value's computation started, only if
+    /// it still gives that key afterward. A tag save or a removal of the file can finish during the computation;
+    /// a value written at the old key could not be found again and would stay in the cache.
+    /// The save's carry-over or the removal's cleanup may run before or after the write. If it runs after, it
+    /// moves or removes the entry itself. If it ran before, it found no entry, and the check after the write
+    /// sees the changed or missing file and removes the entry. Removing an entry at a key the file no longer has
+    /// loses nothing that a lookup could find, unless a failed in-place save restores that key: then the value is
+    /// computed again.
+    static func store(at entry: URL, currentEntry: () -> URL?, write: () -> Void) {
+        guard currentEntry() == entry else { return }
+        willStore()
+        write()
+        if currentEntry() != entry {
+            try? FileManager.default.removeItem(at: entry)
+        }
+    }
+
     /// Moves `entry` to `destination`, replacing an entry already there.
     /// Call only after a rewrite that leaves the audio unchanged.
     static func move(_ entry: URL?, to destination: URL?) {

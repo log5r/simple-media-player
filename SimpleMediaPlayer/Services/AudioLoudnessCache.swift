@@ -44,24 +44,12 @@ nonisolated enum AudioLoudnessCache {
         try? data.write(to: entry, options: .atomic)
     }
 
-    /// Test hook: runs in `store` between the key check and the write, so tests can change the file there.
-    @TaskLocal static var willStore: @Sendable () -> Void = {}
-
     /// Writes `gain` at `entry`, the key of the file at `url` when its measurement started, only if the file
-    /// still has that key afterward. A tag save or a removal of the file can finish while the file is measured;
-    /// a gain written at the old key could not be found again and would stay in the cache.
-    /// The save's carry-over or the removal's cleanup may run before or after the write. If it runs after, it
-    /// moves or removes the entry itself. If it ran before, it found no entry, and the check after the write
-    /// sees the changed or missing file and removes the entry. Removing an entry at a key the file no longer has
-    /// loses nothing that a lookup could find, unless a failed in-place save restores that key: then the gain is
-    /// measured again.
+    /// still has that key afterward, as `FileAttributeCacheKey.store` describes.
     static func store(_ gain: Float, at entry: URL, for url: URL, in directory: URL?) {
-        guard entryURL(for: url, in: directory) == entry else { return }
-        willStore()
-        write(gain, at: entry)
-        if entryURL(for: url, in: directory) != entry {
-            try? FileManager.default.removeItem(at: entry)
-        }
+        FileAttributeCacheKey.store(
+            at: entry, currentEntry: { entryURL(for: url, in: directory) }, write: { write(gain, at: entry) }
+        )
     }
 
     /// Moves `entry` to the key of the file now at `url`.

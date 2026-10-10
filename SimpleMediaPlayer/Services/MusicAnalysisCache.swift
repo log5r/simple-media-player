@@ -36,6 +36,14 @@ nonisolated enum MusicAnalysisCache {
         try? data.write(to: entry, options: .atomic)
     }
 
+    /// Writes `analysis` at `entry`, the key of the file at `url` when its analysis started, only if the file
+    /// still has that key afterward, as `FileAttributeCacheKey.store` describes.
+    static func store(_ analysis: MusicAnalysis, at entry: URL, for url: URL, in directory: URL?) {
+        FileAttributeCacheKey.store(
+            at: entry, currentEntry: { entryURL(for: url, in: directory) }, write: { write(analysis, at: entry) }
+        )
+    }
+
     /// Moves `entry` to the key of the file now at `url`.
     /// Call only after a rewrite that leaves the audio unchanged.
     static func carryOver(_ entry: URL?, to url: URL, in directory: URL? = defaultDirectory) {
