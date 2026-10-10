@@ -23,7 +23,8 @@ nonisolated enum MediaFileRewriter {
     @TaskLocal static var allowsInPlaceEdits = true
 
     /// Overwrites only the range `plan` returns, or rewrites the whole file through `rewrite(at:_:)` when it returns
-    /// nil. Cancellation is honored until the first write; after a failed write the original bytes are restored.
+    /// nil or the file cannot be opened for writing. Cancellation is honored until the first write; after a failed
+    /// write the original bytes are restored.
     /// Unlike the replacement, an interruption during the write (a crash or power loss) can leave a partial edit.
     /// Saves of the same file run one at a time; see `withExclusiveAccess(to:_:)`.
     static func update(
@@ -47,7 +48,11 @@ nonisolated enum MediaFileRewriter {
             return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
         }
         let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
-        let handle = try FileHandle(forUpdating: url)
+        // The replacement only reads the source, so a file that cannot be opened for writing, such as a read-only
+        // one, takes that path and fails or succeeds as the replacement does.
+        guard let handle = try? FileHandle(forUpdating: url) else {
+            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+        }
         defer { try? handle.close() }
         let fileSize = try handle.seekToEnd()
         guard let edit = try plan(handle, fileSize), isValid(edit, fileSize: fileSize) else {
