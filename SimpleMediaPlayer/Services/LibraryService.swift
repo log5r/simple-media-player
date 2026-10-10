@@ -34,7 +34,7 @@ final class LibraryService {
     /// Shared by every export plan, so resolutions left running by a cancelled plan still count.
     @ObservationIgnored nonisolated let exportPlanLimiter = FileSystemWorkLimiter(limit: exportPlanConcurrency)
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
-    @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
+    @ObservationIgnored private var importTask: (id: UUID, task: Task<MediaImportSummary, Never>)?
     /// Deleted items can stay in import snapshots while their files are removed in the background.
     @ObservationIgnored var deletedItemIDs: Set<UUID> = []
 
@@ -44,8 +44,6 @@ final class LibraryService {
     var importTotalFileCount = 0
     var currentImportFileName: String?
     var lastImportErrors: [String] = []
-    private(set) var lastImportCreatedCount = 0
-    private(set) var lastImportDuplicateCount = 0
     var isExporting = false
     var exportProgress = 0.0
     var exportCompletedFileCount = 0
@@ -86,29 +84,38 @@ final class LibraryService {
     }
 
     /// `overrides` carry values that take precedence over the file's embedded metadata, keyed by source URL.
+    @discardableResult
     func importFiles(
         from urls: [URL], overrides: [URL: MediaImportOverride] = [:],
         into context: ModelContext, existingItems: [MediaItem]
-    ) async {
-        guard urls.isEmpty == false else { return }
+    ) async -> MediaImportSummary {
+        guard urls.isEmpty == false else { return MediaImportSummary() }
 
         let previousTask = importTask?.task
         let requestID = UUID()
         let task = Task { @MainActor in
-            await previousTask?.value
-            await self.performImport(from: urls, overrides: overrides, into: context, existingItems: existingItems)
+            _ = await previousTask?.value
+            return await self.performImport(
+                from: urls, overrides: overrides, into: context, existingItems: existingItems
+            )
         }
         importTask = (requestID, task)
-        await task.value
+        let summary = await task.value
         if importTask?.id == requestID { importTask = nil }
+        return summary
     }
 
     private func performImport(
         from urls: [URL], overrides: [URL: MediaImportOverride],
         into context: ModelContext, existingItems: [MediaItem]
-    ) async {
+    ) async -> MediaImportSummary {
         beginImportProgress(totalCount: urls.count)
-        defer { finishImportProgress() }
+        // Imports are serialized, so `lastImportErrors` belongs to this request until it returns.
+        var summary = MediaImportSummary()
+        defer {
+            summary.errors = lastImportErrors
+            finishImportProgress()
+        }
 
         var itemsByID: [UUID: MediaItem] = [:]
         do {
@@ -116,7 +123,7 @@ final class LibraryService {
             for item in try context.fetch(FetchDescriptor<MediaItem>()) { itemsByID[item.id] = item }
         } catch {
             lastImportErrors.append(error.localizedDescription)
-            return
+            return MediaImportSummary(errors: lastImportErrors)
         }
         var itemsByFingerprint: [String: [MediaItem]] = [:]
         for item in itemsByID.values {
@@ -157,7 +164,7 @@ final class LibraryService {
                     }
                 }
                 if isDuplicate {
-                    lastImportDuplicateCount += 1
+                    summary.duplicateCount += 1
                 } else {
                     let item = try await makeMediaItem(
                         from: url, importFingerprint: fingerprint, musicSession: musicSession
@@ -165,7 +172,7 @@ final class LibraryService {
                     await apply(overrides[url], to: item)
                     context.insert(item)
                     itemsByFingerprint[fingerprint, default: []].append(item)
-                    lastImportCreatedCount += 1
+                    summary.createdCount += 1
                 }
             } catch {
                 lastImportErrors.append("\(url.lastPathComponent): \(error.localizedDescription)")
@@ -179,6 +186,8 @@ final class LibraryService {
         } catch {
             lastImportErrors.append(L10n.format("Could not save: %@", error.localizedDescription))
         }
+        summary.errors = lastImportErrors
+        return summary
     }
 
     func resolvedURL(for item: MediaItem) -> URL? {
@@ -516,8 +525,6 @@ private extension LibraryService {
         importTotalFileCount = totalCount
         currentImportFileName = nil
         lastImportErrors = []
-        lastImportCreatedCount = 0
-        lastImportDuplicateCount = 0
         didReportMusicLibraryAccessFailure = false
     }
 

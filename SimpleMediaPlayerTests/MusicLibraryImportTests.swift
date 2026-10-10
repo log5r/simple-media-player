@@ -217,7 +217,7 @@ struct MusicLibraryImportTests {
         plainOverride.values.title = "Override Title"
         plainOverride.lyrics = "Override lyrics"
 
-        await fixture.service.importFiles(
+        let summary = await fixture.service.importFiles(
             from: [embeddedSource, plainSource],
             overrides: [embeddedSource: embeddedOverride, plainSource: plainOverride],
             into: fixture.context, existingItems: []
@@ -237,7 +237,7 @@ struct MusicLibraryImportTests {
         #expect(plain.hasEditedTextMetadata)
         #expect(plain.hasEditedLyrics)
         #expect(plain.editedTitle == "Override Title")
-        #expect(fixture.service.lastImportCreatedCount == 2)
+        #expect(summary == MediaImportSummary(createdCount: 2, duplicateCount: 0, errors: []))
     }
 
     /// Music's text set is authoritative even when it could not be written into the file.

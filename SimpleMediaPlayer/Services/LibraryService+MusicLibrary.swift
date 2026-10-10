@@ -88,11 +88,13 @@ extension LibraryService {
         guard staging.urls.isEmpty == false else {
             return MusicLibraryImportResult(skippedCount: staging.skippedCount, messages: staging.messages)
         }
-        await importFiles(from: staging.urls, overrides: staging.overrides, into: context, existingItems: existingItems)
+        let summary = await importFiles(
+            from: staging.urls, overrides: staging.overrides, into: context, existingItems: existingItems
+        )
         return MusicLibraryImportResult(
-            importedCount: lastImportCreatedCount,
-            skippedCount: staging.skippedCount + lastImportDuplicateCount,
-            messages: staging.messages + lastImportErrors
+            importedCount: summary.createdCount,
+            skippedCount: staging.skippedCount + summary.duplicateCount,
+            messages: staging.messages + summary.errors
         )
     }
 }
