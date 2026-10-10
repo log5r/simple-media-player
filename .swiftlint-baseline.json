@@ -275,7 +275,7 @@
       "location": {
         "character": 13,
         "file": "SimpleMediaPlayer/Services/LibraryService.swift",
-        "line": 108
+        "line": 113
       },
       "reason": "Function should have complexity 10 or less; currently complexity is 13",
       "ruleDescription": "Complexity of function bodies should be limited.",
@@ -290,9 +290,9 @@
       "location": {
         "character": 13,
         "file": "SimpleMediaPlayer/Services/LibraryService.swift",
-        "line": 108
+        "line": 113
       },
-      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 76 lines",
+      "reason": "Function body should span 50 lines or less excluding comments and whitespace: currently spans 79 lines",
       "ruleDescription": "Function bodies should not span too many lines",
       "ruleIdentifier": "function_body_length",
       "ruleName": "Function Body Length",

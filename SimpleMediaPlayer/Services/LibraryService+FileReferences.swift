@@ -38,6 +38,31 @@ extension LibraryService {
         }
     }
 
+    /// Drops items an import inserted but could not save, so they are not reported as imported, and removes
+    /// their copied files in the background. The journal lets the next launch retry an interrupted removal.
+    func discardUnsavedImports(
+        _ items: [MediaItem], from context: ModelContext, summary: inout MediaImportSummary
+    ) {
+        summary.createdCount = 0
+        let removals = items.map { item in
+            PendingFileRemovalJournal.Entry(
+                id: item.id,
+                bookmarkData: item.bookmarkData,
+                fallbackPath: fallbackMediaURL(forFileName: item.fileName).path
+            )
+        }
+        for (item, removal) in zip(items, removals) {
+            deletedItemIDs.insert(item.id)
+            removalJournal.add(removal)
+            context.delete(item)
+        }
+        Task.detached(priority: .utility) { [self] in
+            await FileSystemWorkQueue.run { [self] in
+                for removal in removals { removeFile(for: removal) }
+            }
+        }
+    }
+
     /// Finishes removals recorded by earlier launches; call once when the app starts.
     @discardableResult
     func resumePendingFileRemovals() -> Task<Void, Never> {

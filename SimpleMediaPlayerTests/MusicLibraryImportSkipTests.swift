@@ -103,6 +103,30 @@ struct MusicLibraryImportSkipTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.temporaryDirectory.path).isEmpty)
     }
 
+    /// A failed final save must not report the inserted items or leave their copied files behind.
+    @Test func failedSaveDiscardsTheImportedItems() async throws {
+        let fixture = try MusicLibraryFixture(saveContext: { _ in throw SaveFailure() })
+        defer { fixture.remove() }
+        let track = fixture.makeTrack(id: 60, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
+        let saveMessage = L10n.format("Could not save: %@", SaveFailure().localizedDescription)
+
+        let summary = await fixture.service.importFiles(
+            from: [try #require(track.assetURL)], into: fixture.context, existingItems: []
+        )
+
+        #expect(summary.createdCount == 0)
+        #expect(summary.errors.contains(saveMessage))
+        #expect(try fixture.items().isEmpty)
+        var files = try fixture.managedFiles()
+        for _ in 0..<100 where files.isEmpty == false {
+            try await Task.sleep(for: .milliseconds(20))
+            files = try fixture.managedFiles()
+        }
+        #expect(files.isEmpty)
+        let result = MusicLibraryImportResult(importedCount: summary.createdCount, messages: summary.errors)
+        #expect(result.summary == [L10n.string("No songs were imported."), saveMessage].joined(separator: "\n"))
+    }
+
     /// Playback never imports, so the deferred Music artwork must be resolved for the transient item.
     @Test func playbackItemCarriesTheMusicArtwork() async throws {
         let fixture = try MusicLibraryFixture()
@@ -124,4 +148,8 @@ struct MusicLibraryImportSkipTests {
         session.end()
         await session.awaitCleanup()
     }
+}
+
+private struct SaveFailure: LocalizedError {
+    var errorDescription: String? { "Simulated save failure" }
 }

@@ -31,6 +31,7 @@ final class LibraryService {
     @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
+    @ObservationIgnored private let saveContext: @MainActor (ModelContext) throws -> Void
     /// Shared by every export plan, so resolutions left running by a cancelled plan still count.
     @ObservationIgnored nonisolated let exportPlanLimiter = FileSystemWorkLimiter(limit: exportPlanConcurrency)
     /// Shared by Music import pre-checks, so probes abandoned by cancelled preparations still count.
@@ -72,12 +73,14 @@ final class LibraryService {
         editabilityChecker: EmbeddedMetadataEditabilityChecker = EmbeddedMetadataEditabilityChecker(),
         musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider(),
         resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve,
-        removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal()
+        removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal(),
+        saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() }
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
         self.temporaryDirectoryURL = temporaryDirectoryURL
         self.resolveBookmark = resolveBookmark
         self.removalJournal = removalJournal
+        self.saveContext = saveContext
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
         self.artworkLoader = artworkLoader
@@ -135,6 +138,7 @@ final class LibraryService {
         let legacyItems = itemsByID.values.filter { $0.importFingerprint == nil }
         var legacyItemsBySize: [UInt64: [(item: MediaItem, url: URL)]]?
         let musicSession = musicMetadataProvider.makeSession()
+        var createdItems: [MediaItem] = []
 
         for (index, url) in urls.enumerated() {
             currentImportFileName = url.lastPathComponent
@@ -178,6 +182,7 @@ final class LibraryService {
                     context.insert(item)
                     Self.index(item, in: &itemsByFingerprint, &itemsByMusicID)
                     summary.createdCount += 1
+                    createdItems.append(item)
                 }
             } catch {
                 lastImportErrors.append("\(url.lastPathComponent): \(error.localizedDescription)")
@@ -187,9 +192,10 @@ final class LibraryService {
         }
 
         do {
-            try context.save()
+            try saveContext(context)
         } catch {
             lastImportErrors.append(L10n.format("Could not save: %@", error.localizedDescription))
+            discardUnsavedImports(createdItems, from: context, summary: &summary)
         }
         summary.errors = lastImportErrors
         return summary
