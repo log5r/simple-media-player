@@ -394,7 +394,7 @@ enum ID3TagWriter {
         if draft.editsLyrics {
             removedFrameIDs.formUnion(lyricsFrameIDs)
         }
-        var frames = existingTag?.preservedFrames(
+        var frames = try existingTag?.preservedFrames(
             removing: removedFrameIDs, removeFrontArtwork: draft.editsArtwork
         ) ?? []
         if draft.editsTextMetadata {
@@ -526,7 +526,7 @@ enum ID3TagWriter {
                 throw MediaMetadataEditError.invalidID3Tag
             }
 
-            frames.append(ID3Frame(id: frameID, rawData: Data(data[offset..<frameEnd])))
+            frames.append(ID3Frame(id: frameID, rawData: Data(data[offset..<frameEnd]), version: version))
             offset = frameEnd
         }
 
@@ -842,8 +842,16 @@ private struct ID3Tag {
     let totalRange: Range<Int>
     let frames: [ID3Frame]
 
-    nonisolated func preservedFrames(removing frameIDs: Set<String>, removeFrontArtwork: Bool) -> [Data] {
-        frames
+    nonisolated func preservedFrames(removing frameIDs: Set<String>, removeFrontArtwork: Bool) throws -> [Data] {
+        // An unreadable frame might hold a value this save replaces; an unreadable APIC might be the front cover.
+        let removesUnreadableFrame = frames.contains { frame in
+            frame.content == nil && (frameIDs.contains(frame.id) || (removeFrontArtwork && frame.id == "APIC"))
+        }
+        guard removesUnreadableFrame == false else {
+            throw MediaMetadataEditError.unsupportedID3Flags
+        }
+
+        return frames
             .filter { frame in
                 frameIDs.contains(frame.id) == false && (removeFrontArtwork == false || frame.pictureType != 3)
             }
@@ -854,9 +862,18 @@ private struct ID3Tag {
 private struct ID3Frame {
     let id: String
     let rawData: Data
+    /// The frame data without header additions and unsynchronisation, or `nil` when it cannot be read.
+    let content: Data?
 
+    nonisolated init(id: String, rawData: Data, version: UInt8) {
+        self.id = id
+        self.rawData = rawData
+        content = ID3FrameContent.readableContent(of: rawData, version: version)
+    }
+
+    /// Unreadable frames yield an empty payload so that readers skip them.
     nonisolated var payload: Data.SubSequence {
-        rawData.dropFirst(id.count == 3 ? 6 : 10)
+        content ?? Data()
     }
 
     nonisolated var pictureType: UInt8? {
