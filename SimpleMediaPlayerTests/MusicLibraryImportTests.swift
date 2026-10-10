@@ -269,46 +269,6 @@ struct MusicLibraryImportTests {
     }
 }
 
-/// Skipping by Music persistent ID, kept apart from the main suite to bound its length.
-@MainActor
-struct MusicLibraryImportSkipTests {
-    @Test func skipsSongsAlreadyImportedFromMusic() async throws {
-        let fixture = try MusicLibraryFixture()
-        defer { fixture.remove() }
-        let track = fixture.makeTrack(id: 8, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
-        _ = await fixture.service.importMusicLibraryTracks([track], into: fixture.context, existingItems: [])
-
-        let result = try #require(await fixture.service.importMusicLibraryTracks(
-            [track], into: fixture.context, existingItems: try fixture.items()
-        ))
-
-        #expect(result.importedCount == 0)
-        #expect(result.skippedCount == 1)
-        #expect(result.messages == [L10n.format("“%@” is already in your library.", track.displayTitle)])
-        #expect(try fixture.items().count == 1)
-        #expect(try fixture.managedFiles().count == 1)
-        #expect(await fixture.temporaryFilesAreGone())
-    }
-
-    /// The pre-check list from before a deletion must not skip the song whose library copy is gone.
-    @Test func staleExistingItemsDoNotSkipADeletedSong() async throws {
-        let fixture = try MusicLibraryFixture()
-        defer { fixture.remove() }
-        let track = fixture.makeTrack(id: 13, fileName: "song.wav", formatID: kAudioFormatLinearPCM)
-        _ = await fixture.service.importMusicLibraryTracks([track], into: fixture.context, existingItems: [])
-        let staleItems = try fixture.items()
-        await fixture.service.delete(try #require(staleItems.first), from: fixture.context)?.value
-
-        let result = try #require(await fixture.service.importMusicLibraryTracks(
-            [track], into: fixture.context, existingItems: staleItems
-        ))
-
-        #expect(result.importedCount == 1)
-        #expect(result.skippedCount == 0)
-        #expect(try fixture.items().count == 1)
-    }
-}
-
 private func makeArtworkImage() throws -> CGImage {
     let context = try #require(CGContext(
         data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,

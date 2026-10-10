@@ -195,12 +195,19 @@ nonisolated enum MusicLibraryTrackExporter {
 
     /// The file must decode through the same path the player uses before it is played or imported.
     private static func validateOutput(at url: URL) async throws -> TimeInterval {
-        try await Task.detached(priority: .utility) {
+        let validation = Task.detached(priority: .utility) {
             try Task.checkCancellation()
             let file = try AVAudioFile(forReading: url)
+            // The open cannot be interrupted; a request cancelled meanwhile must not report a result.
+            try Task.checkCancellation()
             let sampleRate = file.fileFormat.sampleRate
             guard file.length > 0, sampleRate > 0 else { throw MusicLibraryTrackError.outputNotDecodable }
             return TimeInterval(file.length) / sampleRate
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await validation.value
+        } onCancel: {
+            validation.cancel()
+        }
     }
 }

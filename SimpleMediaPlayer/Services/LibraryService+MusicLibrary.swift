@@ -60,10 +60,6 @@ extension LibraryService {
     ) async -> MusicLibraryImportResult? {
         guard tracks.isEmpty == false else { return nil }
         let preparation = beginMusicLibraryPreparation(.importing, totalCount: tracks.count)
-        let alreadyImported = await musicLibraryItemIDsWithAvailableFiles(in: context, existingItems: existingItems)
-        guard preparation.termination == nil else {
-            return preparation.termination == .cancelled ? MusicLibraryImportResult(wasCancelled: true) : nil
-        }
         let directory: URL
         do {
             directory = try MusicLibraryTemporaryFiles.makeDirectory(for: .importStaging, in: temporaryDirectoryURL)
@@ -71,8 +67,12 @@ extension LibraryService {
             _ = finishMusicLibraryPreparation(preparation)
             return MusicLibraryImportResult(messages: [error.localizedDescription])
         }
+        // The pre-check runs in the attached task so cancelling the panel also stops its file probes.
         let task = Task {
-            try await self.stageMusicLibraryTracks(
+            let alreadyImported = try await self.musicLibraryItemIDsWithAvailableFiles(
+                in: context, existingItems: existingItems
+            )
+            return try await self.stageMusicLibraryTracks(
                 tracks, skipping: alreadyImported, in: directory, context: context, preparation: preparation
             )
         }
@@ -81,7 +81,7 @@ extension LibraryService {
         let isCurrent = finishMusicLibraryPreparation(preparation)
         guard isCurrent, case let .success(staging) = result else {
             MusicLibraryTemporaryFiles.removeDirectoryInBackground(directory)
-            // Staging only throws for cancellation; per-song failures become messages.
+            // The pre-check and staging only throw for cancellation; per-song failures become messages.
             return preparation.termination == .replaced ? nil : MusicLibraryImportResult(wasCancelled: true)
         }
         defer { MusicLibraryTemporaryFiles.removeDirectoryInBackground(directory) }
@@ -158,7 +158,7 @@ private extension LibraryService {
     /// produces different bytes and the fingerprint check cannot recognize them.
     func musicLibraryItemIDsWithAvailableFiles(
         in context: ModelContext, existingItems: [MediaItem]
-    ) async -> Set<String> {
+    ) async throws -> Set<String> {
         var itemsByMusicID: [String: [MediaItem]] = [:]
         let fetched = (try? context.fetch(FetchDescriptor<MediaItem>())) ?? []
         for item in existingItems + fetched {
@@ -168,8 +168,9 @@ private extension LibraryService {
             }
         }
         var available: Set<String> = []
-        for (musicID, items) in itemsByMusicID where await hasAvailableFile(for: items, in: context) {
-            available.insert(musicID)
+        for (musicID, items) in itemsByMusicID {
+            try Task.checkCancellation()
+            if await hasAvailableFile(for: items, in: context) { available.insert(musicID) }
         }
         return available
     }
