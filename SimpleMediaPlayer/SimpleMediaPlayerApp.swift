@@ -24,6 +24,7 @@ struct SimpleMediaPlayerApp: App {
         let libraryService = LibraryService()
         #endif
         libraryService.resumePendingFileRemovals()
+        MusicLibraryTemporaryFiles.removeLeftoversInBackground()
         _libraryService = State(initialValue: libraryService)
         _player = State(initialValue: PlayerViewModel(libraryService: libraryService))
     }

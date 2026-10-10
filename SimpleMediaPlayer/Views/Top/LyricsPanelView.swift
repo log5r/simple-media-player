@@ -150,7 +150,7 @@ struct LyricsPanelView: View {
                     Label(lyricsButtonTitle, systemImage: "square.and.pencil")
                         .frame(minHeight: usesTouchControls ? 44 : nil)
                 }
-                .disabled(item == nil || item?.isVideo == true)
+                .disabled(item?.isInLibrary != true || item?.isVideo == true)
             }
             .padding(12)
             .background(.bar)
@@ -253,7 +253,7 @@ struct LyricsPanelView: View {
                     Label("Edit Information…", systemImage: "pencil")
                         .frame(minHeight: usesTouchControls ? 44 : nil)
                 }
-                .disabled(item == nil || informationDraftItemID != item?.id)
+                .disabled(item?.isInLibrary != true || informationDraftItemID != item?.id)
             }
             .padding(12)
             .background(.bar)

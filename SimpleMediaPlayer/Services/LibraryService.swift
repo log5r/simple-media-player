@@ -23,6 +23,7 @@ struct BulkMetadataEditResult: Sendable {
 @Observable
 final class LibraryService {
     @ObservationIgnored nonisolated private let mediaDirectoryOverride: URL?
+    @ObservationIgnored nonisolated let temporaryDirectoryURL: URL
     @ObservationIgnored private let artworkProcessor: ArtworkProcessor
     @ObservationIgnored let artworkLoader: LibraryArtworkLoader
     @ObservationIgnored private let lyricsReader: EmbeddedLyricsReader
@@ -30,10 +31,13 @@ final class LibraryService {
     @ObservationIgnored private let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
+    @ObservationIgnored private let saveContext: @MainActor (ModelContext) throws -> Void
     /// Shared by every export plan, so resolutions left running by a cancelled plan still count.
     @ObservationIgnored nonisolated let exportPlanLimiter = FileSystemWorkLimiter(limit: exportPlanConcurrency)
+    /// Shared by Music import pre-checks, so probes abandoned by cancelled preparations still count.
+    @ObservationIgnored nonisolated let musicLibraryProbeLimiter = FileSystemWorkLimiter(limit: 2)
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
-    @ObservationIgnored private var importTask: (id: UUID, task: Task<Void, Never>)?
+    @ObservationIgnored private var importTask: (id: UUID, task: Task<MediaImportSummary, Never>)?
     /// Deleted items can stay in import snapshots while their files are removed in the background.
     @ObservationIgnored var deletedItemIDs: Set<UUID> = []
 
@@ -50,6 +54,7 @@ final class LibraryService {
     var currentExportFileName: String?
     var lastExportErrors: [String] = []
     var exportPlanPreparation: ExportPlanPreparation?
+    var musicLibraryPreparation: MusicLibraryPreparation?
     private var didReportMusicLibraryAccessFailure = false
 
     private static let lyricsKeyNeedles = ["lyrics", "ult", "uslt", "sylt", "©lyr", "lyr"]
@@ -61,17 +66,21 @@ final class LibraryService {
 
     init(
         mediaDirectoryURL: URL? = nil,
+        temporaryDirectoryURL: URL = FileManager.default.temporaryDirectory,
         artworkProcessor: ArtworkProcessor = ArtworkProcessor(),
         lyricsReader: EmbeddedLyricsReader = EmbeddedLyricsReader(),
         artworkLoader: LibraryArtworkLoader = .shared,
         editabilityChecker: EmbeddedMetadataEditabilityChecker = EmbeddedMetadataEditabilityChecker(),
         musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider(),
         resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve,
-        removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal()
+        removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal(),
+        saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() }
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
+        self.temporaryDirectoryURL = temporaryDirectoryURL
         self.resolveBookmark = resolveBookmark
         self.removalJournal = removalJournal
+        self.saveContext = saveContext
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
         self.artworkLoader = artworkLoader
@@ -79,33 +88,38 @@ final class LibraryService {
         self.musicMetadataProvider = musicMetadataProvider
     }
 
-    func importFiles(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
-        guard urls.isEmpty == false else { return }
+    /// `overrides` carry values that take precedence over the file's embedded metadata, keyed by source URL.
+    @discardableResult
+    func importFiles(
+        from urls: [URL], overrides: [URL: MediaImportOverride] = [:],
+        into context: ModelContext, existingItems: [MediaItem]
+    ) async -> MediaImportSummary {
+        guard urls.isEmpty == false else { return MediaImportSummary() }
 
         let previousTask = importTask?.task
         let requestID = UUID()
         let task = Task { @MainActor in
-            await previousTask?.value
-            await self.performImport(from: urls, into: context, existingItems: existingItems)
+            _ = await previousTask?.value
+            return await self.performImport(
+                from: urls, overrides: overrides, into: context, existingItems: existingItems
+            )
         }
         importTask = (requestID, task)
-        await task.value
+        let summary = await task.value
         if importTask?.id == requestID { importTask = nil }
+        return summary
     }
 
-    private func performImport(from urls: [URL], into context: ModelContext, existingItems: [MediaItem]) async {
-        isImporting = true
-        importProgress = 0
-        importCompletedFileCount = 0
-        importTotalFileCount = urls.count
-        currentImportFileName = nil
-        lastImportErrors = []
-        didReportMusicLibraryAccessFailure = false
+    private func performImport(
+        from urls: [URL], overrides: [URL: MediaImportOverride],
+        into context: ModelContext, existingItems: [MediaItem]
+    ) async -> MediaImportSummary {
+        beginImportProgress(totalCount: urls.count)
+        // Imports are serialized, so `lastImportErrors` belongs to this request until it returns.
+        var summary = MediaImportSummary()
         defer {
-            isImporting = false
-            importProgress = 1
-            importCompletedFileCount = importTotalFileCount
-            currentImportFileName = nil
+            summary.errors = lastImportErrors
+            finishImportProgress()
         }
 
         var itemsByID: [UUID: MediaItem] = [:]
@@ -114,17 +128,17 @@ final class LibraryService {
             for item in try context.fetch(FetchDescriptor<MediaItem>()) { itemsByID[item.id] = item }
         } catch {
             lastImportErrors.append(error.localizedDescription)
-            return
+            return MediaImportSummary(errors: lastImportErrors)
         }
         var itemsByFingerprint: [String: [MediaItem]] = [:]
+        var itemsByMusicID: [String: [MediaItem]] = [:]
         for item in itemsByID.values {
-            if let fingerprint = item.importFingerprint {
-                itemsByFingerprint[fingerprint, default: []].append(item)
-            }
+            Self.index(item, in: &itemsByFingerprint, &itemsByMusicID)
         }
         let legacyItems = itemsByID.values.filter { $0.importFingerprint == nil }
         var legacyItemsBySize: [UInt64: [(item: MediaItem, url: URL)]]?
         let musicSession = musicMetadataProvider.makeSession()
+        var createdItems: [MediaItem] = []
 
         for (index, url) in urls.enumerated() {
             currentImportFileName = url.lastPathComponent
@@ -154,12 +168,21 @@ final class LibraryService {
                         }
                     }
                 }
-                if isDuplicate == false {
+                // Exports of the same Music song never share bytes, so the song ID is checked here too.
+                let isMusicDuplicate = await isMusicLibraryDuplicate(
+                    overrides[url], in: itemsByMusicID, context: context
+                )
+                if isDuplicate || isMusicDuplicate {
+                    summary.duplicateCount += 1
+                } else {
                     let item = try await makeMediaItem(
                         from: url, importFingerprint: fingerprint, musicSession: musicSession
                     )
+                    await apply(overrides[url], to: item)
                     context.insert(item)
-                    itemsByFingerprint[fingerprint, default: []].append(item)
+                    Self.index(item, in: &itemsByFingerprint, &itemsByMusicID)
+                    summary.createdCount += 1
+                    createdItems.append(item)
                 }
             } catch {
                 lastImportErrors.append("\(url.lastPathComponent): \(error.localizedDescription)")
@@ -169,35 +192,17 @@ final class LibraryService {
         }
 
         do {
-            try context.save()
+            try saveContext(context)
         } catch {
             lastImportErrors.append(L10n.format("Could not save: %@", error.localizedDescription))
+            discardUnsavedImports(createdItems, from: context, summary: &summary)
         }
+        summary.errors = lastImportErrors
+        return summary
     }
 
     func resolvedURL(for item: MediaItem) -> URL? {
         resolvedURL(for: fileReference(for: item))
-    }
-
-    func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
-        let snapshot = MediaInfoItemSnapshot(item: item)
-        let reference = fileReference(for: item)
-        // Callers discard results of superseded requests, so a cancelled load returns no details.
-        guard let url = try? await FileSystemWorkQueue.runCancellable(qos: .userInitiated, { [self] in
-            resolvedURL(for: reference)
-        }) else { return .empty }
-        return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
-    }
-
-    func editableMetadataItemIDs(for items: [MediaItem]) async throws -> Set<UUID> {
-        try Task.checkCancellation()
-        let inputs = items.map(fileReference(for:))
-        return try await editabilityChecker.editableIDs(for: inputs) { self.mediaDirectoryURL() }
-    }
-
-    func canEditEmbeddedMetadata(for item: MediaItem) async throws -> Bool {
-        let itemID = item.id
-        return try await editableMetadataItemIDs(for: [item]).contains(itemID)
     }
 
     func saveLyrics(_ lyrics: String, for item: MediaItem, embedInFile: Bool, in context: ModelContext) async throws {
@@ -265,7 +270,10 @@ final class LibraryService {
             try Task.checkCancellation()
         }
         try Task.checkCancellation()
-        guard let url = resolvedURL(for: item) else { return draftPreservingStoredEdits(draft, for: item) }
+        let storedArtwork = draft.artworkData
+        guard let url = resolvedURL(for: item) else {
+            return draftPreservingStoredEdits(draft, for: item, storedArtwork: storedArtwork)
+        }
 
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
@@ -274,7 +282,9 @@ final class LibraryService {
 
         if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
             try Task.checkCancellation()
-            return draftPreservingStoredEdits(draftByApplyingExtendedInfo(info, to: draft), for: item)
+            return draftPreservingStoredEdits(
+                draftByApplyingExtendedInfo(info, to: draft), for: item, storedArtwork: storedArtwork
+            )
         }
         try Task.checkCancellation()
 
@@ -305,7 +315,7 @@ final class LibraryService {
         }
 
         try Task.checkCancellation()
-        return draftPreservingStoredEdits(draft, for: item)
+        return draftPreservingStoredEdits(draft, for: item, storedArtwork: storedArtwork)
     }
 
     func loadArtwork(from url: URL) async throws -> Data {
@@ -383,10 +393,36 @@ final class LibraryService {
         }
         if draft.editsArtwork {
             item.artworkData = draft.artworkData
+            // Unwritable formats keep the edit only on the item, so it must outrank the file's artwork.
+            if canWriteMetadata == false { item.hasEditedArtwork = true }
         }
         if draft.editsLyrics {
             item.setEditedLyrics(draft.lyrics)
         }
+    }
+
+}
+
+extension LibraryService {
+    func loadMediaInfo(for item: MediaItem) async -> MediaInfoDetails {
+        let snapshot = MediaInfoItemSnapshot(item: item)
+        let reference = fileReference(for: item)
+        // Callers discard results of superseded requests, so a cancelled load returns no details.
+        guard let url = try? await FileSystemWorkQueue.runCancellable(qos: .userInitiated, { [self] in
+            resolvedURL(for: reference)
+        }) else { return .empty }
+        return await MediaInfoInspector.loadDetails(for: snapshot, url: url)
+    }
+
+    func editableMetadataItemIDs(for items: [MediaItem]) async throws -> Set<UUID> {
+        try Task.checkCancellation()
+        let inputs = items.map(fileReference(for:))
+        return try await editabilityChecker.editableIDs(for: inputs) { self.mediaDirectoryURL() }
+    }
+
+    func canEditEmbeddedMetadata(for item: MediaItem) async throws -> Bool {
+        let itemID = item.id
+        return try await editableMetadataItemIDs(for: [item]).contains(itemID)
     }
 
     func updateEmbeddedMetadata(
@@ -451,6 +487,94 @@ private extension LibraryService {
             if let artworkData { draft.artworkData = artworkData }
         }
         return draft
+    }
+
+    /// Applied before the item is inserted. Override values replace the embedded ones; a nil text
+    /// field keeps the embedded value unless the override replaces the whole set, and nil lyrics or
+    /// artwork keep the embedded ones. When the override could not be written into the file, the item
+    /// records the text, lyrics, and artwork as edited so later edits start from these values, not the file's tags.
+    private func apply(_ override: MediaImportOverride?, to item: MediaItem) async {
+        guard let override else { return }
+        var values = override.values
+        if override.replacesTextFields {
+            values.title = values.title ?? item.title
+            values.artist = values.artist ?? "Unknown Artist"
+            values.album = values.album ?? "Unknown Album"
+            values.isCompilation = values.isCompilation ?? false
+        }
+        applyPrimaryValues(values, replacesAll: override.replacesTextFields, to: item)
+        applySecondaryValues(values, replacesAll: override.replacesTextFields, to: item)
+        if let lyrics = override.lyrics { item.lyricsRaw = lyrics }
+        var storedArtwork = false
+        if let artwork = override.artworkData, let thumbnail = await artworkProcessor.thumbnail(from: artwork) {
+            item.artworkData = thumbnail
+            storedArtwork = true
+        }
+        item.musicLibraryItemID = override.musicLibraryItemID ?? item.musicLibraryItemID
+        if override.isEmbeddedInFile == false {
+            item.setEditedTextMetadata(MediaMetadataEditDraft(item: item))
+            if override.lyrics != nil { item.setEditedLyrics(item.lyricsRaw) }
+            item.hasEditedArtwork = storedArtwork
+        }
+    }
+
+    private static func index(
+        _ item: MediaItem, in itemsByFingerprint: inout [String: [MediaItem]],
+        _ itemsByMusicID: inout [String: [MediaItem]]
+    ) {
+        if let fingerprint = item.importFingerprint {
+            itemsByFingerprint[fingerprint, default: []].append(item)
+        }
+        if let musicID = item.musicLibraryItemID {
+            itemsByMusicID[musicID, default: []].append(item)
+        }
+    }
+
+    /// Runs inside the serialized import, so a second request for the same song that was queued
+    /// before the first one registered its item still sees that item.
+    private func isMusicLibraryDuplicate(
+        _ override: MediaImportOverride?, in itemsByMusicID: [String: [MediaItem]], context: ModelContext
+    ) async -> Bool {
+        guard let musicID = override?.musicLibraryItemID, let items = itemsByMusicID[musicID] else { return false }
+        return await hasAvailableFile(for: items, in: context)
+    }
+
+    private func applyPrimaryValues(
+        _ values: MediaMetadataEmbeddedValues, replacesAll: Bool, to item: MediaItem
+    ) {
+        if let title = values.title { item.title = title }
+        if let artist = values.artist { item.artist = artist }
+        if let album = values.album { item.album = album }
+        if replacesAll || values.genre != nil { item.genre = values.genre }
+        if replacesAll || values.year != nil { item.year = values.year }
+        if replacesAll || values.trackNumber != nil { item.trackNumber = values.trackNumber }
+    }
+
+    private func applySecondaryValues(
+        _ values: MediaMetadataEmbeddedValues, replacesAll: Bool, to item: MediaItem
+    ) {
+        if replacesAll || values.comment != nil { item.comment = values.comment }
+        if replacesAll || values.albumArtist != nil { item.albumArtist = values.albumArtist }
+        if replacesAll || values.composer != nil { item.composer = values.composer }
+        if replacesAll || values.discNumber != nil { item.discNumber = values.discNumber }
+        if let isCompilation = values.isCompilation { item.isCompilation = isCompilation }
+    }
+
+    private func beginImportProgress(totalCount: Int) {
+        isImporting = true
+        importProgress = 0
+        importCompletedFileCount = 0
+        importTotalFileCount = totalCount
+        currentImportFileName = nil
+        lastImportErrors = []
+        didReportMusicLibraryAccessFailure = false
+    }
+
+    private func finishImportProgress() {
+        isImporting = false
+        importProgress = 1
+        importCompletedFileCount = importTotalFileCount
+        currentImportFileName = nil
     }
 }
 
@@ -784,127 +908,3 @@ private struct ImportValues {
 }
 
 extension LibraryService: MediaURLResolving {}
-
-private extension Array where Element == AVMetadataItem {
-    func stringValue(for identifier: AVMetadataIdentifier) async -> String? {
-        for item in AVMetadataItem.metadataItems(from: self, filteredByIdentifier: identifier) {
-            if let string = try? await item.load(.stringValue), string.isEmpty == false {
-                return string
-            }
-        }
-        return nil
-    }
-
-    func dataValue(for identifier: AVMetadataIdentifier) async -> Data? {
-        for item in AVMetadataItem.metadataItems(from: self, filteredByIdentifier: identifier) {
-            if let data = try? await item.load(.dataValue) {
-                return data
-            }
-        }
-        return nil
-    }
-
-    func firstString(whereKeyContains needles: [String]) async -> String? {
-        for item in self where item.matchesKeyNeedles(needles) {
-            if let string = try? await item.load(.stringValue), string.isEmpty == false {
-                return string
-            }
-        }
-        return nil
-    }
-
-    func firstDisplayString(whereKeyContains needles: [String]) async -> String? {
-        for item in self where item.matchesKeyNeedles(needles) {
-            if let string = try? await item.load(.stringValue), string.isEmpty == false {
-                return string
-            }
-            if let number = try? await item.load(.numberValue) {
-                return number.stringValue
-            }
-            if let value = try? await item.load(.value),
-               let string = Self.displayString(value),
-               string.isEmpty == false {
-                return string
-            }
-        }
-        return nil
-    }
-
-    func firstBool(whereKeyContains needles: [String]) async -> Bool? {
-        for item in self where item.matchesKeyNeedles(needles) {
-            if let number = try? await item.load(.numberValue) {
-                return number.boolValue
-            }
-            if let string = try? await item.load(.stringValue) {
-                let normalized = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if ["1", "true", "yes"].contains(normalized) { return true }
-                if ["0", "false", "no"].contains(normalized) { return false }
-            }
-            if let data = try? await item.load(.dataValue), let byte = data.last {
-                return byte != 0
-            }
-        }
-        return nil
-    }
-
-    static func displayString(_ value: Any) -> String? {
-        switch value {
-        case let string as String:
-            return string
-        case let string as NSString:
-            return string as String
-        case let number as NSNumber:
-            return number.stringValue
-        case let data as Data:
-            return mp4NumberPairString(data)
-        default:
-            return nil
-        }
-    }
-
-    static func mp4NumberPairString(_ data: Data) -> String? {
-        let payload = data.count >= 8 ? Data(data.suffix(8)) : data
-        guard payload.count >= 6 else { return nil }
-        let start = payload.startIndex
-        let current = UInt16(payload[start + 2]) << 8 | UInt16(payload[start + 3])
-        let total = UInt16(payload[start + 4]) << 8 | UInt16(payload[start + 5])
-        guard current > 0 else { return nil }
-        return total > 0 ? "\(current)/\(total)" : "\(current)"
-    }
-
-    func embeddedValues(compilationKeyNeedles: [String]) async -> MediaMetadataEmbeddedValues {
-        MediaMetadataEmbeddedValues(
-            title: await stringValue(for: .commonIdentifierTitle),
-            artist: await stringValue(for: .commonIdentifierArtist),
-            album: await stringValue(for: .commonIdentifierAlbumName),
-            genre: await firstString(whereKeyContains: ["genre", "gnre", "tco"]),
-            year: await firstDisplayString(whereKeyContains: ["year", "date", "tdrc", "tyer", "tye", "©day"]),
-            trackNumber: await firstDisplayString(
-                whereKeyContains: ["track number", "tracknumber", "trck", "trk", "trkn"]
-            ),
-            comment: await firstDisplayString(whereKeyContains: ["comment", "comm", "©cmt"]),
-            albumArtist: await firstDisplayString(
-                whereKeyContains: ["album artist", "albumartist", "tpe2", "tp2", "aART"]
-            ),
-            composer: await firstDisplayString(whereKeyContains: ["composer", "tcom", "tcm", "©wrt"]),
-            discNumber: await firstDisplayString(
-                whereKeyContains: ["disc number", "discnumber", "disk", "tpos", "tpa"]
-            ),
-            isCompilation: await firstBool(whereKeyContains: compilationKeyNeedles)
-        )
-    }
-}
-
-private extension AVMetadataItem {
-    func matchesKeyNeedles(_ needles: [String]) -> Bool {
-        let haystacks = [
-            identifier?.rawValue,
-            commonKey?.rawValue,
-            key as? String
-        ].compactMap { $0?.lowercased() }
-
-        return haystacks.contains { value in
-            needles.contains { value.contains($0.lowercased()) }
-        }
-    }
-}

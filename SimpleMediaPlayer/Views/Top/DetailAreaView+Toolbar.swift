@@ -24,6 +24,23 @@ extension DetailAreaView {
                 .disabled(isBulkEditMode || libraryService.isImporting || aacVersionExporter.isExporting)
                 .help("Import media files")
 
+                #if os(iOS)
+                Menu {
+                    Button("Play from Music…", systemImage: "music.note") { musicLibraryActions.play() }
+                        .accessibilityIdentifier("playFromMusicButton")
+                    Button("Import from Music…", systemImage: "square.and.arrow.down.on.square") {
+                        musicLibraryActions.importSongs()
+                    }
+                    .disabled(libraryService.isImporting || aacVersionExporter.isExporting)
+                    .accessibilityIdentifier("importFromMusicButton")
+                } label: {
+                    Label("Music", systemImage: "music.note.list")
+                }
+                .accessibilityIdentifier("musicLibraryMenu")
+                .disabled(isBulkEditMode || libraryService.musicLibraryPreparation != nil)
+                .help("Play or import songs from your Music library")
+                #endif
+
                 Button {
                     exportToFinder()
                 } label: {

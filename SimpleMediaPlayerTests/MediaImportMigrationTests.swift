@@ -29,6 +29,7 @@ struct MediaImportMigrationTests {
                 expectLegacyMetadata(item, id: itemID)
                 #expect(item.hasEditedLyrics == false)
                 #expect(item.hasEditedTextMetadata == false)
+                #expect(item.hasEditedArtwork == false)
                 #expect(item.editedTitle == nil)
                 #expect(item.editedArtist == nil)
                 #expect(item.editedAlbum == nil)

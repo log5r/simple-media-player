@@ -247,12 +247,176 @@
       },
       "shouldTranslate" : false
     },
+    "Choose a song to play" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生する曲を選択"
+          }
+        }
+      }
+    },
+    "Choose songs to import" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り込む曲を選択"
+          }
+        }
+      }
+    },
+    "Could not play “%@”: %@" : {
+      "comment" : "Shown when a Music library song could not be prepared for playback. The arguments are the song title and the reason.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”を再生できませんでした: %@"
+          }
+        }
+      }
+    },
     "Could not prepare library" : {
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "ライブラリを準備できませんでした"
+          }
+        }
+      }
+    },
+    "Export failed: %@" : {
+      "comment" : "Shown when exporting a Music library song failed. The argument is the system error.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き出しに失敗しました: %@"
+          }
+        }
+      }
+    },
+    "Import from Music…" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicから取り込み…"
+          }
+        }
+      }
+    },
+    "Imported %d songs from Music." : {
+      "comment" : "Summary of an import from the Music library. The argument is the number of songs added.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicから%d曲を取り込みました。"
+          }
+        }
+      }
+    },
+    "Importing from Music was cancelled." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicからの取り込みをキャンセルしました。"
+          }
+        }
+      }
+    },
+    "Music" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Music"
+          }
+        }
+      }
+    },
+    "Music access is not allowed. Allow access in Settings to use songs from your Music library." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicへのアクセスが許可されていません。Musicライブラリの曲を使うには、設定でアクセスを許可してください。"
+          }
+        }
+      }
+    },
+    "Music access is restricted on this device." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このデバイスではMusicへのアクセスが制限されています。"
+          }
+        }
+      }
+    },
+    "Music Library" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicライブラリ"
+          }
+        }
+      }
+    },
+    "Music Track %@" : {
+      "comment" : "Fallback title for a Music library song without a title. The argument is the song's persistent ID.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicの曲 %@"
+          }
+        }
+      }
+    },
+    "No songs were imported." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り込んだ曲はありません。"
+          }
+        }
+      }
+    },
+    "Open Settings" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定を開く"
+          }
+        }
+      }
+    },
+    "Play from Music…" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicから再生…"
+          }
+        }
+      }
+    },
+    "Play or import songs from your Music library" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicライブラリの曲を再生または取り込みます"
           }
         }
       }
@@ -267,12 +431,135 @@
         }
       }
     },
+    "Preparing Music Song" : {
+      "comment" : "Panel title while one Music library song is exported for playback.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicの曲を準備中"
+          }
+        }
+      }
+    },
+    "Preparing Music song" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicの曲を準備中"
+          }
+        }
+      }
+    },
+    "Preparing Music Songs" : {
+      "comment" : "Panel title while Music library songs are exported for import.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicの曲を準備中"
+          }
+        }
+      }
+    },
+    "Preparing Music songs" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Musicの曲を準備中"
+          }
+        }
+      }
+    },
     "Retry" : {
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "再試行"
+          }
+        }
+      }
+    },
+    "The exported file could not be decoded." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き出したファイルをデコードできませんでした。"
+          }
+        }
+      }
+    },
+    "The Music library picker is not available in the Simulator." : {
+      "comment" : "Shown in the Simulator, where the system media picker cannot be hosted.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シミュレータではMusicライブラリのピッカーを使用できません。"
+          }
+        }
+      }
+    },
+    "This song cannot be exported." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この曲は書き出せません。"
+          }
+        }
+      }
+    },
+    "This song cannot be read." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この曲は読み取れません。"
+          }
+        }
+      }
+    },
+    "This song has no audio track." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この曲には音声トラックがありません。"
+          }
+        }
+      }
+    },
+    "This song has no file on this device." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この曲にはこのデバイス上のファイルがありません。"
+          }
+        }
+      }
+    },
+    "This song is not downloaded to this device." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この曲はこのデバイスにダウンロードされていません。"
+          }
+        }
+      }
+    },
+    "This song is protected and cannot be used." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この曲は保護されているため使用できません。"
           }
         }
       }
@@ -4742,6 +5029,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "イコライザープリセットを削除"
+          }
+        }
+      }
+    },
+    "“%@” is already in your library." : {
+      "comment" : "Shown when a Music library song was skipped because it had been imported before.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”はすでにライブラリにあります。"
+          }
+        }
+      }
+    },
+    "“%@” was converted to AAC." : {
+      "comment" : "Shown when a Music library song could not be copied in its original encoding.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”はAACに変換しました。"
           }
         }
       }

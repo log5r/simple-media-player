@@ -116,7 +116,7 @@ struct CompactLibraryCommandContext {
 
     private var adjustmentTarget: MediaItem? {
         let target = player.currentItem ?? selectedItem()
-        return target?.isDeleted == false ? target : nil
+        return target?.isInLibrary == true ? target : nil
     }
 
     private var selectedBulkItems: [MediaItem] {

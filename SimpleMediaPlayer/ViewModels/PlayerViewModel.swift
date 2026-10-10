@@ -63,6 +63,11 @@ final class PlayerViewModel {
         }
     }
     private(set) var playbackGeneration: UInt64 = 0
+    /// Advances on every transport action, including pause and resume, which keep `playbackGeneration`.
+    /// A deferred playback request compares it so a pause/resume pair in between is not mistaken for
+    /// an unchanged state.
+    private(set) var transportGeneration: UInt64 = 0
+    @ObservationIgnored private(set) var deferredPlaybackRequestID: UUID?
     @ObservationIgnored private let playbackClock = PlaybackClock()
     var currentTime: TimeInterval {
         get { playbackClock.time }
@@ -140,6 +145,8 @@ final class PlayerViewModel {
     @ObservationIgnored private let equalizerDefaults: UserDefaults
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let clockEnabled: Bool
+    /// Alive while a transient item is current or queued; see `TransientPlaybackSession`.
+    @ObservationIgnored private(set) var transientSession: TransientPlaybackSession?
     private var lastAudibleVolume = 0.75
     @ObservationIgnored private var spectrumFrameRateCounter = SpectrumFrameRateCounter()
 
@@ -300,9 +307,60 @@ extension PlayerViewModel {
     }
 }
 
+struct DeferredPlaybackRequest: Equatable {
+    let id: UUID
+    let transportGeneration: UInt64
+}
+
 extension PlayerViewModel {
+    /// Starts a playback request whose result arrives later. Beginning another one, selecting another
+    /// track, or clearing the player supersedes it, so only the latest selection, across all scenes,
+    /// can still apply its result.
+    func beginDeferredPlaybackRequest() -> DeferredPlaybackRequest {
+        let request = DeferredPlaybackRequest(id: UUID(), transportGeneration: transportGeneration)
+        deferredPlaybackRequestID = request.id
+        return request
+    }
+
+    /// True only for the latest deferred request, and only if no transport action happened since it began.
+    func canApply(_ request: DeferredPlaybackRequest) -> Bool {
+        deferredPlaybackRequestID == request.id && transportGeneration == request.transportGeneration
+    }
+
+    /// True while no newer deferred request began, no track was selected, and the player was not cleared.
+    /// Unlike `canApply`, pause, resume, and stop do not affect it, so a failure for the song the user
+    /// last chose can still be reported.
+    func isLatestDeferredRequest(_ request: DeferredPlaybackRequest) -> Bool {
+        deferredPlaybackRequestID == request.id
+    }
+
+    /// Plays media that is not in the library. The previous transient session ends after the switch,
+    /// so its files are removed only once nothing refers to them.
+    /// Consumes the pending deferred request through `play(item:in:)`, so its result cannot apply twice.
+    func play(transientSession session: TransientPlaybackSession) {
+        guard let first = session.items.first else { return }
+        let previous = transientSession
+        // Taken before `play(item:in:)` starts the new item's analysis, which must not be the task waited on.
+        let pending = musicAnalysis.reset()
+        transientSession = session
+        play(item: first, in: session.items)
+        if let previous, previous !== session { endTransientSession(previous, after: pending) }
+    }
+
+    func isTransientItem(_ item: MediaItem) -> Bool {
+        transientSession?.contains(item.id) == true
+    }
+
+    var isPlayingTransientItem: Bool {
+        currentItem.map(isTransientItem) == true
+    }
+
     func play(item: MediaItem, in queue: [MediaItem]) {
         playbackGeneration &+= 1
+        transportGeneration &+= 1
+        // Selecting a track supersedes a pending deferred request, including its failure report.
+        deferredPlaybackRequestID = nil
+        releaseTransientSession(unlessContaining: item)
         guard let url = libraryService.resolvedURL(for: item) else {
             clearCurrentItem()
             errorMessage = L10n.format("Could not open file: %@", item.title)
@@ -355,6 +413,7 @@ extension PlayerViewModel {
 
     func resume() {
         guard currentItem != nil, isPlaying == false else { return }
+        transportGeneration &+= 1
         resetSpectrumFrameRate()
         if isVideoMode {
             videoService.play()
@@ -366,6 +425,7 @@ extension PlayerViewModel {
 
     func pause() {
         guard currentItem != nil, isPlaying else { return }
+        transportGeneration &+= 1
         if isVideoMode {
             videoService.pause()
         } else {
@@ -378,6 +438,7 @@ extension PlayerViewModel {
 
     func stop() {
         playbackGeneration &+= 1
+        transportGeneration &+= 1
         isPaused = false
         if isVideoMode {
             closeVideoSession()
@@ -391,6 +452,9 @@ extension PlayerViewModel {
     }
 
     func clearCurrentItem() {
+        deferredPlaybackRequestID = nil
+        // Released before the analysis reset below so the session can wait for the analysis it cancels.
+        releaseTransientSession(unlessContaining: nil)
         musicAnalysis.reset()
         if isVideoMode == false { audioEngine.suspend() }
         stop()
@@ -400,6 +464,22 @@ extension PlayerViewModel {
         formatInfo = .empty
         isVideoMode = false
         showVideoArea = false
+    }
+
+    private func releaseTransientSession(unlessContaining item: MediaItem?) {
+        guard let session = transientSession else { return }
+        if let item, session.contains(item.id) { return }
+        transientSession = nil
+        endTransientSession(session, after: musicAnalysis.reset())
+    }
+
+    /// The analysis task owns the cache write for the session's files, so the files and cache entries are
+    /// removed only after that task has finished; otherwise a late write could recreate an entry.
+    private func endTransientSession(_ session: TransientPlaybackSession, after pending: Task<Void, Never>?) {
+        Task { @MainActor in
+            await pending?.value
+            session.end()
+        }
     }
 
     func setVolume(_ value: Double) {

@@ -8,14 +8,22 @@ nonisolated enum MusicAnalysisCache {
     }
 
     static func entryURL(for url: URL, in directory: URL? = defaultDirectory) -> URL? {
+        entryURL(forOriginalURL: url, attributesOf: url, in: directory)
+    }
+
+    /// The key `entryURL(for: original)` gave while the file was at `original`, for a file since moved
+    /// to `fileURL` with its size and modification date unchanged.
+    static func entryURL(
+        forOriginalURL original: URL, attributesOf fileURL: URL, in directory: URL? = defaultDirectory
+    ) -> URL? {
         guard let directory else { return nil }
-        var url = url
+        var fileURL = fileURL
         // The same URL instance can outlive a rewrite; read the current size and date.
-        url.removeAllCachedResourceValues()
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+        fileURL.removeAllCachedResourceValues()
+        guard let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let size = values.fileSize, let modified = values.contentModificationDate
         else { return nil }
-        let identity = "v5|\(url.standardizedFileURL.absoluteString)|\(size)|\(modified.timeIntervalSince1970)"
+        let identity = "v5|\(original.standardizedFileURL.absoluteString)|\(size)|\(modified.timeIntervalSince1970)"
         let digest = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
         return directory.appendingPathComponent(digest).appendingPathExtension("json")
     }

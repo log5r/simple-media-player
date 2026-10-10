@@ -31,6 +31,7 @@ struct DetailAreaView: View {
     let requestSaveCopy: (MediaItem) -> Void
     let deleteItem: (MediaItem) -> Void
     let playItem: (MediaItem) -> Void
+    var musicLibraryActions = MusicLibraryActions()
 
     var isSettingsPresented: Bool {
         get { browsingState.showsSettings }
@@ -152,6 +153,12 @@ struct DetailAreaView: View {
                 if let preparation = libraryService.exportPlanPreparation {
                     ExportPlanPreparationPanel(
                         preparation: preparation, cancel: libraryService.cancelExportPlanPreparation
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                if let preparation = libraryService.musicLibraryPreparation {
+                    MusicLibraryPreparationPanel(
+                        preparation: preparation, cancel: libraryService.cancelMusicLibraryPreparation
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

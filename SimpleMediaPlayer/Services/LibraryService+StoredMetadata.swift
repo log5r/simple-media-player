@@ -1,7 +1,10 @@
 import Foundation
 
 extension LibraryService {
-    func draftPreservingStoredEdits(_ original: MediaMetadataEditDraft, for item: MediaItem) -> MediaMetadataEditDraft {
+    /// `storedArtwork` is the item's artwork read before the file's tags; it wins when it overrides them.
+    func draftPreservingStoredEdits(
+        _ original: MediaMetadataEditDraft, for item: MediaItem, storedArtwork: Data? = nil
+    ) -> MediaMetadataEditDraft {
         var draft = original
         if item.hasEditedTextMetadata {
             // Text writers replace the complete editable field set, including empty values.
@@ -14,6 +17,9 @@ extension LibraryService {
         }
         if item.hasEditedLyrics {
             draft.lyrics = item.lyricsRaw ?? ""
+        }
+        if item.hasEditedArtwork {
+            draft.artworkData = storedArtwork
         }
         return draft
     }

@@ -216,3 +216,58 @@ struct ExportPlanPreparationPanel: View {
         "\(preparation.completedCount)/\(preparation.totalCount)"
     }
 }
+
+struct MusicLibraryPreparationPanel: View {
+    let preparation: MusicLibraryPreparation
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(preparation.purpose == .playback ? "Preparing Music Song" : "Preparing Music Songs")
+                        .font(.headline)
+                    if preparation.purpose == .importing {
+                        Spacer(minLength: 16)
+                        Text("\(preparation.completedCount)/\(preparation.totalCount)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if preparation.purpose == .importing {
+                    ProgressView(value: preparation.fractionCompleted)
+                        .progressViewStyle(.linear)
+                }
+
+                if let title = preparation.currentTitle {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(preparation.purpose == .playback ? "Preparing Music song" : "Preparing Music songs")
+            .accessibilityValue("\(preparation.completedCount) / \(preparation.totalCount)")
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: cancel)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("cancelMusicPreparationButton")
+            }
+        }
+        .padding(14)
+        .frame(width: 280)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.quaternary)
+        }
+        .shadow(radius: 10, y: 4)
+    }
+}

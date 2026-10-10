@@ -76,7 +76,7 @@ struct IPhoneDeckView: View {
             pendingSaveItem = nil
         }, content: {
             IPhoneAdjustmentView(player: player) {
-                pendingSaveItem = player.currentItem
+                pendingSaveItem = libraryCurrentItem
                 showsAdjustments = false
             }
             .presentationDetents([.medium, .large])
@@ -127,7 +127,7 @@ struct IPhoneDeckView: View {
         if size.height > size.width {
             DuoPortraitPlayerView(
                 player: player, selectedItem: player.currentItem, queue: player.queue,
-                playItem: { player.play(item: $0, in: player.queue) }, requestSaveCopy: { saveItem = $0 },
+                playItem: { player.play(item: $0, in: player.queue) }, requestSaveCopy: requestSaveCopy,
                 showLibrary: showExpandedLibrary, showSettings: { showsSettings = true },
                 showEqualizer: { showsEqualizer = true }, showDetails: { page = .info },
                 showVideoFullScreen: { showsVideoFullScreen = true }
@@ -135,12 +135,23 @@ struct IPhoneDeckView: View {
         } else {
             DuoLandscapePlayerView(
                 player: player, selectedItem: player.currentItem, queue: player.queue,
-                playItem: { player.play(item: $0, in: player.queue) }, requestSaveCopy: { saveItem = $0 },
+                playItem: { player.play(item: $0, in: player.queue) }, requestSaveCopy: requestSaveCopy,
                 showLibrary: showExpandedLibrary, showSettings: { showsSettings = true },
                 showEqualizer: { showsEqualizer = true }, showDetails: { page = .info },
                 showVideoFullScreen: { showsVideoFullScreen = true }
             )
         }
+    }
+
+    /// Songs played from Music without saving have no library item to edit, copy, or convert.
+    private var libraryCurrentItem: MediaItem? {
+        guard let item = player.currentItem, item.isInLibrary else { return nil }
+        return item
+    }
+
+    private func requestSaveCopy(_ item: MediaItem) {
+        guard item.isInLibrary else { return }
+        saveItem = item
     }
 
     @ToolbarContentBuilder private var deckToolbar: some ToolbarContent {
@@ -150,8 +161,8 @@ struct IPhoneDeckView: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             if page == .lyrics {
-                Button("Edit Lyrics…", systemImage: "square.and.pencil") { lyricsItem = player.currentItem }
-                    .disabled(player.currentItem == nil || player.isVideoMode)
+                Button("Edit Lyrics…", systemImage: "square.and.pencil") { lyricsItem = libraryCurrentItem }
+                    .disabled(libraryCurrentItem == nil || player.isVideoMode)
                     .frame(minWidth: 44, minHeight: 44)
             } else {
                 moreMenu
@@ -256,41 +267,6 @@ struct IPhoneDeckView: View {
     }
 }
 
-struct IPhoneTransportButton: View {
-    let title: String
-    let symbol: String
-    let identifier: String
-    var size: CGFloat = 44
-    let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        let palette = BottomPanelPalette(colorScheme: colorScheme)
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: size > 52 ? 28 : 18, weight: .semibold))
-                .foregroundStyle(isEnabled ? palette.enabledIcon : palette.disabledIcon)
-                .frame(width: size, height: size)
-                .background(palette.normalButtonFill, in: Circle())
-                .overlay(Circle().stroke(palette.controlStroke, lineWidth: 1))
-                .shadow(color: palette.buttonShadow, radius: 2, y: 2)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L10n.string(String.LocalizationValue(title))).accessibilityIdentifier(identifier)
-    }
-}
-
-struct IPhoneRoutePicker: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let view = AVRoutePickerView()
-        view.accessibilityLabel = L10n.string("Output Device")
-        view.accessibilityIdentifier = "phoneRoutePicker"
-        view.prioritizesVideoDevices = false
-        return view
-    }
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
-}
-
 private extension IPhoneDeckView {
     var pageSwitcher: some View {
         Group {
@@ -369,18 +345,19 @@ private extension IPhoneDeckView {
     }
 
     var moreMenu: some View {
-        Menu {
+        let isLibraryItem = player.currentItem?.isInLibrary == true
+        return Menu {
             Button { saveItem = player.currentItem } label: {
                 menuLabel("Save adjusted copy", systemImage: "square.and.arrow.down")
-            }.disabled(player.isVideoMode || !player.hasPitchOrRateAdjustment)
+            }.disabled(player.isVideoMode || !player.hasPitchOrRateAdjustment || !isLibraryItem)
             Button {
                 if let item = player.currentItem { createAACVersion(item) }
             } label: {
                 menuLabel("Create AAC Version", systemImage: "waveform.badge.plus")
-            }.disabled(player.isVideoMode || !canCreateAACVersion)
+            }.disabled(player.isVideoMode || !canCreateAACVersion || !isLibraryItem)
             Button { infoItem = player.currentItem } label: {
                 menuLabel("Edit Information…", systemImage: "pencil")
-            }
+            }.disabled(!isLibraryItem)
         } label: {
             Label("More", systemImage: "ellipsis")
                 .labelStyle(.iconOnly)

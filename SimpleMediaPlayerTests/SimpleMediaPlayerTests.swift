@@ -2732,7 +2732,7 @@ func makePlayerFixture(
     urlsByID: [UUID: URL] = [:],
     equalizer: EqualizerSettings = .flat,
     equalizerDefaults: UserDefaults = .standard,
-    startsClock: Bool = false
+    startsClock: Bool = false, musicAnalysis: MusicAnalysisController? = nil
 ) -> (
     player: PlayerViewModel,
     audio: FakeAudioEngine,
@@ -2748,7 +2748,7 @@ func makePlayerFixture(
         videoService: video,
         startsClock: startsClock,
         equalizer: equalizer,
-        equalizerDefaults: equalizerDefaults
+        equalizerDefaults: equalizerDefaults, musicAnalysis: musicAnalysis ?? MusicAnalysisController()
     )
     return (player, audio, video, resolver)
 }

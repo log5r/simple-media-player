@@ -72,6 +72,28 @@ must be signed and installed through Xcode, Finder, Apple Configurator, or an
 equivalent deployment workflow; they are not launched as standalone executable
 files like a macOS app.
 
+## Music Library on iPhone and iPad
+
+On iPhone and iPad, the library menu offers **Play from Music…** and
+**Import from Music…**. Both open the system media picker for songs that are
+downloaded to the device and have no DRM; Apple Music subscription songs and
+protected or cloud-only items are not available.
+
+- **Play from Music…** exports one song to a temporary copy and plays it with
+  the app's own player, so the equalizer, key and speed controls, visualizers,
+  and music analysis work as usual. Nothing is added to the library; the
+  temporary copy is removed when playback moves to other media or is cleared.
+  Editing, copying, and AAC conversion are disabled for such songs.
+- **Import from Music…** exports the selected songs into the app's media
+  directory and registers them as regular library items. AAC, Apple Lossless,
+  MP3, AIFF, and WAV keep their encoding; other encodings are converted to AAC
+  and the result message says so. The song's Music metadata and artwork take
+  precedence over tags embedded in the file. Songs already imported from Music
+  are skipped. The original in the Music library is never changed.
+
+The feature requires Music library access (`NSAppleMusicUsageDescription`); the
+app explains the reason and offers to open Settings when access was denied.
+
 ## Media Storage
 
 Imported media files are copied into the app's own media directory and managed

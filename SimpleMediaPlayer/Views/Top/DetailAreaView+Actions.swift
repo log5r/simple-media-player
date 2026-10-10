@@ -38,7 +38,8 @@ extension DetailAreaView {
     }
 
     var adjustmentTargetItem: MediaItem? {
-        player.currentItem ?? selectedItem
+        let target = player.currentItem ?? selectedItem
+        return target?.isInLibrary == true ? target : nil
     }
 
     var appMenuActions: AppMenuActions {

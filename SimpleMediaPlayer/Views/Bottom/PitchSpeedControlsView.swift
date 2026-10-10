@@ -19,7 +19,7 @@ struct PitchSpeedControlsView: View {
     }
 
     private var canSave: Bool {
-        guard let targetItem, targetItem.isVideo == false else { return false }
+        guard let targetItem, targetItem.isVideo == false, targetItem.isInLibrary else { return false }
         return controlsEnabled && player.hasPitchOrRateAdjustment
     }
 
