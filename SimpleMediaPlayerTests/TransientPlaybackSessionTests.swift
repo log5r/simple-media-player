@@ -228,6 +228,24 @@ extension TransientPlaybackSessionTests {
         session.end()
     }
 
+    @Test func onlyANewerRequestStopsADeferredRequestFromBeingTheLatest() throws {
+        let session = try makeSession(titles: ["One"])
+        let fixture = makePlayerFixture(urlsByID: urls(for: session))
+        fixture.player.play(transientSession: session)
+        let older = fixture.player.beginDeferredPlaybackRequest()
+        let newer = fixture.player.beginDeferredPlaybackRequest()
+
+        #expect(fixture.player.isLatestDeferredRequest(older) == false)
+        #expect(fixture.player.isLatestDeferredRequest(newer))
+
+        fixture.player.pause()
+
+        #expect(fixture.player.isLatestDeferredRequest(newer))
+        #expect(fixture.player.canApply(newer) == false)
+        fixture.player.stop()
+        session.end()
+    }
+
     @Test func applyingADeferredRequestConsumesIt() throws {
         let session = try makeSession(titles: ["One"])
         let fixture = makePlayerFixture(urlsByID: urls(for: session))

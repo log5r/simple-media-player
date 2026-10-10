@@ -78,7 +78,7 @@ extension MainView {
 
     /// The exported copy plays only if it is still the latest Music selection (from any scene) and no
     /// transport action (play, pause, resume, stop, clear) happened meanwhile; a late result must not
-    /// override what the user did in between.
+    /// override what the user did in between. A failure is reported unless a newer selection superseded it.
     func playMusicLibraryTrack(_ track: MusicLibraryTrack) {
         let request = player.beginDeferredPlaybackRequest()
         Task {
@@ -91,6 +91,7 @@ extension MainView {
                 browsingState.playingListName = L10n.string("Music")
                 player.play(transientSession: session)
             case let .failed(message):
+                guard player.isLatestDeferredRequest(request) else { return }
                 musicResultMessage = message
             case .cancelled:
                 break

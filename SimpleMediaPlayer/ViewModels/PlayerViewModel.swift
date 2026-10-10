@@ -326,6 +326,12 @@ extension PlayerViewModel {
         deferredPlaybackRequestID == request.id && transportGeneration == request.transportGeneration
     }
 
+    /// True while no newer deferred request began and none was applied. Unlike `canApply`, transport
+    /// actions do not affect it, so a failure for the song the user last chose can still be reported.
+    func isLatestDeferredRequest(_ request: DeferredPlaybackRequest) -> Bool {
+        deferredPlaybackRequestID == request.id
+    }
+
     /// Plays media that is not in the library. The previous transient session ends after the switch,
     /// so its files are removed only once nothing refers to them.
     /// Consumes the pending deferred request, so its result cannot apply twice.
