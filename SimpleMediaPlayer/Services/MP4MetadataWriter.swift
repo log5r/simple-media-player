@@ -1,19 +1,21 @@
 import Foundation
 
 enum MP4MetadataWriter {
-    nonisolated private static let editableItemTypes: Set<BoxType> = [
-        BoxType([0xA9, 0x6E, 0x61, 0x6D]),
-        BoxType([0xA9, 0x41, 0x52, 0x54]),
-        BoxType([0xA9, 0x61, 0x6C, 0x62]),
-        BoxType([0xA9, 0x67, 0x65, 0x6E]),
-        BoxType("gnre"),
-        BoxType([0xA9, 0x64, 0x61, 0x79]),
-        BoxType("trkn"),
-        BoxType([0xA9, 0x63, 0x6D, 0x74]),
-        BoxType("aART"),
-        BoxType([0xA9, 0x77, 0x72, 0x74]),
-        BoxType("disk"),
-        BoxType("cpil"), BoxType("sonm"), BoxType("soar"), BoxType("soal"), BoxType("soaa"), BoxType("soco")
+    /// The items a text write replaces, by the field they hold; a sort item goes with the field it sorts.
+    nonisolated private static let editableItemFields: [BoxType: MediaMetadataEditField] = [
+        BoxType([0xA9, 0x6E, 0x61, 0x6D]): .title,
+        BoxType([0xA9, 0x41, 0x52, 0x54]): .artist,
+        BoxType([0xA9, 0x61, 0x6C, 0x62]): .album,
+        BoxType([0xA9, 0x67, 0x65, 0x6E]): .genre,
+        BoxType("gnre"): .genre,
+        BoxType([0xA9, 0x64, 0x61, 0x79]): .year,
+        BoxType("trkn"): .trackNumber,
+        BoxType([0xA9, 0x63, 0x6D, 0x74]): .comment,
+        BoxType("aART"): .albumArtist,
+        BoxType([0xA9, 0x77, 0x72, 0x74]): .composer,
+        BoxType("disk"): .discNumber,
+        BoxType("cpil"): .isCompilation, BoxType("sonm"): .title, BoxType("soar"): .artist, BoxType("soal"): .album,
+        BoxType("soaa"): .albumArtist, BoxType("soco"): .composer
     ]
     nonisolated private static let artworkItemType = BoxType("covr")
     nonisolated private static let lyricsItemType = BoxType([0xA9, 0x6C, 0x79, 0x72])
@@ -143,24 +145,27 @@ enum MP4MetadataWriter {
 
     nonisolated private static func metadataItems(for draft: MediaMetadataEditDraft) -> [MP4MetadataItem] {
         var items: [MP4MetadataItem] = []
-        if draft.editsTextMetadata {
-            appendTextItem(type: BoxType([0xA9, 0x6E, 0x61, 0x6D]), value: draft.title, to: &items)
-            appendTextItem(type: BoxType([0xA9, 0x41, 0x52, 0x54]), value: draft.artist, to: &items)
-            appendTextItem(type: BoxType([0xA9, 0x61, 0x6C, 0x62]), value: draft.album, to: &items)
-            appendTextItem(type: BoxType([0xA9, 0x67, 0x65, 0x6E]), value: draft.genre, to: &items)
-            appendTextItem(type: BoxType([0xA9, 0x64, 0x61, 0x79]), value: draft.year, to: &items)
-            appendTextItem(type: BoxType([0xA9, 0x63, 0x6D, 0x74]), value: draft.comment, to: &items)
-            appendTextItem(type: BoxType("aART"), value: draft.albumArtist, to: &items)
-            appendTextItem(type: BoxType([0xA9, 0x77, 0x72, 0x74]), value: draft.composer, to: &items)
-            if let trackPayload = numberPairPayload(draft.trackNumber) {
-                items.append(MP4MetadataItem(type: BoxType("trkn"), dataType: 0, payload: trackPayload))
-            }
-            if let discPayload = numberPairPayload(draft.discNumber) {
-                items.append(MP4MetadataItem(type: BoxType("disk"), dataType: 0, payload: discPayload))
-            }
-            if draft.isCompilation {
-                items.append(MP4MetadataItem(type: BoxType("cpil"), dataType: 21, payload: Data([1])))
-            }
+        let textItems: [(BoxType, String)] = [
+            (BoxType([0xA9, 0x6E, 0x61, 0x6D]), draft.title),
+            (BoxType([0xA9, 0x41, 0x52, 0x54]), draft.artist),
+            (BoxType([0xA9, 0x61, 0x6C, 0x62]), draft.album),
+            (BoxType([0xA9, 0x67, 0x65, 0x6E]), draft.genre),
+            (BoxType([0xA9, 0x64, 0x61, 0x79]), draft.year),
+            (BoxType([0xA9, 0x63, 0x6D, 0x74]), draft.comment),
+            (BoxType("aART"), draft.albumArtist),
+            (BoxType([0xA9, 0x77, 0x72, 0x74]), draft.composer)
+        ]
+        for (type, value) in textItems where editableItemFields[type].map(draft.writesText) == true {
+            appendTextItem(type: type, value: value, to: &items)
+        }
+        if draft.writesText(.trackNumber), let trackPayload = numberPairPayload(draft.trackNumber) {
+            items.append(MP4MetadataItem(type: BoxType("trkn"), dataType: 0, payload: trackPayload))
+        }
+        if draft.writesText(.discNumber), let discPayload = numberPairPayload(draft.discNumber) {
+            items.append(MP4MetadataItem(type: BoxType("disk"), dataType: 0, payload: discPayload))
+        }
+        if draft.writesText(.isCompilation), draft.isCompilation {
+            items.append(MP4MetadataItem(type: BoxType("cpil"), dataType: 21, payload: Data([1])))
         }
         if draft.editsArtwork, let artworkData = draft.artworkData {
             let dataType: UInt32 = artworkData.starts(with: [0x89, 0x50, 0x4E, 0x47]) ? 14 : 13
@@ -173,7 +178,7 @@ enum MP4MetadataWriter {
     }
 
     nonisolated private static func shouldPreserve(_ type: BoxType, for draft: MediaMetadataEditDraft) -> Bool {
-        if draft.editsTextMetadata, editableItemTypes.contains(type) {
+        if let field = editableItemFields[type], draft.writesText(field) {
             return false
         }
         if draft.editsArtwork, type == artworkItemType {

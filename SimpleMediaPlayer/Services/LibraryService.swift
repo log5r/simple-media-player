@@ -382,19 +382,8 @@ final class LibraryService {
     private func applyMetadataValues(
         _ draft: MediaMetadataEditDraft, to item: MediaItem, fileURL url: URL, canWriteMetadata: Bool
     ) {
-        let modelValues = draft.normalizedModelValues(fileURL: url)
         if canWriteMetadata && draft.editsTextMetadata {
-            item.title = modelValues.title
-            item.artist = modelValues.artist
-            item.album = modelValues.album
-            item.genre = modelValues.genre
-            item.year = modelValues.year
-            item.trackNumber = modelValues.trackNumber
-            item.comment = modelValues.comment
-            item.albumArtist = modelValues.albumArtist
-            item.composer = modelValues.composer
-            item.discNumber = modelValues.discNumber
-            item.isCompilation = modelValues.isCompilation
+            item.applyTextValues(of: draft, fileURL: url)
             item.setEditedTextMetadata(draft)
         }
         if draft.editsArtwork {
@@ -449,9 +438,11 @@ extension LibraryService {
                 break
             }
             do {
-                // Patched artwork replaces the draft's artwork, and unpatched artwork is never written.
-                let currentDraft = try await editableMetadataDraft(for: item, includesArtwork: false)
-                let patchedDraft = patch.applying(to: currentDraft)
+                // The writers replace only the patched fields, and unpatched artwork is never written, so the
+                // patch applies to the item's values. The draft's other text values are the ones the item
+                // already shows, which it records again as its edited values.
+                let baseDraft = try await bulkPatchBaseDraft(for: item, patching: patch.fields)
+                let patchedDraft = patch.applying(to: baseDraft)
                 try await updateEmbeddedMetadata(for: item, draft: patchedDraft, in: context)
                 result.updatedCount += 1
             } catch {
