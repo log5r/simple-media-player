@@ -67,54 +67,6 @@ struct EditableMetadataDraftCancellationTests {
         #expect(probe.thumbnailCount == 0)
     }
 
-    @Test(arguments: BulkDraftReadInvalidation.allCases, [false, true])
-    private func invalidatedArtworkReadCannotWriteABulkTitleEdit(
-        invalidation: BulkDraftReadInvalidation,
-        readFails: Bool
-    ) async throws {
-        let probe = MetadataDraftReadProbe(readFails: readFails)
-        let fixture = try MetadataDraftFixture(probe: probe)
-        defer { fixture.remove() }
-        let sourceBytes = try Data(contentsOf: fixture.sourceURL)
-        var draft = MediaMetadataEditDraft(item: fixture.item)
-        draft.title = "Bulk replacement title"
-        let patch = MediaMetadataEditPatch(fields: [.title], draft: draft)
-        let task = Task { @MainActor in
-            await fixture.service.updateEmbeddedMetadata(
-                for: [fixture.item], patch: patch, in: fixture.context
-            )
-        }
-        defer { task.cancel(); probe.release() }
-        try await probe.waitUntilReading()
-
-        switch invalidation {
-        case .cancellation:
-            task.cancel()
-        case .replacement:
-            fixture.item.artworkData = Data([4, 5, 6])
-            try fixture.context.save()
-        case .deletion:
-            fixture.context.delete(fixture.item)
-            try fixture.context.save()
-        }
-        #expect(FileManager.default.fileExists(atPath: fixture.sourceURL.path))
-        probe.release()
-        let result = await task.value
-
-        #expect(result.updatedCount == 0)
-        #expect(result.failedCount == 1)
-        #expect(result.failures.first?.fileName == fixture.sourceURL.lastPathComponent)
-        #expect(try Data(contentsOf: fixture.sourceURL) == sourceBytes)
-        let persisted = try ModelContext(fixture.container).fetch(FetchDescriptor<MediaItem>())
-        if invalidation == .deletion {
-            #expect(persisted.isEmpty)
-        } else {
-            #expect(fixture.item.title == "Model title")
-            #expect(persisted.first?.title == "Model title")
-        }
-        #expect(probe.thumbnailCount == 0)
-    }
-
     @Test func ordinaryArtworkReadFailureStillLoadsEmbeddedWAVMetadata() async throws {
         let probe = MetadataDraftReadProbe(blocks: false, readFails: true)
         let fixture = try MetadataDraftFixture(probe: probe, useWAV: true)
@@ -133,14 +85,8 @@ struct EditableMetadataDraftCancellationTests {
     }
 }
 
-nonisolated private enum BulkDraftReadInvalidation: CaseIterable {
-    case cancellation
-    case replacement
-    case deletion
-}
-
 @MainActor
-private struct MetadataDraftFixture {
+struct MetadataDraftFixture {
     let directory: URL
     let sourceURL: URL
     let embeddedArtwork: Data
@@ -149,7 +95,10 @@ private struct MetadataDraftFixture {
     let item: MediaItem
     var context: ModelContext { container.mainContext }
 
-    init(probe: MetadataDraftReadProbe, useWAV: Bool = false) throws {
+    init(
+        probe: MetadataDraftReadProbe, useWAV: Bool = false,
+        canWrite: @escaping @Sendable (URL) -> Bool = EmbeddedMetadataEditabilityChecker.canWrite
+    ) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         sourceURL = directory.appendingPathComponent(useWAV ? "source.wav" : "source.mp4")
@@ -178,14 +127,15 @@ private struct MetadataDraftFixture {
         service = LibraryService(
             mediaDirectoryURL: directory,
             artworkProcessor: ArtworkProcessor(downsample: probe.thumbnail),
-            artworkLoader: LibraryArtworkLoader(read: probe.read)
+            artworkLoader: LibraryArtworkLoader(read: probe.read),
+            editabilityChecker: EmbeddedMetadataEditabilityChecker(canWrite: canWrite)
         )
     }
 
     func remove() { try? FileManager.default.removeItem(at: directory) }
 }
 
-private func writeDraftAudio(to url: URL, useWAV: Bool) throws {
+func writeDraftAudio(to url: URL, useWAV: Bool) throws {
     let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
     let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_410))
     buffer.frameLength = 4_410
@@ -203,7 +153,7 @@ private func writeDraftAudio(to url: URL, useWAV: Bool) throws {
     }
 }
 
-private func makeDraftArtwork() throws -> Data {
+func makeDraftArtwork() throws -> Data {
     let context = try #require(CGContext(
         data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 128,
         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
@@ -220,7 +170,7 @@ private func makeDraftArtwork() throws -> Data {
     return data as Data
 }
 
-nonisolated private final class MetadataDraftReadProbe: @unchecked Sendable {
+nonisolated final class MetadataDraftReadProbe: @unchecked Sendable {
     private let lock = NSLock()
     private let gate = DispatchSemaphore(value: 0)
     private let blocks: Bool

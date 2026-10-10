@@ -13,10 +13,18 @@ struct BulkMetadataEditFailure: Identifiable, Sendable {
 struct BulkMetadataEditResult: Sendable {
     var updatedCount: Int
     var failures: [BulkMetadataEditFailure]
+    /// Items left untouched because the request was cancelled before they were written.
+    var unprocessedCount = 0
 
     var failedCount: Int {
         failures.count
     }
+}
+
+struct BulkMetadataEditProgress: Equatable, Sendable {
+    /// Items that finished, whether updated or failed.
+    let completedCount: Int
+    let totalCount: Int
 }
 
 @MainActor
@@ -259,16 +267,14 @@ final class LibraryService {
         }
     }
 
-    func editableMetadataDraft(for item: MediaItem) async throws -> MediaMetadataEditDraft {
+    /// Pass `includesArtwork: false` when the draft's artwork is never written (it is only written
+    /// with `editsArtwork`), so neither the library artwork nor the embedded MP4 artwork is decoded.
+    func editableMetadataDraft(
+        for item: MediaItem, includesArtwork: Bool = true
+    ) async throws -> MediaMetadataEditDraft {
         try Task.checkCancellation()
         var draft = MediaMetadataEditDraft(item: item)
-        do {
-            draft.artworkData = try await libraryArtwork(for: item)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            try Task.checkCancellation()
-        }
+        draft.artworkData = try await libraryArtworkForDraft(of: item, includesArtwork: includesArtwork)
         try Task.checkCancellation()
         let storedArtwork = draft.artworkData
         guard let url = resolvedURL(for: item) else {
@@ -293,7 +299,7 @@ final class LibraryService {
         let metadataValues = await metadata.embeddedValues(compilationKeyNeedles: Self.compilationKeyNeedles)
         try Task.checkCancellation()
         draft = draft.applying(metadataValues)
-        draft = try await draftByApplyingMP4Metadata(to: draft, for: url)
+        draft = try await draftByApplyingMP4Metadata(to: draft, for: url, includesArtwork: includesArtwork)
 
         if ID3TagWriter.canWriteMetadata(to: url),
            let values = try? await Task.detached(priority: .utility, operation: {
@@ -425,34 +431,60 @@ extension LibraryService {
         return try await editableMetadataItemIDs(for: [item]).contains(itemID)
     }
 
+    /// Items are written one at a time. Cancelling the calling task stops before the next item; an item
+    /// whose file write has started still finishes and counts as updated.
     func updateEmbeddedMetadata(
         for items: [MediaItem],
         patch: MediaMetadataEditPatch,
-        in context: ModelContext
+        in context: ModelContext,
+        progress: @MainActor (BulkMetadataEditProgress) -> Void = { _ in }
     ) async -> BulkMetadataEditResult {
-        guard patch.isEmpty == false else {
-            return BulkMetadataEditResult(updatedCount: 0, failures: [])
-        }
+        var result = BulkMetadataEditResult(updatedCount: 0, failures: [])
+        guard patch.isEmpty == false else { return result }
 
-        var updatedCount = 0
-        var failures: [BulkMetadataEditFailure] = []
-
-        for item in items {
+        for (index, item) in items.enumerated() {
+            guard Task.isCancelled == false else {
+                result.unprocessedCount = items.count - index
+                break
+            }
             do {
-                let currentDraft = try await editableMetadataDraft(for: item)
+                // Patched artwork replaces the draft's artwork, and unpatched artwork is never written.
+                let currentDraft = try await editableMetadataDraft(for: item, includesArtwork: false)
                 let patchedDraft = patch.applying(to: currentDraft)
                 try await updateEmbeddedMetadata(for: item, draft: patchedDraft, in: context)
-                updatedCount += 1
+                result.updatedCount += 1
             } catch {
-                failures.append(BulkMetadataEditFailure(fileName: item.fileName, message: error.localizedDescription))
+                // A stopped request leaves this item unprocessed. Otherwise a cancellation means the item
+                // was deleted or replaced while it was read, which is reported as a failure.
+                guard Task.isCancelled == false else {
+                    result.unprocessedCount = items.count - index
+                    break
+                }
+                result.failures.append(
+                    BulkMetadataEditFailure(fileName: item.fileName, message: error.localizedDescription)
+                )
             }
+            progress(BulkMetadataEditProgress(completedCount: index + 1, totalCount: items.count))
         }
 
-        return BulkMetadataEditResult(updatedCount: updatedCount, failures: failures)
+        return result
     }
 }
 
 private extension LibraryService {
+    /// An ordinary read failure leaves the artwork to the file's tags; cancellation or invalidation stops the draft.
+    func libraryArtworkForDraft(of item: MediaItem, includesArtwork: Bool) async throws -> Data? {
+        guard includesArtwork else { return nil }
+        do {
+            return try await libraryArtwork(for: item)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            return nil
+        }
+    }
+
     func draftByApplyingExtendedInfo(
         _ info: ExtendedAudioSource.Info, to original: MediaMetadataEditDraft
     ) -> MediaMetadataEditDraft {
@@ -474,14 +506,14 @@ private extension LibraryService {
     }
 
     func draftByApplyingMP4Metadata(
-        to original: MediaMetadataEditDraft, for url: URL
+        to original: MediaMetadataEditDraft, for url: URL, includesArtwork: Bool
     ) async throws -> MediaMetadataEditDraft {
         try Task.checkCancellation()
         let metadata = await mp4Metadata(for: url)
         try Task.checkCancellation()
         guard let metadata else { return original }
         var draft = original.applying(metadata.values)
-        if let embeddedArtwork = metadata.artworkData {
+        if includesArtwork, let embeddedArtwork = metadata.artworkData {
             let artworkData = await artworkProcessor.thumbnail(from: embeddedArtwork)
             try Task.checkCancellation()
             if let artworkData { draft.artworkData = artworkData }
