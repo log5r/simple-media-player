@@ -110,7 +110,8 @@ struct LEDDisplayView: View {
                         tracking: mediaInfoStyle.textTracking,
                         color: palette.primaryColor,
                         shadowOpacity: palette.textShadowOpacity,
-                        shadowRadius: palette.textShadowRadius
+                        shadowRadius: palette.textShadowRadius,
+                        isScrollingPaused: player.isPlaying == false
                     )
                         .frame(height: 17 * titleScale)
                     MarqueeText(
@@ -120,7 +121,8 @@ struct LEDDisplayView: View {
                         opacity: 0.85,
                         color: palette.primaryColor,
                         shadowOpacity: palette.textShadowOpacity,
-                        shadowRadius: palette.textShadowRadius
+                        shadowRadius: palette.textShadowRadius,
+                        isScrollingPaused: player.isPlaying == false
                     )
                         .frame(height: 15 * informationScale)
                 }

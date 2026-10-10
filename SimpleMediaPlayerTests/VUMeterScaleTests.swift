@@ -46,17 +46,43 @@ struct VUMeterScaleTests {
         #expect(abs(ballistics.velocity) < 0.05)
     }
 
-    @Test func ballisticsClampsLargeTimeStepsAndStaysFinite() {
+    @Test func ballisticsClampsLongIntervalsAndStaysFinite() {
         var ballistics = VUMeterScale.Ballistics()
         var clamped = VUMeterScale.Ballistics()
         for _ in 0..<600 {
             ballistics.step(toward: 0.8, dt: 1)
-            clamped.step(toward: 0.8, dt: 1.0 / 20)
+            clamped.step(toward: 0.8, dt: VUMeterScale.Ballistics.maximumElapsedTime)
             #expect(ballistics.position.isFinite)
             #expect(ballistics.velocity.isFinite)
             #expect(ballistics.position == clamped.position)
             #expect(ballistics.velocity == clamped.velocity)
         }
+        var unchanged = VUMeterScale.Ballistics(position: 0.4, velocity: 1)
+        unchanged.step(toward: 1, dt: -1)
+        #expect(unchanged.position == 0.4)
+        #expect(unchanged.velocity == 1)
+    }
+
+    /// The slow response mode draws at 10 fps; its needle must rise in the same real time as at 60 fps.
+    @Test(arguments: [10, 30, 60])
+    func ballisticsFollowRealTimeAtEveryFrameRate(framesPerSecond: Int) {
+        var reference = VUMeterScale.Ballistics()
+        var ballistics = VUMeterScale.Ballistics()
+        let substepsPerFrame = 60 / framesPerSecond
+        for _ in 0..<framesPerSecond {
+            ballistics.step(toward: 0.8, dt: 1 / Float(framesPerSecond))
+            for _ in 0..<substepsPerFrame {
+                reference.step(toward: 0.8, dt: 1.0 / 60)
+            }
+            #expect(abs(ballistics.position - reference.position) < 0.0001)
+            #expect(abs(ballistics.velocity - reference.velocity) < 0.001)
+        }
+        // Half a second reaches most of the way, as the 60 fps needle does.
+        var risen = VUMeterScale.Ballistics()
+        for _ in 0..<(framesPerSecond / 2) {
+            risen.step(toward: 0.8, dt: 1 / Float(framesPerSecond))
+        }
+        #expect(risen.position > 0.75)
     }
 
     @Test func ivoryFaceUsesLightPalette() {

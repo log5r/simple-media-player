@@ -27,9 +27,11 @@ struct VisualizerHostView: View {
                     )
                 }
             } else {
+                // The body reads only the idle flag. Per-frame values are read inside the Canvas, so new
+                // analysis frames redraw the Canvas without re-evaluating this view.
                 TimelineView(.animation(
                     minimumInterval: 1.0 / responseMode.framesPerSecond,
-                    paused: player.isPlaying == false && player.audioFrame.isSilent
+                    paused: player.isVisualizerIdle
                 )) { _ in
                     Canvas { context, size in
                         draw(
@@ -40,6 +42,7 @@ struct VisualizerHostView: View {
                         )
                     }
                 }
+                .modifier(VisualizationConsumer(player: player))
             }
         }
         .contentShape(Rectangle())
@@ -89,5 +92,17 @@ struct VisualizerHostView: View {
             spectrumFrameRate: reduceMotion ? 0 : player.spectrumFrameRate,
             isEqualizerActive: player.equalizer.isEnabled
         )
+    }
+}
+
+/// Keeps spectrum analysis running while the modified view, which draws `audioFrame`, is on screen.
+struct VisualizationConsumer: ViewModifier {
+    let player: PlayerViewModel
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { player.addVisualizationConsumer(id) }
+            .onDisappear { player.removeVisualizationConsumer(id) }
     }
 }

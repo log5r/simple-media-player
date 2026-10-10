@@ -376,6 +376,7 @@ private struct VUMeterNeedleLayer: View {
                     draw(position: CGFloat(position), in: &context)
                 }
             }
+            .modifier(VisualizationConsumer(player: player))
             .task(id: player.isPlaying) {
                 guard player.isPlaying == false, model.isMoving else {
                     isSettling = false

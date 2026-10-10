@@ -21,6 +21,8 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
     private var rmsPeakAgeR = 0
     private var analysisInFlight = false
     private var playbackActive = false
+    // False while no one draws the frames, such as in the background. Guarded by stateLock.
+    private var analysisEnabled = true
     private var generation = 0
     // Read by the real-time video tap without entering stateLock.
     private let videoAnalysisGeneration = Atomic<Int>(0)
@@ -41,12 +43,9 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
     var onFrame: (@MainActor (AudioFrameData) -> Void)?
 
     func setPlaybackActive(_ active: Bool, currentTime: TimeInterval) {
-        let generation = stateLock.withLock {
-            self.generation += 1
+        let (generation, enabled) = stateLock.withLock {
             playbackActive = active
-            videoAnalysisGeneration.store(active ? self.generation : 0, ordering: .releasing)
-            lastAcceptedAnalysisTime = 0
-            return self.generation
+            return (advanceGenerationLocked(), analysisEnabled)
         }
         queue.async {
             guard self.isCurrent(generation) else { return }
@@ -54,7 +53,8 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
             self.chunkHistoryR.removeAll()
             self.videoSamples.reset()
             if active { self.resetAnalysisState() }
-            if active == false {
+            // While disabled nothing decays; enabling starts again from silence.
+            if active == false, enabled {
                 self.decayUntilSilent(
                     currentTime: currentTime,
                     generation: generation,
@@ -80,7 +80,9 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
             guard newCount != self.requestedBandCount else { return }
             self.requestedBandCount = newCount
             self.resetAnalysisState()
-            let state = self.stateLock.withLock { (self.playbackActive, self.generation) }
+            let state = self.stateLock.withLock { (self.playbackActive, self.generation, self.analysisEnabled) }
+            // A disabled analyzer publishes the new layout when it is enabled again.
+            guard state.2 else { return }
             self.emit(currentTime: self.lastFrameTime, isPlaying: state.0, generation: state.1)
         }
     }
@@ -154,6 +156,7 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
 
         let now = ProcessInfo.processInfo.systemUptime
         guard playbackActive,
+              analysisEnabled,
               analysisInFlight == false,
               now - lastAcceptedAnalysisTime >= minimumAnalysisInterval else {
             return nil
@@ -161,6 +164,14 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
 
         analysisInFlight = true
         lastAcceptedAnalysisTime = now
+        return generation
+    }
+
+    // Call with stateLock held. Invalidates queued work and stamps later video taps only while analyzing.
+    private func advanceGenerationLocked() -> Int {
+        generation += 1
+        videoAnalysisGeneration.store(playbackActive && analysisEnabled ? generation : 0, ordering: .releasing)
+        lastAcceptedAnalysisTime = 0
         return generation
     }
 
@@ -271,6 +282,25 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
 
 // Input scheduling stays separate from the shared spectral and meter state.
 nonisolated extension SpectrumAnalyzer {
+    /// Stops analysis while no one draws its frames: later taps skip PCM copies and FFTs, and scheduled
+    /// chunks, decay steps, and undelivered frames are invalidated. Enabling starts from silence and
+    /// publishes it once, so a returning display neither freezes nor shows the old levels.
+    func setAnalysisEnabled(_ enabled: Bool) {
+        let state: (generation: Int, isPlaying: Bool)? = stateLock.withLock {
+            guard analysisEnabled != enabled else { return nil }
+            analysisEnabled = enabled
+            return (advanceGenerationLocked(), playbackActive)
+        }
+        guard let state else { return }
+        queue.async {
+            guard self.isCurrent(state.generation) else { return }
+            self.videoSamples.reset()
+            self.resetAnalysisState()
+            guard enabled else { return }
+            self.emit(currentTime: self.lastFrameTime, isPlaying: state.isPlaying, generation: state.generation)
+        }
+    }
+
     func makeVideoSampleTimer(for ring: VideoAudioSampleRing) -> DispatchSourceTimer {
         // Drain on the FFT queue: if analysis falls behind, the ring fills and drops
         // visualization input instead of accumulating an unbounded dispatch backlog.

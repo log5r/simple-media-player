@@ -21,14 +21,15 @@ struct PhoneLEDContent: View {
                 text: player.currentItem?.title ?? L10n.string("No Track"),
                 font: mediaInfoStyle.titleFont(scale: layout == .phoneDeck ? 1.6 : 1),
                 tracking: mediaInfoStyle.textTracking, color: palette.primaryColor,
-                shadowOpacity: palette.textShadowOpacity, shadowRadius: palette.textShadowRadius
+                shadowOpacity: palette.textShadowOpacity, shadowRadius: palette.textShadowRadius,
+                isScrollingPaused: player.isPlaying == false
             )
             .frame(height: layout == .phoneDeck ? 30 : 18)
             if layout == .phoneDeck {
                 MarqueeText(
                     text: subtitle, font: mediaInfoStyle.subtitleFont(scale: 1.2),
                     color: palette.primaryColor, shadowOpacity: palette.textShadowOpacity,
-                    shadowRadius: palette.textShadowRadius
+                    shadowRadius: palette.textShadowRadius, isScrollingPaused: player.isPlaying == false
                 )
                 .frame(height: 20)
             }
