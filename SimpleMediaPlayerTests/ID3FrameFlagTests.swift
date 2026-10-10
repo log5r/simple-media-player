@@ -96,6 +96,18 @@ struct ID3FrameFlagReadingTests {
         #expect(values.artist == "Artist")
     }
 
+    /// Format flag bits outside ID3v2.4 §4.1 %0h00kmnp and ID3v2.3 §3.3.1 %ijk00000 are reserved,
+    /// and an unknown extension might change the layout of the frame data.
+    @Test(arguments: [(UInt8(4), UInt8(0x10)), (4, 0x80), (3, 0x01), (3, 0x10)])
+    func ignoresFramesWithReservedFormatFlags(version: UInt8, flags: UInt8) throws {
+        let content = reservedFlagTitleFrame(version: version, flags: flags) + plainArtistFrame(version: version)
+
+        let values = try #require(try readMetadata(tag(version: version, content: content)))
+
+        #expect(values.title == nil)
+        #expect(values.artist == "Artist")
+    }
+
     private func readMetadata(_ tagData: Data) throws -> MediaMetadataEmbeddedValues? {
         let file = try TemporaryMP3()
         defer { file.remove() }
@@ -169,6 +181,49 @@ struct ID3FrameFlagWritingTests {
 
         #expect(try Data(contentsOf: file.url) == original)
         #expect(try file.directoryContents() == [file.url.lastPathComponent])
+    }
+
+    @Test(arguments: [(UInt8(4), UInt8(0x10)), (4, 0x80), (3, 0x01), (3, 0x10)])
+    func refusesToReplaceTitleWithReservedFormatFlags(version: UInt8, flags: UInt8) throws {
+        let title = reservedFlagTitleFrame(version: version, flags: flags)
+        let original = tag(version: version, content: title + plainArtistFrame(version: version))
+            + Data([0xFF, 0xFB, 0x90, 0x64])
+        let file = try TemporaryMP3()
+        defer { file.remove() }
+        try original.write(to: file.url)
+
+        #expect(throws: MediaMetadataEditError.unsupportedID3Flags) {
+            try ID3TagWriter.write(
+                MediaMetadataEditDraft(title: "New title", artist: "Artist", album: "", genre: ""), to: file.url
+            )
+        }
+
+        #expect(try Data(contentsOf: file.url) == original)
+        #expect(try file.directoryContents() == [file.url.lastPathComponent])
+    }
+
+    @Test(arguments: [(UInt8(4), UInt8(0x10)), (4, 0x80), (3, 0x01), (3, 0x10)])
+    func editingLyricsPreservesTitleWithReservedFormatFlags(version: UInt8, flags: UInt8) throws {
+        let title = reservedFlagTitleFrame(version: version, flags: flags)
+        let file = try TemporaryMP3()
+        defer { file.remove() }
+        let content = title + plainArtistFrame(version: version)
+        try (tag(version: version, content: content) + Data([0xFF, 0xFB, 0x90, 0x64])).write(to: file.url)
+
+        try ID3TagWriter.write(
+            MediaMetadataEditDraft(
+                title: "", artist: "", album: "", genre: "", lyrics: "New lyrics",
+                editsTextMetadata: false, editsLyrics: true
+            ),
+            to: file.url
+        )
+
+        let written = try Data(contentsOf: file.url)
+        #expect(written.range(of: title) != nil)
+        let result = try #require(try ID3TagWriter.readEmbeddedTag(written))
+        #expect(result.lyrics == "New lyrics")
+        #expect(result.values.title == nil)
+        #expect(result.values.artist == "Artist")
     }
 
     @Test(arguments: [UInt8(0x42), 0x43])
@@ -255,6 +310,18 @@ private let compressedV23Title = Data([
     0x78, 0x9C, 0x63, 0x70, 0xCE, 0xCF, 0x2D, 0x28, 0x4A, 0x2D, 0x2E, 0x4E, 0x4D, 0x51, 0x28, 0x33, 0xD2, 0x33,
     0x56, 0x28, 0xC9, 0x2C, 0xC9, 0x49, 0x05, 0x00, 0x54, 0xC6, 0x07, 0x81
 ])
+
+private func reservedFlagTitleFrame(version: UInt8, flags: UInt8) -> Data {
+    version == 4
+        ? v24Frame(id: "TIT2", content: textContent("Reserved flag title", encoding: 3), flags: flags)
+        : v23Frame(id: "TIT2", content: textContent("Reserved flag title", encoding: 0), flags: flags)
+}
+
+private func plainArtistFrame(version: UInt8) -> Data {
+    version == 4
+        ? v24Frame(id: "TPE1", content: textContent("Artist", encoding: 3))
+        : v23Frame(id: "TPE1", content: textContent("Artist", encoding: 0))
+}
 
 private func tag(version: UInt8, content: Data) -> Data {
     Data([0x49, 0x44, 0x33, version, 0, 0]) + synchsafeData(content.count) + content
