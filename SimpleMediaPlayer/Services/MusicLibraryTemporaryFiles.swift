@@ -30,12 +30,13 @@ nonisolated enum MusicLibraryTemporaryFiles {
 
     /// No session survives a launch, so everything left by an earlier process can go. The root is
     /// renamed first, so directories that sessions create under the new root while the slow removal
-    /// runs are never touched by it. Analysis cache entries of crashed playback sessions are removed
-    /// too: their keys name files under the old root, so nothing could reuse or find them later.
+    /// runs are never touched by it. Analysis and loudness cache entries of crashed playback sessions are
+    /// removed too: their keys name files under the old root, so nothing could reuse or find them later.
     @discardableResult
     static func removeLeftoversInBackground(
         in temporaryDirectory: URL = FileManager.default.temporaryDirectory,
-        analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory
+        analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        loudnessCacheDirectory: URL? = AudioLoudnessCache.defaultDirectory
     ) -> Task<Void, Never> {
         let root = rootDirectory(in: temporaryDirectory)
         let trashed = temporaryDirectory
@@ -48,15 +49,20 @@ nonisolated enum MusicLibraryTemporaryFiles {
                 at: temporaryDirectory, includingPropertiesForKeys: nil
             )) ?? []
             for directory in siblings where directory.lastPathComponent.hasPrefix(trashPrefix) {
-                removeAnalysisEntries(ofPlaybackIn: directory, formerRoot: root, cacheDirectory: analysisCacheDirectory)
+                removeCacheEntries(
+                    ofPlaybackIn: directory, formerRoot: root,
+                    analysisCacheDirectory: analysisCacheDirectory, loudnessCacheDirectory: loudnessCacheDirectory
+                )
                 try? FileManager.default.removeItem(at: directory)
             }
         }
     }
 
-    /// Playback files sat at the same relative path under `formerRoot` when they were analyzed.
-    private static func removeAnalysisEntries(ofPlaybackIn trash: URL, formerRoot: URL, cacheDirectory: URL?) {
-        guard let cacheDirectory else { return }
+    /// Playback files sat at the same relative path under `formerRoot` when they were analyzed or measured.
+    private static func removeCacheEntries(
+        ofPlaybackIn trash: URL, formerRoot: URL, analysisCacheDirectory: URL?, loudnessCacheDirectory: URL?
+    ) {
+        guard analysisCacheDirectory != nil || loudnessCacheDirectory != nil else { return }
         let manager = FileManager.default
         let playback = Kind.playback.rawValue
         let sessions = (try? manager.contentsOfDirectory(
@@ -71,9 +77,15 @@ nonisolated enum MusicLibraryTemporaryFiles {
                     .appendingPathComponent(playback, isDirectory: true)
                     .appendingPathComponent(session.lastPathComponent, isDirectory: true)
                     .appendingPathComponent(file.lastPathComponent)
-                if let entry = MusicAnalysisCache.entryURL(
-                    forOriginalURL: original, attributesOf: file, in: cacheDirectory
-                ) {
+                let entries = [
+                    MusicAnalysisCache.entryURL(
+                        forOriginalURL: original, attributesOf: file, in: analysisCacheDirectory
+                    ),
+                    AudioLoudnessCache.entryURL(
+                        forOriginalURL: original, attributesOf: file, in: loudnessCacheDirectory
+                    )
+                ]
+                for entry in entries.compactMap(\.self) {
                     try? manager.removeItem(at: entry)
                 }
             }

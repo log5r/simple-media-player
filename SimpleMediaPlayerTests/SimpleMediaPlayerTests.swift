@@ -1852,11 +1852,11 @@ struct AudioLoudnessNormalizerTests {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("loudness-\(UUID().uuidString)")
             .appendingPathExtension("caf")
-        let suiteName = "AudioLoudnessNormalizerTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let cacheDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AudioLoudnessNormalizerTests-\(UUID().uuidString)", isDirectory: true)
         defer {
             try? FileManager.default.removeItem(at: url)
-            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: cacheDirectory)
         }
 
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
@@ -1871,8 +1871,8 @@ struct AudioLoudnessNormalizerTests {
             try file.write(from: buffer)
         }
 
-        let measuredGain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, defaults: defaults)
-        let cachedGain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, defaults: defaults)
+        let measuredGain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, cacheDirectory: cacheDirectory)
+        let cachedGain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, cacheDirectory: cacheDirectory)
 
         #expect(abs(measuredGain - 2) < 0.01)
         #expect(cachedGain == measuredGain)

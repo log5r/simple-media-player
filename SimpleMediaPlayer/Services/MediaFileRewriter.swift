@@ -38,34 +38,36 @@ nonisolated enum MediaFileRewriter {
     static func update(
         at url: URL,
         analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        loudnessCacheDirectory: URL? = AudioLoudnessCache.defaultDirectory,
         plan: (FileHandle, UInt64) throws -> InPlaceEdit?,
         rewrite write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
+        let caches = AudioDerivedCaches(analysis: analysisCacheDirectory, loudness: loudnessCacheDirectory)
         try withExclusiveAccess(to: url) {
-            try updateHoldingLock(at: url, analysisCacheDirectory: analysisCacheDirectory, plan: plan, rewrite: write)
+            try updateHoldingLock(at: url, caches: caches, plan: plan, rewrite: write)
         }
     }
 
     private static func updateHoldingLock(
         at url: URL,
-        analysisCacheDirectory: URL?,
+        caches: AudioDerivedCaches,
         plan: (FileHandle, UInt64) throws -> InPlaceEdit?,
         rewrite write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
         guard allowsInPlaceEdits else {
-            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+            return try replace(at: url, caches: caches, write)
         }
-        let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
+        let cacheEntries = caches.entries(for: url)
         // The replacement only reads the source, so a file that cannot be opened for writing, such as a read-only
         // one, takes that path and fails or succeeds as the replacement does.
         guard let handle = try? FileHandle(forUpdating: url) else {
-            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+            return try replace(at: url, caches: caches, write)
         }
         defer { try? handle.close() }
         let fileSize = try handle.seekToEnd()
         guard let edit = try plan(handle, fileSize), isValid(edit, fileSize: fileSize) else {
             try handle.close()
-            return try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+            return try replace(at: url, caches: caches, write)
         }
         let original = try read(from: handle, at: edit.offset, count: Int(edit.originalLength))
         var status = stat()
@@ -84,11 +86,11 @@ nonisolated enum MediaFileRewriter {
             if let modified {
                 _ = futimens(handle.fileDescriptor, [timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT)), modified])
             }
-            MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
+            cacheEntries.carryOver(to: url)
             throw error
         }
         try handle.close()
-        MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
+        cacheEntries.carryOver(to: url)
     }
 
     private static func restore(_ original: Data, at offset: UInt64, fileSize: UInt64, in handle: FileHandle) throws {
@@ -107,15 +109,17 @@ nonisolated enum MediaFileRewriter {
         return isValid
     }
 
-    /// `write` may change metadata only; the music analysis cache follows the rewritten file.
+    /// `write` may change metadata only; the music analysis and loudness caches follow the rewritten file.
     /// Saves of the same file run one at a time; see `withExclusiveAccess(to:_:)`.
     static func rewrite(
         at url: URL,
         analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory,
+        loudnessCacheDirectory: URL? = AudioLoudnessCache.defaultDirectory,
         _ write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
+        let caches = AudioDerivedCaches(analysis: analysisCacheDirectory, loudness: loudnessCacheDirectory)
         try withExclusiveAccess(to: url) {
-            try replace(at: url, analysisCacheDirectory: analysisCacheDirectory, write)
+            try replace(at: url, caches: caches, write)
         }
     }
 
@@ -161,12 +165,39 @@ nonisolated enum MediaFileRewriter {
         }
     }
 
+    /// Caches of values computed from the audio, keyed by the file's size and date. A save that leaves the audio
+    /// unchanged moves their entries to the rewritten file's key, so tag edits keep them.
+    private struct AudioDerivedCaches {
+        let analysis: URL?
+        let loudness: URL?
+
+        /// Read before the save, while the key matches the original file.
+        func entries(for url: URL) -> AudioDerivedCacheEntries {
+            AudioDerivedCacheEntries(
+                caches: self,
+                analysis: MusicAnalysisCache.entryURL(for: url, in: analysis),
+                loudness: AudioLoudnessCache.entryURL(for: url, in: loudness)
+            )
+        }
+    }
+
+    private struct AudioDerivedCacheEntries {
+        let caches: AudioDerivedCaches
+        let analysis: URL?
+        let loudness: URL?
+
+        func carryOver(to url: URL) {
+            MusicAnalysisCache.carryOver(analysis, to: url, in: caches.analysis)
+            AudioLoudnessCache.carryOver(loudness, to: url, in: caches.loudness)
+        }
+    }
+
     private static func replace(
         at url: URL,
-        analysisCacheDirectory: URL?,
+        caches: AudioDerivedCaches,
         _ write: (FileHandle, FileHandle, UInt64) throws -> Void
     ) throws {
-        let analysisCacheEntry = MusicAnalysisCache.entryURL(for: url, in: analysisCacheDirectory)
+        let cacheEntries = caches.entries(for: url)
         let source = try FileHandle(forReadingFrom: url)
         defer { try? source.close() }
         let fileSize = try source.seekToEnd()
@@ -210,7 +241,7 @@ nonisolated enum MediaFileRewriter {
             }
             throw error
         }
-        MusicAnalysisCache.carryOver(analysisCacheEntry, to: url, in: analysisCacheDirectory)
+        cacheEntries.carryOver(to: url)
     }
 
     static func read(from handle: FileHandle, at offset: UInt64, count: Int) throws -> Data {
