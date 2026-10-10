@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import os
 
 /// Writes the audio of a Music library asset as a regular file. `assetURL` values from the Music
 /// library are not file URLs, so they are never copied or imported directly.
@@ -141,44 +142,54 @@ nonisolated enum MusicLibraryTrackExporter {
     /// MP3 packets are self-framed, so writing them in order produces a playable stream without the
     /// container the reader took them from. Runs off the caller's actor because the reader blocks.
     private static func copyMPEGFrames(assetURL: URL, to outputURL: URL) async throws {
+        let readerHandle = ReaderHandle()
         let copy = Task.detached(priority: .userInitiated) {
-            let asset = AVURLAsset(url: assetURL)
-            guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
-                throw MusicLibraryTrackError.noAudioTrack
-            }
-            let reader = try AVAssetReader(asset: asset)
-            let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-            output.alwaysCopiesSampleData = false
-            guard reader.canAdd(output) else { throw MusicLibraryTrackError.notReadable }
-            reader.add(output)
-            guard reader.startReading() else {
-                throw MusicLibraryTrackError.exportFailed(reader.error?.localizedDescription ?? "")
-            }
-            guard FileManager.default.createFile(atPath: outputURL.path, contents: nil) else {
-                throw CocoaError(.fileWriteUnknown)
-            }
-            let handle = try FileHandle(forWritingTo: outputURL)
-            defer { try? handle.close() }
-            while let sampleBuffer = output.copyNextSampleBuffer() {
-                if Task.isCancelled {
-                    reader.cancelReading()
-                    throw CancellationError()
-                }
-                try handle.write(contentsOf: packetData(of: sampleBuffer))
-            }
-            switch reader.status {
-            case .completed:
-                return
-            case .cancelled:
-                throw CancellationError()
-            default:
-                throw MusicLibraryTrackError.exportFailed(reader.error?.localizedDescription ?? "")
-            }
+            try await readMPEGFrames(assetURL: assetURL, to: outputURL, readerHandle: readerHandle)
         }
         try await withTaskCancellationHandler {
             try await copy.value
         } onCancel: {
             copy.cancel()
+            // The task only sees its cancellation between buffers; this also stops a blocked read.
+            readerHandle.cancel()
+        }
+    }
+
+    private static func readMPEGFrames(
+        assetURL: URL, to outputURL: URL, readerHandle: ReaderHandle
+    ) async throws {
+        let asset = AVURLAsset(url: assetURL)
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
+            throw MusicLibraryTrackError.noAudioTrack
+        }
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else { throw MusicLibraryTrackError.notReadable }
+        reader.add(output)
+        guard reader.startReading() else {
+            throw MusicLibraryTrackError.exportFailed(reader.error?.localizedDescription ?? "")
+        }
+        readerHandle.register(reader)
+        guard FileManager.default.createFile(atPath: outputURL.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let handle = try FileHandle(forWritingTo: outputURL)
+        defer { try? handle.close() }
+        while let sampleBuffer = output.copyNextSampleBuffer() {
+            if Task.isCancelled {
+                reader.cancelReading()
+                throw CancellationError()
+            }
+            try handle.write(contentsOf: packetData(of: sampleBuffer))
+        }
+        switch reader.status {
+        case .completed:
+            return
+        case .cancelled:
+            throw CancellationError()
+        default:
+            throw MusicLibraryTrackError.exportFailed(reader.error?.localizedDescription ?? "")
         }
     }
 
@@ -216,5 +227,33 @@ nonisolated enum MusicLibraryTrackExporter {
         // The work may finish just as the caller is cancelled; a cancelled request reports no result.
         try Task.checkCancellation()
         return try result.get()
+    }
+}
+
+/// Lets the cancellation handler reach the reader that the copy task creates. `cancelReading()` is
+/// documented as callable from any thread and stops reads already in progress.
+private nonisolated final class ReaderHandle: @unchecked Sendable {
+    private struct State {
+        var reader: AVAssetReader?
+        var isCancelled = false
+    }
+
+    private let state = OSAllocatedUnfairLock(uncheckedState: State())
+
+    /// Cancels `reader` at once if the export was cancelled before the reader existed.
+    func register(_ reader: AVAssetReader) {
+        let isCancelled = state.withLockUnchecked { state in
+            state.reader = reader
+            return state.isCancelled
+        }
+        if isCancelled { reader.cancelReading() }
+    }
+
+    func cancel() {
+        let reader = state.withLockUnchecked { state in
+            state.isCancelled = true
+            return state.reader
+        }
+        reader?.cancelReading()
     }
 }

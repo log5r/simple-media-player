@@ -30,10 +30,12 @@ nonisolated enum MusicLibraryTemporaryFiles {
 
     /// No session survives a launch, so everything left by an earlier process can go. The root is
     /// renamed first, so directories that sessions create under the new root while the slow removal
-    /// runs are never touched by it.
+    /// runs are never touched by it. Analysis cache entries of crashed playback sessions are removed
+    /// too: their keys name files under the old root, so nothing could reuse or find them later.
     @discardableResult
     static func removeLeftoversInBackground(
-        in temporaryDirectory: URL = FileManager.default.temporaryDirectory
+        in temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        analysisCacheDirectory: URL? = MusicAnalysisCache.defaultDirectory
     ) -> Task<Void, Never> {
         let root = rootDirectory(in: temporaryDirectory)
         let trashed = temporaryDirectory
@@ -46,7 +48,34 @@ nonisolated enum MusicLibraryTemporaryFiles {
                 at: temporaryDirectory, includingPropertiesForKeys: nil
             )) ?? []
             for directory in siblings where directory.lastPathComponent.hasPrefix(trashPrefix) {
+                removeAnalysisEntries(ofPlaybackIn: directory, formerRoot: root, cacheDirectory: analysisCacheDirectory)
                 try? FileManager.default.removeItem(at: directory)
+            }
+        }
+    }
+
+    /// Playback files sat at the same relative path under `formerRoot` when they were analyzed.
+    private static func removeAnalysisEntries(ofPlaybackIn trash: URL, formerRoot: URL, cacheDirectory: URL?) {
+        guard let cacheDirectory else { return }
+        let manager = FileManager.default
+        let playback = Kind.playback.rawValue
+        let sessions = (try? manager.contentsOfDirectory(
+            at: trash.appendingPathComponent(playback, isDirectory: true), includingPropertiesForKeys: nil
+        )) ?? []
+        for session in sessions {
+            let files = (try? manager.contentsOfDirectory(
+                at: session, includingPropertiesForKeys: [.isRegularFileKey]
+            )) ?? []
+            for file in files where (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+                let original = formerRoot
+                    .appendingPathComponent(playback, isDirectory: true)
+                    .appendingPathComponent(session.lastPathComponent, isDirectory: true)
+                    .appendingPathComponent(file.lastPathComponent)
+                if let entry = MusicAnalysisCache.entryURL(
+                    forOriginalURL: original, attributesOf: file, in: cacheDirectory
+                ) {
+                    try? manager.removeItem(at: entry)
+                }
             }
         }
     }

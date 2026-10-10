@@ -103,6 +103,30 @@ struct MusicLibraryImportSkipTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.temporaryDirectory.path).isEmpty)
     }
 
+    /// A crashed playback session's analysis entry is keyed by a file under the old root; cleanup removes it.
+    @Test func startupCleanupRemovesAnalysisEntriesOfCrashedPlayback() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let cacheDirectory = fixture.directory.appendingPathComponent("AnalysisCache", isDirectory: true)
+        try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        let session = try MusicLibraryTemporaryFiles.makeDirectory(for: .playback, in: fixture.temporaryDirectory)
+        let file = session.appendingPathComponent("song.mp3")
+        try Data("audio".utf8).write(to: file)
+        let entry = try #require(MusicAnalysisCache.entryURL(for: file, in: cacheDirectory))
+        try Data("{}".utf8).write(to: entry)
+        let unrelated = cacheDirectory.appendingPathComponent("unrelated.json")
+        try Data("{}".utf8).write(to: unrelated)
+
+        await MusicLibraryTemporaryFiles.removeLeftoversInBackground(
+            in: fixture.temporaryDirectory, analysisCacheDirectory: cacheDirectory
+        ).value
+
+        #expect(FileManager.default.fileExists(atPath: entry.path) == false)
+        #expect(FileManager.default.fileExists(atPath: unrelated.path))
+        #expect(FileManager.default.fileExists(atPath: session.path) == false)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: fixture.temporaryDirectory.path).isEmpty)
+    }
+
     /// A failed final save must not report the inserted items or leave their copied files behind.
     @Test func failedSaveDiscardsTheImportedItems() async throws {
         let fixture = try MusicLibraryFixture(saveContext: { _ in throw SaveFailure() })
