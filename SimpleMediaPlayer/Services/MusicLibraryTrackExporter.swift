@@ -30,6 +30,10 @@ nonisolated enum MusicLibraryTrackExporter {
         case transcode
     }
 
+    /// Shared by every export so abandoned validations keep their slot until the open finishes. Each
+    /// exported song needs one open, so two at a time is enough and bounds blocked work on a slow volume.
+    static let validationLimiter = FileSystemWorkLimiter(limit: 2)
+
     static func export(assetURL: URL, to directory: URL, baseName: String) async throws -> Output {
         try Task.checkCancellation()
         let asset = AVURLAsset(url: assetURL)
@@ -197,9 +201,11 @@ nonisolated enum MusicLibraryTrackExporter {
 
     /// The file must decode through the same path the player uses before it is played or imported.
     /// The open cannot be interrupted, so a cancelled caller stops waiting and the queued open finishes
-    /// on its own with its result discarded.
+    /// on its own with its result discarded, holding its `validationLimiter` slot until then.
     private static func validateOutput(at url: URL) async throws -> TimeInterval {
-        let result = try await FileSystemWorkQueue.runCancellable(qos: .userInitiated) {
+        let result = try await FileSystemWorkQueue.runCancellable(
+            qos: .userInitiated, limiter: validationLimiter
+        ) {
             Result { () throws -> TimeInterval in
                 let file = try AVAudioFile(forReading: url)
                 let sampleRate = file.fileFormat.sampleRate
