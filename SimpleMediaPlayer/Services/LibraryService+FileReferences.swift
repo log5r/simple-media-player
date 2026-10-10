@@ -70,16 +70,37 @@ extension LibraryService {
     }
 
     func hasAvailableFile(for items: [MediaItem], in context: ModelContext) async -> Bool {
+        guard let probe = availableFileProbe(for: items, in: context) else { return false }
+        let availableIDs = await FileSystemWorkQueue.run(probe.work)
+        return probe.liveItems.contains { availableIDs.contains($0.id) && isLibraryItemLive($0, in: context) }
+    }
+
+    /// Stops waiting when the caller is cancelled; the abandoned probe keeps its `limiter` slot until it
+    /// finishes, so cancel-and-retry cycles cannot pile up probes on a slow volume.
+    func hasAvailableFileCancellable(
+        for items: [MediaItem], in context: ModelContext, limiter: FileSystemWorkLimiter
+    ) async throws -> Bool {
+        guard let probe = availableFileProbe(for: items, in: context) else { return false }
+        let availableIDs = try await FileSystemWorkQueue.runCancellable(
+            qos: .userInitiated, limiter: limiter, probe.work
+        )
+        try Task.checkCancellation()
+        return probe.liveItems.contains { availableIDs.contains($0.id) && isLibraryItemLive($0, in: context) }
+    }
+
+    /// Captures value snapshots of the live items; the returned work resolves them off the main actor.
+    private func availableFileProbe(
+        for items: [MediaItem], in context: ModelContext
+    ) -> (liveItems: [MediaItem], work: @Sendable () -> Set<UUID>)? {
         let liveItems = items.filter { isLibraryItemLive($0, in: context) }
-        guard liveItems.isEmpty == false else { return false }
+        guard liveItems.isEmpty == false else { return nil }
         let references = liveItems.map(fileReference(for:))
-        let availableIDs = await FileSystemWorkQueue.run { [self] in
+        return (liveItems, { [self] in
             let available = references.filter {
                 (try? MediaImportFingerprint.fileSize(of: resolvedURL(for: $0))) != nil
             }
             return Set(available.map(\.id))
-        }
-        return liveItems.contains { availableIDs.contains($0.id) && isLibraryItemLive($0, in: context) }
+        })
     }
 
     /// Libraries imported before fingerprints existed can hold thousands of items, so every bookmark is

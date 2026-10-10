@@ -267,16 +267,49 @@ struct MusicLibraryImportTests {
         #expect(item.hasEditedTextMetadata)
         #expect(item.editedArtist == "")
     }
+
+    /// Music artwork that could not be embedded must outrank older artwork the exported file still carries.
+    @Test func unembeddedArtworkOverrideOutranksTheFileArtwork() async throws {
+        let fixture = try MusicLibraryFixture()
+        defer { fixture.remove() }
+        let source = try writeAudio(named: "tagged.m4a", in: fixture.directory, formatID: kAudioFormatMPEG4AAC)
+        let fileArtwork = try pngData(makeArtworkImage(red: 0.9, green: 0.1, blue: 0.1))
+        let fileDraft = MediaMetadataEditDraft(
+            title: "File Title", artist: "", album: "", genre: "", artworkData: fileArtwork, editsArtwork: true
+        )
+        try MP4MetadataWriter.write(fileDraft, to: source)
+        let override = MediaImportOverride(
+            artworkData: try pngData(makeArtworkImage()), musicLibraryItemID: "103", isEmbeddedInFile: false
+        )
+
+        await fixture.service.importFiles(
+            from: [source], overrides: [source: override], into: fixture.context, existingItems: []
+        )
+
+        let item = try #require(try fixture.items().first)
+        let storedArtwork = try #require(item.artworkData)
+        #expect(item.hasEditedArtwork)
+        let draft = try await fixture.service.editableMetadataDraft(for: item)
+        #expect(draft.artworkData == storedArtwork)
+    }
 }
 
-private func makeArtworkImage() throws -> CGImage {
+private func makeArtworkImage(red: CGFloat = 0.2, green: CGFloat = 0.4, blue: CGFloat = 0.8) throws -> CGImage {
     let context = try #require(CGContext(
         data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
     ))
-    context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+    context.setFillColor(CGColor(red: red, green: green, blue: blue, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
     return try #require(context.makeImage())
+}
+
+private func pngData(_ image: CGImage) throws -> Data {
+    let data = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    try #require(CGImageDestinationFinalize(destination))
+    return data as Data
 }
 
 @MainActor

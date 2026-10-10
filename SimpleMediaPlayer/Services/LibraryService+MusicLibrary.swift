@@ -159,8 +159,13 @@ private extension LibraryService {
     func musicLibraryItemIDsWithAvailableFiles(
         in context: ModelContext, existingItems: [MediaItem]
     ) async throws -> Set<String> {
+        try Task.checkCancellation()
+        // Lets the preparation panel render before the store fetch. Only Music imports matter here, so
+        // the filtered fetch keeps a large library from being materialized on the main actor.
+        await Task.yield()
+        let descriptor = FetchDescriptor<MediaItem>(predicate: #Predicate { $0.musicLibraryItemID != nil })
+        let fetched = (try? context.fetch(descriptor)) ?? []
         var itemsByMusicID: [String: [MediaItem]] = [:]
-        let fetched = (try? context.fetch(FetchDescriptor<MediaItem>())) ?? []
         for item in existingItems + fetched {
             guard let musicID = item.musicLibraryItemID, isLibraryItemLive(item, in: context) else { continue }
             if itemsByMusicID[musicID]?.contains(where: { $0.id == item.id }) != true {
@@ -170,17 +175,19 @@ private extension LibraryService {
         var available: Set<String> = []
         for (musicID, items) in itemsByMusicID {
             try Task.checkCancellation()
-            if await hasAvailableFile(for: items, in: context) { available.insert(musicID) }
+            if try await hasAvailableFileCancellable(for: items, in: context, limiter: musicLibraryProbeLimiter) {
+                available.insert(musicID)
+            }
         }
         return available
     }
 
     /// The pre-check runs before staging starts; another scene may delete the item meanwhile, so a skip is
     /// confirmed against the current library. The serialized import still makes the final decision.
-    func isMusicLibraryTrackStillImported(_ musicID: String, in context: ModelContext) async -> Bool {
+    func isMusicLibraryTrackStillImported(_ musicID: String, in context: ModelContext) async throws -> Bool {
         let descriptor = FetchDescriptor<MediaItem>(predicate: #Predicate { $0.musicLibraryItemID == musicID })
         let items = (try? context.fetch(descriptor)) ?? []
-        return await hasAvailableFile(for: items, in: context)
+        return try await hasAvailableFileCancellable(for: items, in: context, limiter: musicLibraryProbeLimiter)
     }
 
     func stageMusicLibraryTracks(
@@ -192,7 +199,7 @@ private extension LibraryService {
             try Task.checkCancellation()
             preparation.advance(to: index, title: selected.displayTitle)
             if alreadyImported.contains(selected.libraryItemID),
-               await isMusicLibraryTrackStillImported(selected.libraryItemID, in: context) {
+               try await isMusicLibraryTrackStillImported(selected.libraryItemID, in: context) {
                 try Task.checkCancellation()
                 staging.skippedCount += 1
                 staging.messages.append(L10n.format("“%@” is already in your library.", selected.displayTitle))

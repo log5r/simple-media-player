@@ -33,6 +33,8 @@ final class LibraryService {
     @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
     /// Shared by every export plan, so resolutions left running by a cancelled plan still count.
     @ObservationIgnored nonisolated let exportPlanLimiter = FileSystemWorkLimiter(limit: exportPlanConcurrency)
+    /// Shared by Music import pre-checks, so probes abandoned by cancelled preparations still count.
+    @ObservationIgnored nonisolated let musicLibraryProbeLimiter = FileSystemWorkLimiter(limit: 2)
     @ObservationIgnored private var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored private var importTask: (id: UUID, task: Task<MediaImportSummary, Never>)?
     /// Deleted items can stay in import snapshots while their files are removed in the background.
@@ -262,7 +264,10 @@ final class LibraryService {
             try Task.checkCancellation()
         }
         try Task.checkCancellation()
-        guard let url = resolvedURL(for: item) else { return draftPreservingStoredEdits(draft, for: item) }
+        let storedArtwork = draft.artworkData
+        guard let url = resolvedURL(for: item) else {
+            return draftPreservingStoredEdits(draft, for: item, storedArtwork: storedArtwork)
+        }
 
         let didAccess = url.startAccessingSecurityScopedResource()
         defer {
@@ -271,7 +276,9 @@ final class LibraryService {
 
         if let info = try? await ExtendedAudioSource.probeInfo(for: url) {
             try Task.checkCancellation()
-            return draftPreservingStoredEdits(draftByApplyingExtendedInfo(info, to: draft), for: item)
+            return draftPreservingStoredEdits(
+                draftByApplyingExtendedInfo(info, to: draft), for: item, storedArtwork: storedArtwork
+            )
         }
         try Task.checkCancellation()
 
@@ -302,7 +309,7 @@ final class LibraryService {
         }
 
         try Task.checkCancellation()
-        return draftPreservingStoredEdits(draft, for: item)
+        return draftPreservingStoredEdits(draft, for: item, storedArtwork: storedArtwork)
     }
 
     func loadArtwork(from url: URL) async throws -> Data {
@@ -380,6 +387,8 @@ final class LibraryService {
         }
         if draft.editsArtwork {
             item.artworkData = draft.artworkData
+            // Unwritable formats keep the edit only on the item, so it must outrank the file's artwork.
+            if canWriteMetadata == false { item.hasEditedArtwork = true }
         }
         if draft.editsLyrics {
             item.setEditedLyrics(draft.lyrics)
@@ -477,7 +486,7 @@ private extension LibraryService {
     /// Applied before the item is inserted. Override values replace the embedded ones; a nil text
     /// field keeps the embedded value unless the override replaces the whole set, and nil lyrics or
     /// artwork keep the embedded ones. When the override could not be written into the file, the item
-    /// records the text as edited so later edits start from these values, not the file's tags.
+    /// records the text, lyrics, and artwork as edited so later edits start from these values, not the file's tags.
     private func apply(_ override: MediaImportOverride?, to item: MediaItem) async {
         guard let override else { return }
         var values = override.values
@@ -490,13 +499,16 @@ private extension LibraryService {
         applyPrimaryValues(values, replacesAll: override.replacesTextFields, to: item)
         applySecondaryValues(values, replacesAll: override.replacesTextFields, to: item)
         if let lyrics = override.lyrics { item.lyricsRaw = lyrics }
+        var storedArtwork = false
         if let artwork = override.artworkData, let thumbnail = await artworkProcessor.thumbnail(from: artwork) {
             item.artworkData = thumbnail
+            storedArtwork = true
         }
         item.musicLibraryItemID = override.musicLibraryItemID ?? item.musicLibraryItemID
         if override.isEmbeddedInFile == false {
             item.setEditedTextMetadata(MediaMetadataEditDraft(item: item))
             if override.lyrics != nil { item.setEditedLyrics(item.lyricsRaw) }
+            item.hasEditedArtwork = storedArtwork
         }
     }
 
