@@ -14,6 +14,7 @@ extension LibraryService {
             draft.editsTextMetadata = original.editsTextMetadata
             draft.editsArtwork = original.editsArtwork
             draft.editsLyrics = original.editsLyrics
+            draft.textFields = original.textFields
         }
         if item.hasEditedLyrics {
             draft.lyrics = item.lyricsRaw ?? ""
@@ -26,6 +27,26 @@ extension LibraryService {
 }
 
 extension MediaItem {
+    /// Sets the fields in `draft.textFields`, which the file received, and keeps the item's values for the others.
+    func applyTextValues(of draft: MediaMetadataEditDraft, fileURL url: URL) {
+        let values = draft.normalizedModelValues(fileURL: url)
+        func set<Value>(_ field: MediaMetadataEditField, _ keyPath: ReferenceWritableKeyPath<MediaItem, Value>,
+                        _ value: Value) {
+            if draft.textFields.contains(field) { self[keyPath: keyPath] = value }
+        }
+        set(.title, \.title, values.title)
+        set(.artist, \.artist, values.artist)
+        set(.album, \.album, values.album)
+        set(.genre, \.genre, values.genre)
+        set(.year, \.year, values.year)
+        set(.trackNumber, \.trackNumber, values.trackNumber)
+        set(.comment, \.comment, values.comment)
+        set(.albumArtist, \.albumArtist, values.albumArtist)
+        set(.composer, \.composer, values.composer)
+        set(.discNumber, \.discNumber, values.discNumber)
+        set(.isCompilation, \.isCompilation, values.isCompilation)
+    }
+
     func setEditedTextMetadata(_ draft: MediaMetadataEditDraft) {
         editedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         editedArtist = draft.artist.trimmingCharacters(in: .whitespacesAndNewlines)

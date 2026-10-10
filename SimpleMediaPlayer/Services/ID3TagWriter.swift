@@ -17,6 +17,14 @@ struct MediaMetadataEditDraft: Equatable, Sendable {
     var editsTextMetadata: Bool
     var editsArtwork: Bool
     var editsLyrics: Bool
+    /// The text fields that a write with `editsTextMetadata` replaces; the file keeps the values of the others.
+    var textFields: Set<MediaMetadataEditField> = Self.allTextFields
+
+    /// Every field except artwork, which `editsArtwork` covers.
+    nonisolated static let allTextFields: Set<MediaMetadataEditField> = [
+        .title, .artist, .album, .genre, .year, .trackNumber, .comment, .albumArtist, .composer, .discNumber,
+        .isCompilation
+    ]
 
     nonisolated init(
         title: String,
@@ -126,7 +134,7 @@ struct MediaMetadataEditDraft: Equatable, Sendable {
     }
 
     nonisolated func applying(_ values: MediaMetadataEmbeddedValues) -> MediaMetadataEditDraft {
-        MediaMetadataEditDraft(
+        var draft = MediaMetadataEditDraft(
             title: nonblank(values.title) ?? title,
             artist: nonblank(values.artist) ?? artist,
             album: nonblank(values.album) ?? album,
@@ -144,6 +152,13 @@ struct MediaMetadataEditDraft: Equatable, Sendable {
             editsArtwork: editsArtwork,
             editsLyrics: editsLyrics
         )
+        draft.textFields = textFields
+        return draft
+    }
+
+    /// Whether a write replaces `field` in the file.
+    nonisolated func writesText(_ field: MediaMetadataEditField) -> Bool {
+        editsTextMetadata && textFields.contains(field)
     }
 }
 
@@ -177,7 +192,9 @@ struct MediaMetadataEditPatch: Equatable, Sendable {
 
     nonisolated func applying(to original: MediaMetadataEditDraft) -> MediaMetadataEditDraft {
         var patched = original
-        patched.editsTextMetadata = fields.isEmpty ? original.editsTextMetadata : fields.contains { $0 != .artwork }
+        // Writers replace only the patched text fields, so the file keeps its values for the others.
+        patched.textFields = fields.isEmpty ? original.textFields : fields.subtracting([.artwork])
+        patched.editsTextMetadata = fields.isEmpty ? original.editsTextMetadata : patched.textFields.isEmpty == false
         for field in fields {
             switch field {
             case .artwork:
@@ -281,9 +298,13 @@ enum MediaMetadataEditError: LocalizedError, Equatable {
 }
 
 enum ID3TagWriter {
-    nonisolated private static let editableFrameIDs: Set<String> = [
-        "TIT2", "TPE1", "TALB", "TCON", "TDRC", "TYER", "TRCK", "COMM", "TPE2", "TCOM", "TPOS", "TCMP",
-        "TT2", "TP1", "TAL", "TCO", "TYE", "TRK", "COM", "TP2", "TCM", "TPA", "TCP"
+    /// The frames a text write replaces, by the field they hold, for ID3v2.3/2.4 and ID3v2.2 frame IDs.
+    nonisolated private static let editableFrameFields: [String: MediaMetadataEditField] = [
+        "TIT2": .title, "TPE1": .artist, "TALB": .album, "TCON": .genre, "TDRC": .year, "TYER": .year,
+        "TRCK": .trackNumber, "COMM": .comment, "TPE2": .albumArtist, "TCOM": .composer, "TPOS": .discNumber,
+        "TCMP": .isCompilation,
+        "TT2": .title, "TP1": .artist, "TAL": .album, "TCO": .genre, "TYE": .year, "TRK": .trackNumber,
+        "COM": .comment, "TP2": .albumArtist, "TCM": .composer, "TPA": .discNumber, "TCP": .isCompilation
     ]
     nonisolated private static let lyricsFrameIDs: Set<String> = ["USLT", "ULT", "SYLT", "SLT"]
 
@@ -389,25 +410,21 @@ enum ID3TagWriter {
             throw MediaMetadataEditError.unsupportedID3Version(version)
         }
 
-        var removedFrameIDs: Set<String> = []
-        if draft.editsTextMetadata {
-            removedFrameIDs.formUnion(editableFrameIDs)
-        }
+        var removedFrameIDs = Set(editableFrameFields.compactMap { draft.writesText($0.value) ? $0.key : nil })
         if draft.editsLyrics {
             removedFrameIDs.formUnion(lyricsFrameIDs)
         }
         var frames = try existingTag?.preservedFrames(
             removing: removedFrameIDs, removeFrontArtwork: draft.editsArtwork
         ) ?? []
-        if draft.editsTextMetadata {
-            for frame in textFrames(for: version) {
-                if let value = draft.writableFrameValues[frame.canonicalID] {
-                    frames.append(makeTextFrame(id: frame.id, value: value, version: version))
-                }
+        for frame in textFrames(for: version) {
+            if let field = editableFrameFields[frame.canonicalID], draft.writesText(field),
+               let value = draft.writableFrameValues[frame.canonicalID] {
+                frames.append(makeTextFrame(id: frame.id, value: value, version: version))
             }
-            if let comment = draft.writableCommentValue {
-                frames.append(makeCommentFrame(value: comment, version: version))
-            }
+        }
+        if draft.writesText(.comment), let comment = draft.writableCommentValue {
+            frames.append(makeCommentFrame(value: comment, version: version))
         }
         if draft.editsArtwork, let artworkData = draft.artworkData {
             frames.append(makeArtworkFrame(data: artworkData, version: version))

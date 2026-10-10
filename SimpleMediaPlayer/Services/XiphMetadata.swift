@@ -7,10 +7,12 @@ nonisolated struct AudioTagReadResult: Sendable {
 }
 
 nonisolated enum XiphMetadata {
-    private static let editedKeys: Set<String> = [
-        "TITLE", "ARTIST", "ALBUM", "GENRE", "DATE", "YEAR", "TRACKNUMBER", "COMMENT",
-        "ALBUMARTIST", "ALBUM ARTIST", "COMPOSER", "DISCNUMBER", "DISCTOTAL", "TOTALDISCS",
-        "TRACKTOTAL", "TOTALTRACKS", "COMPILATION"
+    /// The fields a text write replaces, by the field they hold; a total goes with its number.
+    private static let editedKeys: [String: MediaMetadataEditField] = [
+        "TITLE": .title, "ARTIST": .artist, "ALBUM": .album, "GENRE": .genre, "DATE": .year, "YEAR": .year,
+        "TRACKNUMBER": .trackNumber, "COMMENT": .comment, "ALBUMARTIST": .albumArtist, "ALBUM ARTIST": .albumArtist,
+        "COMPOSER": .composer, "DISCNUMBER": .discNumber, "DISCTOTAL": .discNumber, "TOTALDISCS": .discNumber,
+        "TRACKTOTAL": .trackNumber, "TOTALTRACKS": .trackNumber, "COMPILATION": .isCompilation
     ]
     private static let lyricsKeys: Set<String> = ["LYRICS", "UNSYNCEDLYRICS"]
 
@@ -50,22 +52,24 @@ nonisolated enum XiphMetadata {
         var result = comment
         result.fields.removeAll { field in
             guard let key = key(in: field) else { return false }
-            return (draft.editsTextMetadata && editedKeys.contains(key))
+            return editedKeys[key].map(draft.writesText) == true
                 || (draft.editsArtwork && editablePictureField(field, key: key))
                 || (draft.editsLyrics && lyricsKeys.contains(key))
         }
-        if draft.editsTextMetadata {
-            let values: [(String, String)] = [
-                ("TITLE", draft.title), ("ARTIST", draft.artist), ("ALBUM", draft.album),
-                ("GENRE", draft.genre), ("DATE", draft.year),
-                ("COMMENT", draft.comment), ("ALBUMARTIST", draft.albumArtist),
-                ("COMPOSER", draft.composer),
-                ("COMPILATION", draft.isCompilation ? "1" : "0")
-            ]
-            for (key, value) in values where value.isEmpty == false {
-                result.fields.append(Data("\(key)=\(value)".utf8))
-            }
+        let values: [(String, String)] = [
+            ("TITLE", draft.title), ("ARTIST", draft.artist), ("ALBUM", draft.album),
+            ("GENRE", draft.genre), ("DATE", draft.year),
+            ("COMMENT", draft.comment), ("ALBUMARTIST", draft.albumArtist),
+            ("COMPOSER", draft.composer),
+            ("COMPILATION", draft.isCompilation ? "1" : "0")
+        ]
+        for (key, value) in values where editedKeys[key].map(draft.writesText) == true && value.isEmpty == false {
+            result.fields.append(Data("\(key)=\(value)".utf8))
+        }
+        if draft.writesText(.trackNumber) {
             appendNumberPair(draft.trackNumber, numberKey: "TRACKNUMBER", totalKey: "TRACKTOTAL", to: &result.fields)
+        }
+        if draft.writesText(.discNumber) {
             appendNumberPair(draft.discNumber, numberKey: "DISCNUMBER", totalKey: "DISCTOTAL", to: &result.fields)
         }
         if draft.editsLyrics && draft.lyrics.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
