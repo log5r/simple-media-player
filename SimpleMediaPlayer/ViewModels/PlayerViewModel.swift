@@ -312,9 +312,11 @@ extension PlayerViewModel {
     func play(transientSession session: TransientPlaybackSession) {
         guard let first = session.items.first else { return }
         let previous = transientSession
+        // Taken before `play(item:in:)` starts the new item's analysis, which must not be the task waited on.
+        let pending = musicAnalysis.reset()
         transientSession = session
         play(item: first, in: session.items)
-        if let previous, previous !== session { previous.end() }
+        if let previous, previous !== session { endTransientSession(previous, after: pending) }
     }
 
     func isTransientItem(_ item: MediaItem) -> Bool {
@@ -420,6 +422,8 @@ extension PlayerViewModel {
     }
 
     func clearCurrentItem() {
+        // Released before the analysis reset below so the session can wait for the analysis it cancels.
+        releaseTransientSession(unlessContaining: nil)
         musicAnalysis.reset()
         if isVideoMode == false { audioEngine.suspend() }
         stop()
@@ -429,14 +433,22 @@ extension PlayerViewModel {
         formatInfo = .empty
         isVideoMode = false
         showVideoArea = false
-        releaseTransientSession(unlessContaining: nil)
     }
 
     private func releaseTransientSession(unlessContaining item: MediaItem?) {
         guard let session = transientSession else { return }
         if let item, session.contains(item.id) { return }
         transientSession = nil
-        session.end()
+        endTransientSession(session, after: musicAnalysis.reset())
+    }
+
+    /// The analysis task owns the cache write for the session's files, so the files and cache entries are
+    /// removed only after that task has finished; otherwise a late write could recreate an entry.
+    private func endTransientSession(_ session: TransientPlaybackSession, after pending: Task<Void, Never>?) {
+        Task { @MainActor in
+            await pending?.value
+            session.end()
+        }
     }
 
     func setVolume(_ value: Double) {

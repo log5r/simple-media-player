@@ -65,6 +65,8 @@ nonisolated enum MusicLibraryTrackExporter {
             let duration = try await validateOutput(at: outputURL)
             return Output(url: outputURL, format: format, isTranscoded: isTranscoded, duration: duration)
         } catch {
+            // An abandoned validation may still be opening the file. Unlinking it is safe: the open handle
+            // keeps reading the unlinked file on APFS and its result is discarded.
             try? FileManager.default.removeItem(at: outputURL)
             throw error
         }
@@ -194,20 +196,19 @@ nonisolated enum MusicLibraryTrackExporter {
     }
 
     /// The file must decode through the same path the player uses before it is played or imported.
+    /// The open cannot be interrupted, so a cancelled caller stops waiting and the queued open finishes
+    /// on its own with its result discarded.
     private static func validateOutput(at url: URL) async throws -> TimeInterval {
-        let validation = Task.detached(priority: .utility) {
-            try Task.checkCancellation()
-            let file = try AVAudioFile(forReading: url)
-            // The open cannot be interrupted; a request cancelled meanwhile must not report a result.
-            try Task.checkCancellation()
-            let sampleRate = file.fileFormat.sampleRate
-            guard file.length > 0, sampleRate > 0 else { throw MusicLibraryTrackError.outputNotDecodable }
-            return TimeInterval(file.length) / sampleRate
+        let result = try await FileSystemWorkQueue.runCancellable(qos: .userInitiated) {
+            Result { () throws -> TimeInterval in
+                let file = try AVAudioFile(forReading: url)
+                let sampleRate = file.fileFormat.sampleRate
+                guard file.length > 0, sampleRate > 0 else { throw MusicLibraryTrackError.outputNotDecodable }
+                return TimeInterval(file.length) / sampleRate
+            }
         }
-        return try await withTaskCancellationHandler {
-            try await validation.value
-        } onCancel: {
-            validation.cancel()
-        }
+        // The work may finish just as the caller is cancelled; a cancelled request reports no result.
+        try Task.checkCancellation()
+        return try result.get()
     }
 }

@@ -37,8 +37,11 @@ final class MusicAnalysisController {
         self.analyze = { url, _ in try await analyze(url) }
     }
 
-    func reset() {
-        task?.cancel()
+    /// Returns the cancelled task so callers can wait until it, including any cache write, has finished.
+    @discardableResult
+    func reset() -> Task<Void, Never>? {
+        let cancelled = task
+        cancelled?.cancel()
         task = nil
         generation = UUID()
         result = nil
@@ -46,6 +49,7 @@ final class MusicAnalysisController {
         tempoByBeat = []
         status = .idle
         failureReason = nil
+        return cancelled
     }
 
     @discardableResult
@@ -170,7 +174,11 @@ actor MusicAnalysisService {
         }, onProgress: onProgress)
         try Task.checkCancellation()
         if let cacheURL {
-            try await Self.offActor { MusicAnalysisCache.write(analysis, at: cacheURL) }
+            try await Self.offActor {
+                // A cancelled analysis must not recreate an entry its caller may be about to remove.
+                try Task.checkCancellation()
+                MusicAnalysisCache.write(analysis, at: cacheURL)
+            }
         }
         return analysis
     }

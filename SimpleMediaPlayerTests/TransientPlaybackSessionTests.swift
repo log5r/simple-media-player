@@ -54,7 +54,7 @@ struct TransientPlaybackSessionTests {
         fixture.player.play(transientSession: session)
 
         fixture.player.play(item: libraryItem, in: [libraryItem])
-        await session.awaitCleanup()
+        await waitUntilEnded(session)
 
         #expect(session.isEnded)
         #expect(fixture.player.transientSession == nil)
@@ -68,7 +68,7 @@ struct TransientPlaybackSessionTests {
         fixture.player.play(transientSession: session)
 
         fixture.player.clearCurrentItem()
-        await session.awaitCleanup()
+        await waitUntilEnded(session)
 
         #expect(session.isEnded)
         #expect(fixture.player.transientSession == nil)
@@ -82,7 +82,7 @@ struct TransientPlaybackSessionTests {
         fixture.player.play(transientSession: first)
 
         fixture.player.play(transientSession: second)
-        await first.awaitCleanup()
+        await waitUntilEnded(first)
 
         #expect(first.isEnded)
         #expect(second.isEnded == false)
@@ -98,7 +98,7 @@ struct TransientPlaybackSessionTests {
         let fixture = makePlayerFixture(urlsByID: [:])
 
         fixture.player.play(transientSession: session)
-        await session.awaitCleanup()
+        await waitUntilEnded(session)
 
         #expect(session.isEnded)
         #expect(fixture.player.currentItem == nil)
@@ -144,6 +144,41 @@ struct TransientPlaybackSessionTests {
         #expect(FileManager.default.fileExists(atPath: session.directory.path) == false)
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func endingWaitsForTheCancelledAnalysisToFinish() async throws {
+        let gate = BlockingAnalysis()
+        // Ignores cancellation, like a cache write that has already started.
+        let analysis = MusicAnalysisController(analyze: { _ in await gate.analyze() })
+        let session = try makeSession(titles: ["One"])
+        let fixture = makePlayerFixture(urlsByID: urls(for: session), musicAnalysis: analysis)
+        fixture.player.play(transientSession: session)
+        await gate.waitUntilStarted()
+
+        fixture.player.clearCurrentItem()
+        #expect(fixture.player.transientSession == nil)
+        for _ in 0..<50 { await Task.yield() }
+        #expect(session.isEnded == false)
+        #expect(FileManager.default.fileExists(atPath: session.directory.path))
+
+        await gate.finish()
+        await waitUntilEnded(session)
+        #expect(session.isEnded)
+        #expect(FileManager.default.fileExists(atPath: session.directory.path) == false)
+    }
+
+    /// The player ends a released session only after the cancelled analysis task finishes.
+    private func waitUntilEnded(_ session: TransientPlaybackSession) async {
+        // The default controller's analysis finishes on other threads, so fall back to short sleeps.
+        for attempt in 0..<400 where session.isEnded == false {
+            if attempt < 200 {
+                await Task.yield()
+            } else {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        await session.awaitCleanup()
+    }
+
     private func makeSession(
         titles: [String], analysisCacheDirectory: URL? = nil
     ) throws -> TransientPlaybackSession {
@@ -165,5 +200,28 @@ struct TransientPlaybackSessionTests {
         Dictionary(uniqueKeysWithValues: session.items.map {
             ($0.id, session.directory.appendingPathComponent($0.fileName))
         })
+    }
+}
+
+private actor BlockingAnalysis {
+    private var request: CheckedContinuation<MusicAnalysis, Never>?
+    private var startWaiter: CheckedContinuation<Void, Never>?
+
+    func analyze() async -> MusicAnalysis {
+        await withCheckedContinuation { continuation in
+            request = continuation
+            startWaiter?.resume()
+            startWaiter = nil
+        }
+    }
+
+    func waitUntilStarted() async {
+        if request != nil { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func finish() {
+        request?.resume(returning: MusicAnalysis(duration: 8))
+        request = nil
     }
 }
