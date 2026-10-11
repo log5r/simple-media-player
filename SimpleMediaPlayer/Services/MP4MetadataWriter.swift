@@ -2,7 +2,7 @@ import Foundation
 
 enum MP4MetadataWriter {
     /// The items a text write replaces, by the field they hold; a sort item goes with the field it sorts.
-    nonisolated private static let editableItemFields: [BoxType: MediaMetadataEditField] = [
+    nonisolated static let editableItemFields: [BoxType: MediaMetadataEditField] = [
         BoxType([0xA9, 0x6E, 0x61, 0x6D]): .title,
         BoxType([0xA9, 0x41, 0x52, 0x54]): .artist,
         BoxType([0xA9, 0x61, 0x6C, 0x62]): .album,

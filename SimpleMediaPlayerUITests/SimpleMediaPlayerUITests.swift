@@ -432,8 +432,8 @@ final class SimpleMediaPlayerUITests: XCTestCase {
     func testDraggingAcrossRowsSelectsTheEntireRangeForEditing() throws {
         let app = XCUIApplication()
         app.launchArguments += [
-            "--ui-testing-multiple-selection",
-            "-ApplePersistenceIgnoreState", "YES"
+            "--ui-testing-multiple-selection", "-AppleLanguages", "(ja)",
+            "-AppleLocale", "ja_JP", "-ApplePersistenceIgnoreState", "YES"
         ]
         app.launch()
         app.activate()
@@ -478,7 +478,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
 
         let editSelectedButton = app.buttons["editSelectedMediaButton"]
         XCTAssertTrue(editSelectedButton.waitForExistence(timeout: 2))
-        XCTAssertEqual(editSelectedButton.value as? String, "6")
+        XCTAssertEqual(editSelectedButton.label, "選択した6件を編集")
         editSelectedButton.click()
 
         let editSelectionSummary = app.staticTexts["bulkEditSelectionSummary"]

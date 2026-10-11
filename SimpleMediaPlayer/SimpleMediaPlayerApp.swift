@@ -61,18 +61,20 @@ struct SimpleMediaPlayerApp: App {
                 let mediaCount = max(requestedMediaCount ?? 10, 1)
 
                 for index in 1...mediaCount {
-                    context.insert(
-                        MediaItem(
-                            title: "UI Test Track \(index)",
-                            artist: "UI Test Artist",
-                            album: "UI Test Album",
-                            duration: TimeInterval(index * 10),
-                            isVideo: false,
-                            bookmarkData: Data(),
-                            addedAt: Date(timeIntervalSince1970: TimeInterval(index)),
-                            fileName: "ui-test-\(index).mp3"
-                        )
+                    let item = MediaItem(
+                        title: "UI Test Track \(index)",
+                        artist: "UI Test Artist",
+                        album: "UI Test Album",
+                        duration: TimeInterval(index * 10),
+                        isVideo: false,
+                        bookmarkData: Data(),
+                        addedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                        fileName: "ui-test-\(index).mp3"
                     )
+                    #if DEBUG
+                    try MetadataEditabilityUITestFixture.prepareSaveFile(for: item, index: index)
+                    #endif
+                    context.insert(item)
                 }
                 if ProcessInfo.processInfo.arguments.contains("--ui-testing-artwork") {
                     try ArtworkUITestFixture.addArtwork(in: context)

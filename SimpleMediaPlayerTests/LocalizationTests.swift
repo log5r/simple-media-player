@@ -3,6 +3,13 @@ import Testing
 
 struct LocalizationTests {
     @Test(arguments: ["en", "ja"])
+    func bulkEditAccessibilityIncludesTheSelectionCount(language: String) throws {
+        let bundle = try localizedBundle(language)
+        let format = bundle.localizedString(forKey: "Edit Selected, %lld selected", value: nil, table: nil)
+        #expect(String(format: format, 2) == (language == "ja" ? "選択した2件を編集" : "Edit Selected, 2 selected"))
+    }
+
+    @Test(arguments: ["en", "ja"])
     func playerAccessibilityLabelsHaveLocalizedResources(language: String) throws {
         let bundle = try localizedBundle(language)
         let expected = language == "ja"

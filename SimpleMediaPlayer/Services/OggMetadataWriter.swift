@@ -34,11 +34,11 @@ nonisolated enum OggMetadataWriter {
             || body.starts(with: Data("OpusHead".utf8))
     }
 
-    static func read(from url: URL) throws -> AudioTagReadResult {
+    static func read(from url: URL, textFields: Set<MediaMetadataEditField>? = nil) throws -> AudioTagReadResult {
         let source = try FileHandle(forReadingFrom: url)
         defer { try? source.close() }
         let prefix = try readPrefix(source, size: source.seekToEnd())
-        return XiphMetadata.read(prefix.comment)
+        return XiphMetadata.read(prefix.comment, textFields: textFields)
     }
 
     /// `chunkSize` bounds each buffered read of the audio pages; tests shrink it to split pages across reads.

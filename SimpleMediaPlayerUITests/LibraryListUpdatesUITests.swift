@@ -142,7 +142,10 @@ final class LibraryListUpdatesUITests: XCTestCase {
         #endif
         let selected = app.buttons["editSelectedMediaButton"]
         XCTAssertTrue(selected.waitForExistence(timeout: 5))
-        waitForValue(String(rows.count), of: selected)
+        let accessibleCount = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "Edit Selected, \(rows.count) selected"), object: selected
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [accessibleCount], timeout: 5), .completed)
     }
 
     @MainActor

@@ -8,7 +8,9 @@ struct MediaListRowValueTests {
         ("song.mp3", "MP3"), ("song.AAC", "AAC"), ("a.b.flac", "FLAC"), ("曲.Opus", "OPUS"),
         ("song", "-"), (".mp3", "-"), ("song.", "-"), ("song.m p3", "-"), ("song.mp3 ", "-")
     ])
-    func contentTypeMatchesFileURLPathExtensionWithoutFileSystemQuery(fileName: String, expected: String) {
+    func contentTypeMatchesFileURLPathExtensionWithoutFileSystemQuery(
+        fileName: String, expected: String
+    ) {
         let item = MediaItem(title: "Song", duration: 1, isVideo: false, bookmarkData: Data(), fileName: fileName)
         #expect(item.displayContentType == expected)
         let formerExtension = URL(fileURLWithPath: fileName).pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -16,17 +18,19 @@ struct MediaListRowValueTests {
     }
 
     @Test func tableSortKeyPathsMapToLibrarySortFields() {
-        let expected: [(PartialKeyPath<MediaTableRow>, LibrarySortField)] = [
-            (\.indexSortValue, .dateAdded), (\.artworkSortValue, .title), (\.titleSortValue, .title),
-            (\.artistSortValue, .artist), (\.albumSortValue, .album), (\.genreSortValue, .genre),
-            (\.durationSortValue, .duration), (\.trackNumberSortValue, .trackNumber), (\.yearSortValue, .year),
-            (\.albumArtistSortValue, .albumArtist), (\.composerSortValue, .composer),
-            (\.discNumberSortValue, .discNumber), (\.kindSortValue, .kind),
-            (\.contentTypeSortValue, .contentType), (\.dateAddedSortValue, .dateAdded),
-            (\.fileNameSortValue, .fileName)
+        let expected: [(KeyPathComparator<MediaTableRow>, LibrarySortField)] = [
+            (.init(\.indexSortValue), .dateAdded), (.init(\.artworkSortValue), .title),
+            (.init(\.titleSortValue), .title), (.init(\.artistSortValue), .artist),
+            (.init(\.albumSortValue), .album), (.init(\.genreSortValue), .genre),
+            (.init(\.durationSortValue), .duration), (.init(\.trackNumberSortValue), .trackNumber),
+            (.init(\.yearSortValue), .year), (.init(\.albumArtistSortValue), .albumArtist),
+            (.init(\.composerSortValue), .composer), (.init(\.discNumberSortValue), .discNumber),
+            (.init(\.kindSortValue), .kind), (.init(\.contentTypeSortValue), .contentType),
+            (.init(\.dateAddedSortValue), .dateAdded), (.init(\.fileNameSortValue), .fileName)
         ]
-        for (keyPath, field) in expected {
-            #expect(MediaTableRow.sortField(forKeyPathDescription: String(describing: keyPath)) == field)
+        for (comparator, field) in expected {
+            #expect(MediaTableRow.sortField(for: comparator.keyPath) == field)
         }
+        #expect(MediaTableRow.sortField(for: \.id) == nil)
     }
 }

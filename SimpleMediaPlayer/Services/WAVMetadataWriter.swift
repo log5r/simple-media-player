@@ -18,7 +18,7 @@ nonisolated enum WAVMetadataWriter {
         url.pathExtension.lowercased() == "wav"
     }
 
-    static func read(from url: URL) throws -> AudioTagReadResult {
+    static func read(from url: URL, textFields: Set<MediaMetadataEditField>? = nil) throws -> AudioTagReadResult {
         let source = try FileHandle(forReadingFrom: url)
         defer { try? source.close() }
         let size = try source.seekToEnd()
@@ -27,11 +27,13 @@ nonisolated enum WAVMetadataWriter {
         for chunk in chunks where chunk.id == infoID {
             let payload = try read(chunk.content, source: source)
             guard payload.starts(with: Data("INFO".utf8)) else { continue }
-            result.values = combine(primary: result.values, fallback: try infoValues(in: payload))
+            result.values = combine(
+                primary: result.values, fallback: try infoValues(in: payload, textFields: textFields)
+            )
         }
         if let chunk = chunks.first(where: { id3IDs.contains($0.id) }) {
             let data = try read(chunk.content, source: source)
-            if let id3 = try ID3TagWriter.readEmbeddedTag(data) {
+            if let id3 = try ID3TagWriter.readEmbeddedTag(data, textFields: textFields) {
                 result.values = combine(primary: id3.values, fallback: result.values)
                 result.artworkData = id3.artworkData
                 result.lyrics = id3.lyrics
@@ -170,7 +172,9 @@ nonisolated enum WAVMetadataWriter {
         return data
     }
 
-    private static func infoValues(in data: Data) throws -> MediaMetadataEmbeddedValues {
+    private static func infoValues(
+        in data: Data, textFields: Set<MediaMetadataEditField>?
+    ) throws -> MediaMetadataEmbeddedValues {
         var values = MediaMetadataEmbeddedValues()
         var cursor = 4
         while cursor < data.count {
@@ -178,21 +182,29 @@ nonisolated enum WAVMetadataWriter {
             let length = Int(XiphMetadata.uint32(data, at: cursor + 4, little: true))
             guard length <= data.count - cursor - 8 else { throw MediaMetadataEditError.invalidAudioMetadata }
             let key = String(data: data[cursor..<(cursor + 4)], encoding: .ascii) ?? ""
+            if let textFields, editableInfoFields[Data(key.utf8)].map(textFields.contains) != true {
+                cursor += 8 + length + length % 2
+                continue
+            }
             let raw = Data(data[(cursor + 8)..<(cursor + 8 + length)]).prefix(while: { $0 != 0 })
             let value = String(data: raw, encoding: .utf8) ?? String(data: raw, encoding: .isoLatin1)
-            switch key {
-            case "INAM": values.title = value
-            case "IART": values.artist = value
-            case "IPRD": values.album = value
-            case "IGNR": values.genre = value
-            case "ICRD": values.year = value
-            case "ITRK": values.trackNumber = value
-            case "ICMT": values.comment = value
-            default: break
-            }
+            applyInfoValue(value, key: key, to: &values)
             cursor += 8 + length + length % 2
         }
         return values
+    }
+
+    private static func applyInfoValue(_ value: String?, key: String, to values: inout MediaMetadataEmbeddedValues) {
+        switch key {
+        case "INAM": values.title = value
+        case "IART": values.artist = value
+        case "IPRD": values.album = value
+        case "IGNR": values.genre = value
+        case "ICRD": values.year = value
+        case "ITRK": values.trackNumber = value
+        case "ICMT": values.comment = value
+        default: break
+        }
     }
 
     private static func combine(primary: MediaMetadataEmbeddedValues, fallback: MediaMetadataEmbeddedValues) -> MediaMetadataEmbeddedValues {
