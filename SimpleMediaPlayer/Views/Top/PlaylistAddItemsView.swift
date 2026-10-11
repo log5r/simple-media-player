@@ -8,17 +8,15 @@ struct PlaylistAddItemsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedIDs: Set<UUID> = []
     @State private var searchText = ""
+    @State private var projection = PlaylistAddCandidateProjection()
 
     var body: some View {
-        // Evaluate the filter once per body pass; both the empty check and the list read the result.
-        let candidates = PlaylistAddCandidateFilter.candidates(
-            from: items,
-            excluding: Set(playlist.entries.compactMap { $0.item?.id }),
-            searchText: searchText
-        )
+        let candidates = projection.items
         NavigationStack {
             Group {
-                if candidates.isEmpty {
+                if candidates.isEmpty && projection.isUpdating {
+                    ProgressView()
+                } else if candidates.isEmpty {
                     ContentUnavailableView(
                         "No Media to Add",
                         systemImage: "music.note.list",
@@ -74,13 +72,26 @@ struct PlaylistAddItemsView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        addItems(items.filter { selectedIDs.contains($0.id) })
+                        guard let selected = projection.selectedItems(ids: selectedIDs, for: playlist),
+                              selected.isEmpty == false else { return }
+                        addItems(selected)
                         dismiss()
                     }
                     .disabled(selectedIDs.isEmpty)
                 }
             }
         }
+        .onAppear {
+            projection.update(searchText: searchText)
+            projection.update(items: items, playlist: playlist)
+        }
+        .onChange(
+            of: PlaylistAddCandidateProjection.Source(items: items, playlist: playlist), initial: true
+        ) { _, source in
+            projection.update(items: source.items, playlist: source.playlist)
+        }
+        .onChange(of: searchText, initial: true) { _, query in projection.update(searchText: query) }
+        .onDisappear { projection.cancel() }
         #if os(macOS)
         .frame(minWidth: 520, minHeight: 420)
         #endif

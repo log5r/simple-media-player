@@ -203,6 +203,32 @@ struct AudioLoudnessCacheTests {
         #expect(try fixture.entryNames().count == 2)
     }
 
+    @Test func aFullLegacyDictionaryMigratesWithoutMeasuringAgain() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let suiteName = "AudioLoudnessCacheTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let files = try (0..<256).map { try fixture.makeFile(named: "Café | song-\($0).caf") }
+        var legacy: [String: Float] = [:]
+        for (index, url) in files.enumerated() { legacy[try legacyKey(for: url)] = Float(index % 25 - 12) }
+        defaults.set(legacy, forKey: AudioLoudnessCache.legacyDefaultsKey)
+
+        AudioLoudnessCache.migrateLegacyEntries(from: defaults, into: fixture.cache)
+
+        var measurementCount = 0
+        for (index, url) in files.enumerated() {
+            let gain = try AudioLoudnessNormalizer.cachedOrMeasuredGain(for: url, cacheDirectory: fixture.cache) { _ in
+                measurementCount += 1
+                return 0
+            }
+            #expect(gain == Float(index % 25 - 12))
+        }
+        #expect(measurementCount == 0)
+        #expect(defaults.object(forKey: AudioLoudnessCache.legacyDefaultsKey) == nil)
+        #expect(try fixture.entryNames().count == 256)
+    }
+
     /// The key the earlier cache gave the file.
     private func legacyKey(for url: URL) throws -> String {
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])

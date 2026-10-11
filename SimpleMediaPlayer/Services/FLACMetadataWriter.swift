@@ -19,15 +19,18 @@ nonisolated enum FLACMetadataWriter {
         url.pathExtension.lowercased() == "flac"
     }
 
-    static func read(from url: URL) throws -> AudioTagReadResult {
+    static func read(from url: URL, textFields: Set<MediaMetadataEditField>? = nil) throws -> AudioTagReadResult {
         let source = try FileHandle(forReadingFrom: url)
         defer { try? source.close() }
         let size = try source.seekToEnd()
         let blocks = try parse(source, size: size)
         var result = AudioTagReadResult()
         if let comment = blocks.first(where: { $0.type == 4 }) {
-            result = XiphMetadata.read(try XiphMetadata.parse(readPayload(comment, source: source)))
+            result = XiphMetadata.read(
+                try XiphMetadata.parse(readPayload(comment, source: source)), textFields: textFields
+            )
         }
+        guard textFields == nil else { return result }
         let pictures = blocks.filter { $0.type == 6 }
         let front = try pictures.first {
             guard $0.payload.count >= 4 else { throw MediaMetadataEditError.invalidAudioMetadata }

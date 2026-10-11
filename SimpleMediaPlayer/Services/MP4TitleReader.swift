@@ -14,7 +14,11 @@ enum MP4MetadataReader {
     nonisolated private static let ilst = Array("ilst".utf8)
     nonisolated private static let data = Array("data".utf8)
 
-    nonisolated static func read(from url: URL) throws -> MP4MetadataReadResult? {
+    /// A non-nil `textFields` reads only those text payloads, including their sort fallbacks.
+    /// Artwork and lyrics payloads are skipped entirely.
+    nonisolated static func read(
+        from url: URL, textFields: Set<MediaMetadataEditField>? = nil
+    ) throws -> MP4MetadataReadResult? {
         let handle = try FileHandle(forReadingFrom: url)
         defer {
             try? handle.close()
@@ -33,7 +37,7 @@ enum MP4MetadataReader {
             for metadataBox in metadataBoxes {
                 let metadataRange = metadataBox.contentRange.dropFirstBytes(4)
                 for itemListBox in try parser.boxes(ofType: ilst, in: metadataRange) {
-                    return try result(inItemList: itemListBox.contentRange, parser: parser)
+                    return try result(inItemList: itemListBox.contentRange, parser: parser, textFields: textFields)
                 }
             }
         }
@@ -41,87 +45,138 @@ enum MP4MetadataReader {
         return nil
     }
 
+    /// QuickTime user-data strings and keyed (`mdta`) metadata are outside the iTunes reader's contract.
+    /// Check their box headers so an ordinary missing iTunes tag does not trigger an AVFoundation load.
+    nonisolated static func requiresCommonTextFallback(from url: URL) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let parser = Parser(handle: handle)
+        let size = try handle.seekToEnd()
+        for movie in try parser.boxes(ofType: moov, in: 0..<size) {
+            var metadataBoxes = try parser.boxes(ofType: meta, in: movie.contentRange)
+            for userData in try parser.boxes(ofType: udta, in: movie.contentRange) {
+                let children = try parser.boxes(in: userData.contentRange)
+                if children.contains(where: { $0.type.first == 0xA9 }) { return true }
+                metadataBoxes += children.filter { $0.type == meta }
+            }
+            for metadata in metadataBoxes {
+                // ISO meta is a full box; legacy QuickTime meta can start directly with child boxes.
+                for range in [metadata.contentRange.dropFirstBytes(4), metadata.contentRange] {
+                    let children = try parser.boxes(in: range)
+                    if children.contains(where: { $0.type == Array("keys".utf8) }) { return true }
+                }
+            }
+        }
+        return false
+    }
+
     nonisolated private static func result(
         inItemList range: Range<UInt64>,
-        parser: Parser
+        parser: Parser, textFields: Set<MediaMetadataEditField>?
     ) throws -> MP4MetadataReadResult {
         var result = MP4MetadataReadResult()
-        var sortTitle: String?
-        var sortArtist: String?
-        var sortAlbum: String?
-        var sortAlbumArtist: String?
-        var sortComposer: String?
+        var sortValues = MediaMetadataEmbeddedValues()
 
         for itemBox in try parser.boxes(in: range) {
+            if let textFields {
+                let type = MP4MetadataWriter.BoxType(itemBox.type)
+                guard MP4MetadataWriter.editableItemFields[type].map(textFields.contains) == true else { continue }
+            }
             guard let dataBox = try parser.boxes(ofType: data, in: itemBox.contentRange).first else {
                 continue
             }
             let payloadRange = dataBox.contentRange.dropFirstBytes(8)
 
-            switch itemBox.type {
-            case [0xA9, 0x6E, 0x61, 0x6D]:
-                result.values.title = try parser.string(in: payloadRange)
-            case [0xA9, 0x41, 0x52, 0x54]:
-                result.values.artist = try parser.string(in: payloadRange)
-            case [0xA9, 0x61, 0x6C, 0x62]:
-                result.values.album = try parser.string(in: payloadRange)
-            case [0xA9, 0x67, 0x65, 0x6E]:
-                result.values.genre = try parser.string(in: payloadRange)
-            case [0xA9, 0x64, 0x61, 0x79]:
-                result.values.year = normalizedYear(try parser.string(in: payloadRange))
-            case Array("trkn".utf8):
-                result.values.trackNumber = try parser.numberPairString(in: payloadRange)
-            case [0xA9, 0x63, 0x6D, 0x74]:
-                result.values.comment = try parser.string(in: payloadRange)
-            case Array("aART".utf8):
-                result.values.albumArtist = try parser.string(in: payloadRange)
-            case [0xA9, 0x77, 0x72, 0x74]:
-                result.values.composer = try parser.string(in: payloadRange)
-            case Array("disk".utf8):
-                result.values.discNumber = try parser.numberPairString(in: payloadRange)
-            case Array("cpil".utf8):
-                result.values.isCompilation = try parser.bool(in: payloadRange)
-            case Array("covr".utf8):
-                result.artworkData = try parser.rawData(in: payloadRange)
-            case [0xA9, 0x6C, 0x79, 0x72]:
-                result.lyrics = try parser.string(in: payloadRange)
-            case Array("sonm".utf8):
-                sortTitle = try parser.string(in: payloadRange)
-            case Array("soar".utf8):
-                sortArtist = try parser.string(in: payloadRange)
-            case Array("soal".utf8):
-                sortAlbum = try parser.string(in: payloadRange)
-            case Array("soaa".utf8):
-                sortAlbumArtist = try parser.string(in: payloadRange)
-            case Array("soco".utf8):
-                sortComposer = try parser.string(in: payloadRange)
-            default:
-                continue
-            }
+            try readTextPayload(itemBox.type, range: payloadRange, parser: parser, values: &result.values)
+            try readNumericPayload(itemBox.type, range: payloadRange, parser: parser, values: &result.values)
+            try readOtherPayload(
+                itemBox.type, range: payloadRange, parser: parser, result: &result, sortValues: &sortValues
+            )
         }
 
-        if result.values.title == nil, sortTitle != nil {
-            result.values.title = sortTitle
+        if result.values.title == nil, sortValues.title != nil {
+            result.values.title = sortValues.title
             result.usedSortMetadataFallback = true
         }
-        if result.values.artist == nil, sortArtist != nil {
-            result.values.artist = sortArtist
+        if result.values.artist == nil, sortValues.artist != nil {
+            result.values.artist = sortValues.artist
             result.usedSortMetadataFallback = true
         }
-        if result.values.album == nil, sortAlbum != nil {
-            result.values.album = sortAlbum
+        if result.values.album == nil, sortValues.album != nil {
+            result.values.album = sortValues.album
             result.usedSortMetadataFallback = true
         }
-        if result.values.albumArtist == nil, sortAlbumArtist != nil {
-            result.values.albumArtist = sortAlbumArtist
+        if result.values.albumArtist == nil, sortValues.albumArtist != nil {
+            result.values.albumArtist = sortValues.albumArtist
             result.usedSortMetadataFallback = true
         }
-        if result.values.composer == nil, sortComposer != nil {
-            result.values.composer = sortComposer
+        if result.values.composer == nil, sortValues.composer != nil {
+            result.values.composer = sortValues.composer
             result.usedSortMetadataFallback = true
         }
 
         return result
+    }
+
+    nonisolated private static func readTextPayload(
+        _ type: BoxType, range: Range<UInt64>, parser: Parser, values: inout MediaMetadataEmbeddedValues
+    ) throws {
+        switch type {
+        case [0xA9, 0x6E, 0x61, 0x6D]:
+            values.title = try parser.string(in: range)
+        case [0xA9, 0x41, 0x52, 0x54]:
+            values.artist = try parser.string(in: range)
+        case [0xA9, 0x61, 0x6C, 0x62]:
+            values.album = try parser.string(in: range)
+        case [0xA9, 0x67, 0x65, 0x6E]:
+            values.genre = try parser.string(in: range)
+        case [0xA9, 0x64, 0x61, 0x79]:
+            values.year = normalizedYear(try parser.string(in: range))
+        case [0xA9, 0x63, 0x6D, 0x74]:
+            values.comment = try parser.string(in: range)
+        case Array("aART".utf8):
+            values.albumArtist = try parser.string(in: range)
+        case [0xA9, 0x77, 0x72, 0x74]:
+            values.composer = try parser.string(in: range)
+        default: break
+        }
+    }
+
+    nonisolated private static func readNumericPayload(
+        _ type: BoxType, range: Range<UInt64>, parser: Parser, values: inout MediaMetadataEmbeddedValues
+    ) throws {
+        switch type {
+        case Array("trkn".utf8):
+            values.trackNumber = try parser.numberPairString(in: range)
+        case Array("disk".utf8):
+            values.discNumber = try parser.numberPairString(in: range)
+        case Array("cpil".utf8):
+            values.isCompilation = try parser.bool(in: range)
+        default: break
+        }
+    }
+
+    nonisolated private static func readOtherPayload(
+        _ type: BoxType, range: Range<UInt64>, parser: Parser,
+        result: inout MP4MetadataReadResult, sortValues: inout MediaMetadataEmbeddedValues
+    ) throws {
+        switch type {
+        case Array("covr".utf8):
+            result.artworkData = try parser.rawData(in: range)
+        case [0xA9, 0x6C, 0x79, 0x72]:
+            result.lyrics = try parser.string(in: range)
+        case Array("sonm".utf8):
+            sortValues.title = try parser.string(in: range)
+        case Array("soar".utf8):
+            sortValues.artist = try parser.string(in: range)
+        case Array("soal".utf8):
+            sortValues.album = try parser.string(in: range)
+        case Array("soaa".utf8):
+            sortValues.albumArtist = try parser.string(in: range)
+        case Array("soco".utf8):
+            sortValues.composer = try parser.string(in: range)
+        default: break
+        }
     }
 
     nonisolated private static func normalizedYear(_ value: String?) -> String? {

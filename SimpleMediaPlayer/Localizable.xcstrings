@@ -1896,6 +1896,17 @@
         }
       }
     },
+    "Edit Selected, %lld selected" : {
+      "comment" : "Accessibility label for editing the selected media, including the selected item count.",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択した%lld件を編集"
+          }
+        }
+      }
+    },
     "Edit selected media" : {
       "localizations" : {
         "ja" : {

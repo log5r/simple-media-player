@@ -43,11 +43,83 @@ final class BulkMetadataEditabilityUITests: XCTestCase {
     }
 
     @MainActor
-    private func launch() -> XCUIApplication {
+    func testStoppingASaveKeepsTheRemainingFilesAndModelsUnchanged() {
+        let app = launch(delayedSave: true)
+        defer { cleanUpSaveFiles(in: app) }
+        openEditor(for: [1, 2, 3], in: app)
+        #if os(macOS)
+        let title = app.checkBoxes["bulkEditField.title"]
+        #else
+        let title = app.switches["bulkEditField.title"]
+        #endif
+        let editable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: title)
+        XCTAssertEqual(XCTWaiter.wait(for: [editable], timeout: 5), .completed)
+        press(title)
+        let field = app.textFields["Title"]
+        press(field)
+        field.typeText("Stopped bulk title")
+        press(app.buttons["bulkEditApplyButton"])
+
+        let progress = app.descendants(matching: .any)["bulkEditProgress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        let secondFile = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Applying 2 of 3…")).firstMatch
+        XCTAssertTrue(secondFile.waitForExistence(timeout: 5))
+        let stop = app.buttons["bulkEditStopButton"]
+        reveal(stop, in: app.scrollViews["bulkEditScrollView"])
+        XCTAssertTrue(stop.isEnabled)
+        press(stop)
+        let resultText = "1 files updated, 2 not processed (cancelled)."
+        let result = app.staticTexts.matching(
+            NSPredicate(format: "label == %@ OR value == %@", resultText, resultText)
+        ).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 5))
+        waitForDisappearance(stop, timeout: 3)
+        let storedTitles = app.staticTexts["bulkEditSavedFileTitles"]
+        let expectedFileTitles = "Stopped bulk title|UI Test Track 2|UI Test Track 3"
+        let filesAreCorrect = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@ OR value == %@", expectedFileTitles, expectedFileTitles),
+            object: storedTitles
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [filesAreCorrect], timeout: 5), .completed)
+
+        closeWithoutApplying(in: app)
+        for expectedTitle in ["Stopped bulk title", "UI Test Track 2", "UI Test Track 3"] {
+            let modelRow = app.descendants(matching: .any).matching(
+                NSPredicate(format: "label == %@ OR value == %@", expectedTitle, expectedTitle)
+            ).firstMatch
+            XCTAssertTrue(modelRow.waitForExistence(timeout: 5))
+        }
+    }
+
+    @MainActor
+    private func closeWithoutApplying(in app: XCUIApplication) {
+        press(app.buttons["bulkEditCloseButton"])
+        #if os(macOS)
+        let discard = app.windows.buttons["Close Without Applying"]
+        #else
+        let discard = app.buttons["Close Without Applying"]
+        #endif
+        XCTAssertTrue(discard.waitForExistence(timeout: 3))
+        press(discard)
+    }
+
+    @MainActor
+    private func cleanUpSaveFiles(in app: XCUIApplication) {
+        app.terminate()
+        app.launchArguments = [
+            "--ui-testing-multiple-selection", "--ui-testing-media-count=1", "--ui-testing-cleanup-metadata-save"
+        ]
+        app.launch()
+        app.terminate()
+    }
+
+    @MainActor
+    private func launch(delayedSave: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-multiple-selection", "--ui-testing-media-count=3",
-            "--ui-testing-delayed-editability",
+            delayedSave ? "--ui-testing-delayed-metadata-save" : "--ui-testing-delayed-editability",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-ApplePersistenceIgnoreState", "YES", "-bottomPanelLayout", "classic"
         ]
@@ -90,9 +162,25 @@ final class BulkMetadataEditabilityUITests: XCTestCase {
         }
         let editSelected = app.buttons["editSelectedMediaButton"]
         XCTAssertTrue(editSelected.waitForExistence(timeout: 5))
-        waitForValue(String(trackNumbers.count), of: editSelected)
+        let expectedLabel = "Edit Selected, \(trackNumbers.count) selected"
+        let countIsAccessible = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", expectedLabel), object: editSelected
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [countIsAccessible], timeout: 3), .completed)
         press(editSelected)
         XCTAssertTrue(app.buttons["bulkEditCloseButton"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func reveal(_ element: XCUIElement, in scrollView: XCUIElement) {
+        for _ in 0..<3 {
+            if scrollView.frame.contains(element.frame), !element.frame.isEmpty { break }
+            scrollView.swipeUp()
+        }
+        let controlFrame = element.frame
+        XCTAssertFalse(controlFrame.isEmpty)
+        XCTAssertFalse(controlFrame.isInfinite)
+        XCTAssertTrue(scrollView.frame.contains(controlFrame), "Control remains outside the scroll viewport")
     }
 
     @MainActor
@@ -102,12 +190,6 @@ final class BulkMetadataEditabilityUITests: XCTestCase {
         #else
         element.tap()
         #endif
-    }
-
-    @MainActor
-    private func waitForValue(_ value: String, of element: XCUIElement) {
-        let updated = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: element)
-        XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 3), .completed)
     }
 
     @MainActor

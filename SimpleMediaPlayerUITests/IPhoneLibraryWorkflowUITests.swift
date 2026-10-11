@@ -34,11 +34,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         app.tabBars.buttons["Playlists"].tap()
         app.buttons["addPlaylistButton"].tap()
         app.buttons["Add Tracks"].tap()
-        let track = app.buttons.containing(.staticText, identifier: "Layout Track 1").firstMatch
-        XCTAssertTrue(track.waitForExistence(timeout: 5))
-        track.tap()
-        app.buttons["Add"].tap()
-        XCTAssertTrue(app.staticTexts["Layout Track 1"].waitForExistence(timeout: 5))
+        addSelectionAfterHidingItWithSearch(in: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         app.buttons["New Playlist"].press(forDuration: 1)
         app.buttons["Rename"].tap()
@@ -46,14 +42,49 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap()
         name.typeText(" Renamed")
-        app.alerts.buttons["Rename"].tap()
+        XCTAssertEqual(name.value as? String, "New Playlist Renamed")
+        let renameAlert = app.alerts["Rename Playlist"]
+        let rename = renameAlert.buttons["Rename"]
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true AND hittable == true"), object: rename
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        rename.tap()
         let renamed = app.buttons["New Playlist Renamed"]
-        XCTAssertTrue(renamed.waitForExistence(timeout: 5))
+        XCTAssertTrue(renamed.waitForExistence(timeout: 5), app.debugDescription)
         renamed.tap()
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'")).firstMatch
         row.press(forDuration: 1)
         app.buttons["Remove from Playlist"].tap()
         XCTAssertTrue(app.staticTexts["No Media"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor private func addSelectionAfterHidingItWithSearch(in app: XCUIApplication) {
+        let track = app.buttons.containing(.staticText, identifier: "Layout Track 1").firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        track.tap()
+        let search = app.searchFields.firstMatch
+        if search.exists == false {
+            let showSearch = app.buttons["Search"].firstMatch
+            if showSearch.exists { showSearch.tap() } else { app.swipeDown() }
+        }
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Layout Track 2")
+        XCTAssertTrue(app.staticTexts["Layout Track 2"].waitForExistence(timeout: 5))
+        waitForDisappearance(track)
+        search.typeText("\n")
+        XCTAssertEqual(search.value as? String, "Layout Track 2")
+        XCTAssertFalse(track.exists)
+        // iOS can keep confirmation toolbar items hidden while its search presentation is active.
+        app.buttons["close"].tap()
+        let add = app.buttons["Add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(track.waitForExistence(timeout: 5))
+        XCTAssertEqual(track.value as? String, "Selected")
+        XCTAssertTrue(add.isEnabled, "A selection hidden by search should survive closing search")
+        add.tap()
+        XCTAssertTrue(app.staticTexts["Layout Track 1"].waitForExistence(timeout: 5))
     }
 
     @MainActor func testExportUsesShareSheet() {

@@ -124,7 +124,10 @@ struct SpectrumAnalyzerSuppressionTests {
     }
 
     private func videoBatch(time: TimeInterval, generation: Int) -> VideoAudioSampleRing.Batch {
-        let samples = (0..<4_800).map { Float(sin(Double($0) * 2 * .pi * 440 / 48_000)) * 0.4 }
+        let samples = (0..<4_800).map { index -> Float in
+            let phase: Double = Double(index) * 2 * .pi * 440 / 48_000
+            return Float(sin(phase)) * 0.4
+        }
         return .init(
             left: samples, right: samples, sampleRate: 48_000, time: time,
             analysisGeneration: generation, sourceEpoch: 3, startsStream: true

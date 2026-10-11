@@ -79,7 +79,7 @@ struct IPhoneTrackListView: View {
                     .padding(.horizontal, 16).padding(.vertical, 8)
                     .background(.bar)
                     .accessibilityIdentifier("editSelectedMediaButton")
-                    .accessibilityValue("\(selectedBulkItems.count)")
+                    .accessibilityLabel(L10n.format("Edit Selected, %lld selected", selectedBulkItems.count))
             }
         }
         .modifier(LibraryListUpdates(

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SwiftData
 
@@ -36,29 +37,45 @@ extension LibraryService {
     func itemDraftResolvingPlaceholders(
         for item: MediaItem, patching fields: Set<MediaMetadataEditField>
     ) async throws -> MediaMetadataEditDraft {
+        try Task.checkCancellation()
         let placeholders = unpatchedPlaceholderFields(of: item, patching: fields)
         guard placeholders.isEmpty == false else { return MediaMetadataEditDraft(item: item) }
         let itemID = item.id
         let bookmarkData = item.bookmarkData
         let fileName = item.fileName
-        let embedded: MediaMetadataEditDraft?
+        let reference = fileReference(for: item)
+        let embedded: MediaMetadataEmbeddedValues?
         do {
-            embedded = try await editableMetadataDraft(for: item, includesArtwork: false)
+            let readTask = Task.detached(
+                executorPreference: BlockingWorkExecutor.shared, priority: .utility
+            ) { [self] in
+                try Task.checkCancellation()
+                let url = resolvedURL(for: reference)
+                let didAccess = url.startAccessingSecurityScopedResource()
+                defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+                let values = try await PlaceholderTagReader.read(from: url, fields: placeholders)
+                try Task.checkCancellation()
+                return values
+            }
+            embedded = try await withTaskCancellationHandler {
+                try await readTask.value
+            } onCancel: { readTask.cancel() }
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             embedded = nil
         }
+        try Task.checkCancellation()
         // The read belongs to the item's file as it was; an item replaced or deleted meanwhile is not patched.
         guard item.id == itemID, item.bookmarkData == bookmarkData, item.fileName == fileName,
-              item.isDeleted == false else { throw CancellationError() }
+              item.isDeleted == false, deletedItemIDs.contains(itemID) == false else { throw CancellationError() }
         var draft = MediaMetadataEditDraft(item: item)
         let current = placeholders.intersection(unpatchedPlaceholderFields(of: item, patching: fields))
         let whitespace = CharacterSet.whitespacesAndNewlines
-        if current.contains(.artist), embedded?.artist.trimmingCharacters(in: whitespace) == "Unknown Artist" {
+        if current.contains(.artist), embedded?.artist?.trimmingCharacters(in: whitespace) == "Unknown Artist" {
             draft.artist = "Unknown Artist"
         }
-        if current.contains(.album), embedded?.album.trimmingCharacters(in: whitespace) == "Unknown Album" {
+        if current.contains(.album), embedded?.album?.trimmingCharacters(in: whitespace) == "Unknown Album" {
             draft.album = "Unknown Album"
         }
         return draft
@@ -114,5 +131,94 @@ extension MediaItem {
     func setEditedLyrics(_ lyrics: String?) {
         lyricsRaw = lyrics?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true ? nil : lyrics
         hasEditedLyrics = true
+    }
+}
+
+/// Reads only the ambiguous text. Missing native tags stay missing rather than triggering an AVAsset probe.
+private nonisolated enum PlaceholderTagReader {
+    static func read(from url: URL, fields: Set<MediaMetadataEditField>) async throws -> MediaMetadataEmbeddedValues {
+        if ID3TagWriter.canWriteMetadata(to: url) {
+            let native: MediaMetadataEmbeddedValues
+            do {
+                native = try ID3TagWriter.readMetadata(from: url, textFields: fields) ?? MediaMetadataEmbeddedValues()
+            } catch {
+                try Task.checkCancellation()
+                return try await commonValues(from: url, fields: fields)
+            }
+            // AVFoundation can expose an ID3v1 artist/album when ID3v2 is absent. Probe only its 3-byte marker;
+            // ordinary missing tags never take this fallback. Keep the editor's ID3v2 precedence.
+            guard needsID3v1Fallback(native, fields: fields), try hasID3v1Tag(at: url) else { return native }
+            var values = try await commonValues(from: url, fields: fields)
+            values.artist = native.artist ?? values.artist
+            values.album = native.album ?? values.album
+            return values
+        }
+        if MP4MetadataWriter.canWriteMetadata(to: url) {
+            let native: MediaMetadataEmbeddedValues?
+            do {
+                native = try MP4MetadataReader.read(from: url, textFields: fields)?.values
+                guard try MP4MetadataReader.requiresCommonTextFallback(from: url) else {
+                    return native ?? MediaMetadataEmbeddedValues()
+                }
+            } catch {
+                try Task.checkCancellation()
+                return try await commonValues(from: url, fields: fields)
+            }
+            var values = try await commonValues(from: url, fields: fields)
+            values.artist = native?.artist ?? values.artist
+            values.album = native?.album ?? values.album
+            return values
+        }
+        if url.pathExtension.lowercased() == "flac" || AdditionalAudioMetadata.canWrite(to: url) {
+            do {
+                return try AdditionalAudioMetadata.read(from: url, textFields: fields).values
+            } catch {
+                try Task.checkCancellation()
+                return try await commonValues(from: url, fields: fields)
+            }
+        }
+        if let kind = try ExtendedAudioSource.kind(for: url) {
+            let info = try ExtendedAudioSource.info(for: url, kind: kind)
+            return MediaMetadataEmbeddedValues(artist: info.artist, album: info.album)
+        }
+        // AIFF and other AVFoundation formats retain their common artist/album interpretation.
+        return try await commonValues(from: url, fields: fields)
+    }
+
+    private static func needsID3v1Fallback(
+        _ values: MediaMetadataEmbeddedValues, fields: Set<MediaMetadataEditField>
+    ) -> Bool {
+        (fields.contains(.artist) && values.artist == nil) || (fields.contains(.album) && values.album == nil)
+    }
+
+    private static func hasID3v1Tag(at url: URL) throws -> Bool {
+        let source = try FileHandle(forReadingFrom: url)
+        defer { try? source.close() }
+        let size = try source.seekToEnd()
+        guard size >= 128 else { return false }
+        return try MediaFileRewriter.read(from: source, at: size - 128, count: 3) == Data("TAG".utf8)
+    }
+
+    private static func commonValues(
+        from url: URL, fields: Set<MediaMetadataEditField>
+    ) async throws -> MediaMetadataEmbeddedValues {
+        try Task.checkCancellation()
+        let metadata = try await AVURLAsset(url: url).load(.commonMetadata)
+        var values = MediaMetadataEmbeddedValues()
+        if fields.contains(.artist) {
+            values.artist = await firstString(in: metadata, identifier: .commonIdentifierArtist)
+        }
+        if fields.contains(.album) {
+            values.album = await firstString(in: metadata, identifier: .commonIdentifierAlbumName)
+        }
+        try Task.checkCancellation()
+        return values
+    }
+
+    private static func firstString(in metadata: [AVMetadataItem], identifier: AVMetadataIdentifier) async -> String? {
+        for item in AVMetadataItem.metadataItems(from: metadata, filteredByIdentifier: identifier) {
+            if let value = try? await item.load(.stringValue), value.isEmpty == false { return value }
+        }
+        return nil
     }
 }

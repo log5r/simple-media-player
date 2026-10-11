@@ -182,9 +182,7 @@ extension MediaListView {
         } set: { newValue in
             guard activePlaylist == nil, let comparator = newValue.first else { return }
             tableSortOrder = newValue
-            guard let field = MediaTableRow.sortField(
-                forKeyPathDescription: String(describing: comparator.keyPath)
-            ) else { return }
+            guard let field = MediaTableRow.sortField(for: comparator.keyPath) else { return }
             librarySortField = field
             librarySortDirection = LibrarySortDirection(sortOrder: comparator.order)
         }

@@ -50,6 +50,7 @@ struct BulkMetadataEditView: View {
                 .padding(22)
             }
             .frame(minHeight: EditorLayoutMetrics.minimumScrollHeight)
+            .accessibilityIdentifier("bulkEditScrollView")
             Divider()
             HStack {
                 Spacer()

@@ -40,6 +40,7 @@ final class LibraryService {
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
     @ObservationIgnored private let saveContext: @MainActor (ModelContext) throws -> Void
+    @ObservationIgnored private let beforeMetadataWrite: @Sendable (URL) async throws -> Void
     /// Shared by every export plan, so resolutions left running by a cancelled plan still count.
     @ObservationIgnored nonisolated let exportPlanLimiter = FileSystemWorkLimiter(limit: exportPlanConcurrency)
     /// Shared by Music import pre-checks, so probes abandoned by cancelled preparations still count.
@@ -82,13 +83,15 @@ final class LibraryService {
         musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider(),
         resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve,
         removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal(),
-        saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() }
+        saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() },
+        beforeMetadataWrite: @escaping @Sendable (URL) async throws -> Void = { _ in }
     ) {
         mediaDirectoryOverride = mediaDirectoryURL
         self.temporaryDirectoryURL = temporaryDirectoryURL
         self.resolveBookmark = resolveBookmark
         self.removalJournal = removalJournal
         self.saveContext = saveContext
+        self.beforeMetadataWrite = beforeMetadataWrite
         self.artworkProcessor = artworkProcessor
         self.lyricsReader = lyricsReader
         self.artworkLoader = artworkLoader
@@ -349,6 +352,8 @@ final class LibraryService {
             }
             throw MediaMetadataEditError.cannotResolveFile
         }
+        try await beforeMetadataWrite(url)
+        try Task.checkCancellation()
         let canWriteMetadata = try await editabilityChecker.canWriteMetadata(to: url)
         guard item.id == itemID, item.bookmarkData == bookmarkData, item.fileName == fileName,
               item.isDeleted == false, item.modelContext === context else { throw CancellationError() }

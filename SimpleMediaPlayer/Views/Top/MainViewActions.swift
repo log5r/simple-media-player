@@ -271,10 +271,12 @@ extension MainView {
     }
 
     func add(_ newItems: [MediaItem], to playlist: Playlist) {
+        guard playlist.isDeleted == false, playlist.modelContext === modelContext else { return }
         var existingIDs = Set(playlist.entries.compactMap { $0.item?.id })
         var nextIndex = (playlist.entries.map(\.sortIndex).max() ?? -1) + 1
 
-        for item in newItems where existingIDs.contains(item.id) == false {
+        for item in newItems where item.isDeleted == false && item.modelContext === modelContext
+            && existingIDs.contains(item.id) == false {
             let entry = PlaylistEntry(sortIndex: nextIndex, playlist: playlist, item: item)
             playlist.entries.append(entry)
             modelContext.insert(entry)

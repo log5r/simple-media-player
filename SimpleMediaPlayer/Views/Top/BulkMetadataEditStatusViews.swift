@@ -39,6 +39,9 @@ struct BulkMetadataEditResultSummary: View {
                         .lineLimit(2)
                 }
             }
+            #if DEBUG
+            MetadataSaveUITestDiagnostics()
+            #endif
         }
     }
 

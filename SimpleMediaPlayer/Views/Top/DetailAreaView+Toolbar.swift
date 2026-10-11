@@ -72,13 +72,13 @@ extension DetailAreaView {
                         isBulkEditMode = false
                     } label: {
                         PanelToolbarLabel(
-                            title: "Edit Selected",
+                            title: "Edit Selected, \(selectedBulkItems.count) selected",
                             systemImage: "pencil",
                             isSelected: true
                         )
                     }
                     .accessibilityIdentifier("editSelectedMediaButton")
-                    .accessibilityValue("\(selectedBulkItems.count)")
+                    .accessibilityLabel(L10n.format("Edit Selected, %lld selected", selectedBulkItems.count))
                     .disabled(
                         selectedBulkItems.isEmpty || libraryService.isImporting
                             || libraryService.isExporting || aacVersionExporter.isExporting

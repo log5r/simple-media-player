@@ -23,6 +23,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private let analyzer: SpectrumAnalyzer
     private let openReadableFile: @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile
     private let waitForFadeStep: @Sendable (useconds_t) -> Void
+    typealias IdleSchedule = @Sendable (TimeInterval, DispatchQueue, DispatchWorkItem) -> Void
+    private let scheduleIdleSuspension: IdleSchedule?
     private let controlQueue = DispatchQueue(label: "SimpleMediaPlayer.AudioEngineService.control", qos: .userInitiated)
 
     // controlQueue 上でのみ触る状態
@@ -64,11 +66,13 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         openReadableFile: @escaping @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile = {
             try ExtendedAudioSource.readableFile(for: $0)
         },
-        waitForFadeStep: @escaping @Sendable (useconds_t) -> Void = { usleep($0) }
+        waitForFadeStep: @escaping @Sendable (useconds_t) -> Void = { usleep($0) },
+        scheduleIdleSuspension: IdleSchedule? = nil
     ) {
         self.analyzer = analyzer
         self.openReadableFile = openReadableFile
         self.waitForFadeStep = waitForFadeStep
+        self.scheduleIdleSuspension = scheduleIdleSuspension
         buildEngineGraph()
     }
 
@@ -80,14 +84,6 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         }
         loudnessNormalizationStorage = normalization
         return normalization
-    }
-
-    private var idleSuspension: AudioEngineIdleSuspension {
-        dispatchPrecondition(condition: .onQueue(controlQueue))
-        if let idleSuspensionStorage { return idleSuspensionStorage }
-        let suspension = AudioEngineIdleSuspension(controlQueue: controlQueue)
-        idleSuspensionStorage = suspension
-        return suspension
     }
 
     // init と performEngineReset からのみ呼ぶ(reset 時は controlQueue 上)
@@ -203,13 +199,14 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
                 throw error
             }
         } catch is CancellationError {
-            return
+            controlQueue.async {
+                guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
+                self.finishPreparationWithoutAudio()
+            }
         } catch {
             controlQueue.async {
                 guard generation == self.loadGeneration, self.isActiveLoad(requestID) else { return }
-                self.preparationTask = nil
-                self.loudnessNormalization.load(nil)
-                self.setCachedDuration(0)
+                self.finishPreparationWithoutAudio()
                 self.reportError(error, for: requestID)
             }
         }
@@ -255,6 +252,14 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
 
     func play() {
         stateLock.lock()
+        if let request = pendingSeek {
+            pendingSeek = PendingSeek(
+                time: request.time,
+                autoPlay: true,
+                loadID: request.loadID,
+                seekID: request.seekID
+            )
+        }
         let playbackRequestID = renewPlaybackRequestLocked()
         stateLock.unlock()
         controlQueue.async {
@@ -397,9 +402,50 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
 }
 
 nonisolated extension AudioEngineService {
+    private var idleSuspension: AudioEngineIdleSuspension {
+        dispatchPrecondition(condition: .onQueue(controlQueue))
+        if let idleSuspensionStorage { return idleSuspensionStorage }
+        let schedule: AudioEngineIdleSuspension.Schedule?
+        if let scheduleIdleSuspension {
+            schedule = { [controlQueue] delay, work in
+                scheduleIdleSuspension(delay, controlQueue, work)
+            }
+        } else {
+            schedule = nil
+        }
+        let suspension = AudioEngineIdleSuspension(controlQueue: controlQueue, schedule: schedule)
+        idleSuspensionStorage = suspension
+        return suspension
+    }
+
+    // Inspect on the owner queue, including any operations enqueued before this read.
+    var isEngineRunning: Bool {
+        get async {
+            await withCheckedContinuation { continuation in
+                controlQueue.async { continuation.resume(returning: self.engine.isRunning) }
+            }
+        }
+    }
+
+    var pendingPreparationTask: Task<Void, Never>? {
+        get async {
+            await withCheckedContinuation { continuation in
+                controlQueue.async { continuation.resume(returning: self.preparationTask) }
+            }
+        }
+    }
+
+    private func finishPreparationWithoutAudio() {
+        preparationTask = nil
+        playWhenReady = false
+        loudnessNormalization.load(nil)
+        setCachedDuration(0)
+        suspendAfterTail()
+    }
+
     private func performPlay() {
-        idleSuspension.cancel()
         guard let audioFile else { return }
+        idleSuspension.cancel()
         guard seekFrame < audioFile.length else {
             finishPlayback(at: audioFile.length)
             return
@@ -445,9 +491,13 @@ nonisolated extension AudioEngineService {
         }
         idleSuspension.request(settings: currentEqualizerSettings) { [weak self] in
             guard let self else { return }
-            self.engine.pause()
-            // A paused audio unit retains its delay buffers. Clear any remaining
-            // tail so it cannot sound again when the next segment starts.
+            // A cold decoder may outlive the tail deadline. Keep the engine ready
+            // only while that preparation still has a pending playback request.
+            if self.preparationTask == nil || self.playWhenReady == false {
+                self.engine.pause()
+            }
+            // Clear remaining delay buffers at the tail deadline, including when
+            // the engine stays ready, so the next segment cannot revive the tail.
             self.reverb.reset()
             self.graphicEQ.reset()
         }
@@ -562,7 +612,14 @@ nonisolated extension AudioEngineService {
         }
         if audioFile != nil { pendingSeek = nil }
         stateLock.unlock()
-        guard let audioFile else { return }
+        guard let audioFile else {
+            if preparationTask != nil {
+                playWhenReady = request.autoPlay
+                if request.autoPlay == false { suspendAfterTail() }
+            }
+            return
+        }
+        playWhenReady = false
         let target = max(0, min(audioFile.length, AVAudioFramePosition(request.time * sampleRate)))
         seekFrame = target
         setDisplayClock(playing: false)

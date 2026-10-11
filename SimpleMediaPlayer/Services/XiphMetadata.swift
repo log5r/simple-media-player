@@ -78,18 +78,10 @@ nonisolated enum XiphMetadata {
         return result
     }
 
-    static func read(_ comment: Comment) -> AudioTagReadResult {
+    /// A non-nil field set skips unrelated strings, pictures, and lyrics.
+    static func read(_ comment: Comment, textFields: Set<MediaMetadataEditField>? = nil) -> AudioTagReadResult {
         var result = AudioTagReadResult()
-        var fields: [String: String] = [:]
-        for field in comment.fields {
-            guard let separator = field.firstIndex(of: 61),
-                  let key = String(data: field.prefix(upTo: separator), encoding: .ascii)?.uppercased(),
-                  let value = String(data: field.suffix(from: field.index(after: separator)), encoding: .utf8)
-            else { continue }
-            if firstNonblank(fields[key]) == nil {
-                fields[key] = value
-            }
-        }
+        let fields = textValues(in: comment, textFields: textFields)
         result.values.title = firstNonblank(fields["TITLE"])
         result.values.artist = firstNonblank(fields["ARTIST"])
         result.values.album = firstNonblank(fields["ALBUM"])
@@ -111,6 +103,7 @@ nonisolated enum XiphMetadata {
         case "0", "false", "no": result.values.isCompilation = false
         default: break
         }
+        guard textFields == nil else { return result }
         result.lyrics = firstNonblank(fields["LYRICS"], fields["UNSYNCEDLYRICS"])
         var otherPicture: Data?
         for field in comment.fields {
@@ -128,6 +121,24 @@ nonisolated enum XiphMetadata {
         result.artworkData = result.artworkData ?? otherPicture
             ?? fields["COVERART"].flatMap { Data(base64Encoded: $0) }
         return result
+    }
+
+    private static func textValues(
+        in comment: Comment, textFields: Set<MediaMetadataEditField>?
+    ) -> [String: String] {
+        var fields: [String: String] = [:]
+        for field in comment.fields {
+            guard let separator = field.firstIndex(of: 61),
+                  let key = String(data: field.prefix(upTo: separator), encoding: .ascii)?.uppercased()
+            else { continue }
+            if let textFields, editedKeys[key].map(textFields.contains) != true { continue }
+            guard let value = String(data: field.suffix(from: field.index(after: separator)), encoding: .utf8)
+            else { continue }
+            if firstNonblank(fields[key]) == nil {
+                fields[key] = value
+            }
+        }
+        return fields
     }
 
     static func pictureBlock(_ artwork: Data) throws -> Data {

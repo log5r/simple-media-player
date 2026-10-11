@@ -15,11 +15,11 @@ nonisolated enum AdditionalAudioMetadata {
         }
     }
 
-    static func read(from url: URL) throws -> AudioTagReadResult {
+    static func read(from url: URL, textFields: Set<MediaMetadataEditField>? = nil) throws -> AudioTagReadResult {
         switch url.pathExtension.lowercased() {
-        case "flac": return try FLACMetadataWriter.read(from: url)
-        case "wav": return try WAVMetadataWriter.read(from: url)
-        case "ogg", "oga", "opus": return try OggMetadataWriter.read(from: url)
+        case "flac": return try FLACMetadataWriter.read(from: url, textFields: textFields)
+        case "wav": return try WAVMetadataWriter.read(from: url, textFields: textFields)
+        case "ogg", "oga", "opus": return try OggMetadataWriter.read(from: url, textFields: textFields)
         default: throw MediaMetadataEditError.unsupportedFileFormat
         }
     }

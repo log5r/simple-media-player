@@ -89,7 +89,10 @@ struct VideoSpectrumAnalysisTests {
         var frames: [AudioFrameData] = []
         analyzer.onFrame = { frames.append($0) }
         analyzer.setPlaybackActive(true, currentTime: 0)
-        let samples = (0..<1_600).map { Float(sin(Double($0) * 2 * .pi * 440 / 48_000)) * 0.4 }
+        let samples = (0..<1_600).map { index -> Float in
+            let phase: Double = Double(index) * 2 * .pi * 440 / 48_000
+            return Float(sin(phase)) * 0.4
+        }
         analyzer.analyzeVideoSamples(.init(
             left: samples, right: samples, sampleRate: 48_000,
             time: 0, analysisGeneration: analyzer.realtimeVideoGeneration,

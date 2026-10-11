@@ -264,23 +264,16 @@ struct MediaTableRow: Identifiable, @unchecked Sendable {
         item.id
     }
 
-    static func sortField(forKeyPathDescription keyPathDescription: String) -> LibrarySortField? {
-        if keyPathDescription.hasSuffix(".indexSortValue") { return .dateAdded }
-        if keyPathDescription.hasSuffix(".artworkSortValue") { return .title }
-        if keyPathDescription.hasSuffix(".dateAddedSortValue") { return .dateAdded }
-        if keyPathDescription.hasSuffix(".titleSortValue") { return .title }
-        if keyPathDescription.hasSuffix(".artistSortValue") { return .artist }
-        if keyPathDescription.hasSuffix(".albumSortValue") { return .album }
-        if keyPathDescription.hasSuffix(".genreSortValue") { return .genre }
-        if keyPathDescription.hasSuffix(".durationSortValue") { return .duration }
-        if keyPathDescription.hasSuffix(".trackNumberSortValue") { return .trackNumber }
-        if keyPathDescription.hasSuffix(".yearSortValue") { return .year }
-        if keyPathDescription.hasSuffix(".albumArtistSortValue") { return .albumArtist }
-        if keyPathDescription.hasSuffix(".composerSortValue") { return .composer }
-        if keyPathDescription.hasSuffix(".discNumberSortValue") { return .discNumber }
-        if keyPathDescription.hasSuffix(".kindSortValue") { return .kind }
-        if keyPathDescription.hasSuffix(".contentTypeSortValue") { return .contentType }
-        if keyPathDescription.hasSuffix(".fileNameSortValue") { return .fileName }
-        return nil
+    private static let sortFields: [PartialKeyPath<MediaTableRow>: LibrarySortField] = [
+        \.indexSortValue: .dateAdded, \.artworkSortValue: .title, \.titleSortValue: .title,
+        \.artistSortValue: .artist, \.albumSortValue: .album, \.genreSortValue: .genre,
+        \.durationSortValue: .duration, \.trackNumberSortValue: .trackNumber, \.yearSortValue: .year,
+        \.albumArtistSortValue: .albumArtist, \.composerSortValue: .composer,
+        \.discNumberSortValue: .discNumber, \.kindSortValue: .kind,
+        \.contentTypeSortValue: .contentType, \.dateAddedSortValue: .dateAdded, \.fileNameSortValue: .fileName
+    ]
+
+    static func sortField(for keyPath: PartialKeyPath<MediaTableRow>) -> LibrarySortField? {
+        sortFields[keyPath]
     }
 }
