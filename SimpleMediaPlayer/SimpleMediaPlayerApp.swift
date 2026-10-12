@@ -20,6 +20,9 @@ struct SimpleMediaPlayerApp: App {
 
     init() {
         BundledFontRegistry.registerFonts()
+        #if os(macOS)
+        TextEditingKeyRouting.install()
+        #endif
         #if DEBUG
         let libraryService = MetadataEditabilityUITestFixture.makeLibraryService()
         #else
