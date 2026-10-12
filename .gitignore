@@ -1,6 +1,7 @@
 .DS_Store
 tmp/
 .build/
+.build-logs/
 
 # Xcode user-specific state
 xcuserdata/

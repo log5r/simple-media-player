@@ -13,3 +13,37 @@
 - 不具合の検証は発生条件に対応させる。競合なら完了順序やロック保持、境界入力なら該当する処理経路を再現し、可能なら修正前の失敗と修正後の成功を確認する。値の取得成功だけで応答性やキャンセルの正しさを検証済みとせず、未検証の条件を記録する。
 - 提出前に差分と関連する呼び出し元を見直す。レビューの指摘はコードと仕様で確かめ、妥当なものを修正するとともに、同じ原因が別の呼び出し元・状態遷移・処理経路にないか検索して確認する。
 - 再利用できる調査結果、設計判断、不具合の原因と検証方法は GitHub Wiki に蓄積する。
+
+## AI エージェントのビルドログ
+
+- AI エージェントが `xcodebuild` でビルドやテストを実行する際は、標準出力と標準エラーを `tee` で `.build-logs/` 内の実行ごとに異なるファイルへ保存し、`xcsift -f toon -w` で整形した出力だけをエージェントに渡す。ビルドを行うスクリプトを使う場合も同様にする。
+- `set -o pipefail` を有効にし、パイプラインの失敗を成功として扱わない。失敗時にも全ログの保存先を表示し、最後の表示コマンドで終了コードを上書きしない。
+- 実行前に `xcsift` が利用できることを確認する。未導入ならその旨を報告し、未整形の全ログをエージェントへ流す方法に切り替えない。
+- 原因調査で詳細が必要な場合のみ、保存した全ログから該当箇所を検索し、必要な範囲を読む。全ログをそのまま読み込まない。プロジェクト、構成、実行先などのビルドオプションは検証対象に合わせて指定する。
+
+リポジトリのルートで実行する例：
+
+```bash
+set -o pipefail
+
+command -v xcsift >/dev/null 2>&1 || {
+  echo "xcsift is required for AI agent builds." >&2
+  exit 1
+}
+mkdir -p .build-logs || exit "$?"
+build_log=".build-logs/build-$(date +%Y%m%d-%H%M%S)-$$.log"
+
+build_status=0
+xcodebuild \
+  -project SimpleMediaPlayer.xcodeproj \
+  -scheme SimpleMediaPlayer \
+  -destination 'platform=macOS' \
+  -derivedDataPath .build/DerivedData \
+  build 2>&1 \
+  | tee "$build_log" \
+  | xcsift -f toon -w \
+  || build_status=$?
+
+printf 'Full build log: %s\n' "$build_log"
+exit "$build_status"
+```
