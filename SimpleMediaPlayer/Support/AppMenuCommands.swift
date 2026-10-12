@@ -48,6 +48,28 @@ extension FocusedValues {
     }
 }
 
+/// メニューのキー割り当てのうち、テキスト編集の標準操作と重なるもの。
+///
+/// macOS では、編集可能なテキストにフォーカスがある間、`TextEditingKeyRouting` がこれらのキーを
+/// メニューより先にテキストへ渡す。重なるキーを追加するときは `textEditingCollisions` にも加える。
+/// 修飾キーなしの Space（再生／一時停止）はテキストへの入力が優先されるため含めない。
+enum AppMenuShortcut {
+    /// テキストでは行頭へ移動する。
+    static let previousTrack = KeyboardShortcut(.leftArrow, modifiers: .command)
+    /// テキストでは行末へ移動する。
+    static let nextTrack = KeyboardShortcut(.rightArrow, modifiers: .command)
+    /// テキストでは前の単語へ移動する。
+    static let skipBack = KeyboardShortcut(.leftArrow, modifiers: .option)
+    /// テキストでは次の単語へ移動する。
+    static let skipForward = KeyboardShortcut(.rightArrow, modifiers: .option)
+    /// テキストでは先頭へ移動する。
+    static let volumeUp = KeyboardShortcut(.upArrow, modifiers: .command)
+    /// テキストでは末尾へ移動する。
+    static let volumeDown = KeyboardShortcut(.downArrow, modifiers: .command)
+
+    static let textEditingCollisions = [previousTrack, nextTrack, skipBack, skipForward, volumeUp, volumeDown]
+}
+
 struct AppMenuCommands: Commands {
     let player: PlayerViewModel
 
@@ -143,7 +165,7 @@ struct AppMenuCommands: Commands {
                     player.previous()
                 }
             }
-            .keyboardShortcut(.leftArrow, modifiers: .command)
+            .keyboardShortcut(AppMenuShortcut.previousTrack)
             .disabled(!(actions?.previousTrack.isEnabled ?? (
                 usesPhonePlayback && player.canPlayPrevious
             )))
@@ -155,19 +177,19 @@ struct AppMenuCommands: Commands {
                     player.next()
                 }
             }
-            .keyboardShortcut(.rightArrow, modifiers: .command)
+            .keyboardShortcut(AppMenuShortcut.nextTrack)
             .disabled(!(actions?.nextTrack.isEnabled ?? (usesPhonePlayback && player.canSkipToNext)))
 
             Button("Skip Back 10 Seconds") {
                 player.seek(to: player.currentTime - 10)
             }
-            .keyboardShortcut(.leftArrow, modifiers: .option)
+            .keyboardShortcut(AppMenuShortcut.skipBack)
             .disabled(player.currentItem == nil)
 
             Button("Skip Forward 10 Seconds") {
                 player.seek(to: player.currentTime + 10)
             }
-            .keyboardShortcut(.rightArrow, modifiers: .option)
+            .keyboardShortcut(AppMenuShortcut.skipForward)
             .disabled(player.currentItem == nil)
 
             Divider()
@@ -245,13 +267,13 @@ struct AppMenuCommands: Commands {
             Button("Volume Up") {
                 player.setVolume(player.volume + 0.1)
             }
-            .keyboardShortcut(.upArrow, modifiers: .command)
+            .keyboardShortcut(AppMenuShortcut.volumeUp)
             .disabled(player.volume >= 1)
 
             Button("Volume Down") {
                 player.setVolume(player.volume - 0.1)
             }
-            .keyboardShortcut(.downArrow, modifiers: .command)
+            .keyboardShortcut(AppMenuShortcut.volumeDown)
             .disabled(player.volume <= 0)
         }
 
