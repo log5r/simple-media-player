@@ -14,13 +14,11 @@ final class MusicLibraryEntryPointUITests: XCTestCase {
     @MainActor func testPhoneMenuOffersMusicEntryPointsAndExplainsAccess() throws {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom != .phone, "This test verifies the phone layout.")
         let app = launch(compact: true)
-        XCTAssertTrue(app.buttons["phoneLibraryMore"].waitForExistence(timeout: 10))
-        app.buttons["phoneLibraryMore"].tap()
-        XCTAssertTrue(app.buttons["playFromMusicButton"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["importFromMusicButton"].exists)
-        XCTAssertTrue(app.buttons["importMediaButton"].exists)
+        let playFromMusic = app.openToolbarOverflowMenu(item: "Play from Music…")
+        XCTAssertTrue(app.buttons["Import from Music…"].exists)
+        XCTAssertTrue(app.buttons["Import..."].exists)
 
-        app.buttons["playFromMusicButton"].tap()
+        playFromMusic.tap()
         expectMusicLibraryAlert(in: app)
     }
 

@@ -93,6 +93,7 @@ struct IPhoneDeckView: View {
                             Button("Close") { showsEqualizer = false }
                         }
                     }
+                    .disablesVerticalToolbar()
             }
         }
         .sheet(item: $saveItem) { item in
@@ -157,16 +158,17 @@ struct IPhoneDeckView: View {
     @ToolbarContentBuilder private var deckToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button("Close", systemImage: "chevron.down") { isPresented = false }
-                .frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("phoneDeckClose")
+                .accessibilityIdentifier("phoneDeckClose")
         }
-        ToolbarItem(placement: .topBarTrailing) {
-            if page == .lyrics {
+        .visibilityPriority(.high)
+        if page == .lyrics {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit Lyrics…", systemImage: "square.and.pencil") { lyricsItem = libraryCurrentItem }
                     .disabled(libraryCurrentItem == nil || player.isVideoMode)
-                    .frame(minWidth: 44, minHeight: 44)
-            } else {
-                moreMenu
             }
+            .visibilityPriority(.high)
+        } else {
+            moreMenu
         }
     }
 
@@ -344,33 +346,18 @@ private extension IPhoneDeckView {
         return player.isPaused ? L10n.string("Paused") : L10n.string("Stopped")
     }
 
-    var moreMenu: some View {
+    var moreMenu: some ToolbarContent {
         let isLibraryItem = player.currentItem?.isInLibrary == true
-        return Menu {
-            Button { saveItem = player.currentItem } label: {
-                menuLabel("Save adjusted copy", systemImage: "square.and.arrow.down")
-            }.disabled(player.isVideoMode || !player.hasPitchOrRateAdjustment || !isLibraryItem)
-            Button {
+        return ToolbarOverflowMenu {
+            Button("Save adjusted copy", systemImage: "square.and.arrow.down") { saveItem = player.currentItem }
+                .disabled(player.isVideoMode || !player.hasPitchOrRateAdjustment || !isLibraryItem)
+            Button("Create AAC Version", systemImage: "waveform.badge.plus") {
                 if let item = player.currentItem { createAACVersion(item) }
-            } label: {
-                menuLabel("Create AAC Version", systemImage: "waveform.badge.plus")
-            }.disabled(player.isVideoMode || !canCreateAACVersion || !isLibraryItem)
-            Button { infoItem = player.currentItem } label: {
-                menuLabel("Edit Information…", systemImage: "pencil")
-            }.disabled(!isLibraryItem)
-        } label: {
-            Label("More", systemImage: "ellipsis")
-                .labelStyle(.iconOnly)
-                .frame(minWidth: 44, minHeight: 44)
+            }
+            .disabled(player.isVideoMode || !canCreateAACVersion || !isLibraryItem)
+            Button("Edit Information…", systemImage: "pencil") { infoItem = player.currentItem }
+                .disabled(!isLibraryItem)
         }
-        .accessibilityIdentifier("phoneDeckMore")
-    }
-
-    func menuLabel(_ title: LocalizedStringKey, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .labelStyle(.titleAndIcon)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
     }
 }
 #endif

@@ -30,6 +30,7 @@ struct AppSettingsView: View {
                     .accessibilityIdentifier("settingsCloseButton")
                 }
             }
+            .disablesVerticalToolbar()
         }
         #if os(macOS)
         .frame(width: 480, height: 540)

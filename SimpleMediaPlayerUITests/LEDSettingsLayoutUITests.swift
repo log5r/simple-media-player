@@ -48,12 +48,7 @@ final class LEDSettingsLayoutUITests: XCTestCase {
             "-volumeNormalizationEnabled", "NO"
         ]
         app.launch()
-        let more = app.buttons["phoneLibraryMore"]
-        XCTAssertTrue(more.waitForExistence(timeout: 10))
-        more.tap()
-        let settings = app.buttons["settingsButton"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 10))
-        settings.tap()
+        app.openToolbarOverflowMenu(item: language == "ja" ? "設定" : "Settings").tap()
         XCTAssertTrue(app.buttons["settingsCloseButton"].waitForExistence(timeout: 5))
         return app
     }

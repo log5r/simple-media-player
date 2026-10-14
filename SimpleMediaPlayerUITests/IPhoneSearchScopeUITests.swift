@@ -98,7 +98,7 @@ final class IPhoneSearchScopeUITests: XCTestCase {
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-volumeNormalizationEnabled", "NO"
         ]
         app.launch()
-        XCTAssertTrue(app.buttons["phoneLibraryMore"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 10))
         return app
     }
 }

@@ -32,38 +32,39 @@ struct IPhoneTrackListView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack {
-                    if playlist != nil {
-                        Button("Add Tracks", systemImage: "plus") {
-                            if let playlist { actions.showAddTracks(playlist) }
-                        }
-                            .disabled(!canCreateAACVersion)
+            if playlist != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Add Tracks", systemImage: "plus") {
+                        if let playlist { actions.showAddTracks(playlist) }
                     }
-                    if browsingState.isBulkEditMode {
-                        Button("Done") { endEditing() }
-                    } else {
-                        Menu("More", systemImage: "ellipsis") {
-                            if !isCategoryBrowser {
-                                Button("Select", systemImage: "checklist") { browsingState.isBulkEditMode = true }
-                                    .disabled(orderedItems.isEmpty || !canCreateAACVersion)
-                                    .accessibilityIdentifier("multipleEditButton")
-                            }
-                            if playlist == nil && !isCategoryBrowser {
-                                Picker("Sort By", selection: $browsingState.sortField) {
-                                    ForEach(LibrarySortField.allCases) { field in Text(field.title).tag(field) }
-                                }
-                                Picker("Sort Direction", selection: $browsingState.sortDirection) {
-                                    ForEach(LibrarySortDirection.allCases) { direction in
-                                        Text(direction.title).tag(direction)
-                                    }
-                                }
-                            }
-                            Button("Export…", systemImage: "square.and.arrow.up") { actions.exportItems(orderedItems) }
-                                .disabled(orderedItems.isEmpty || !canCreateAACVersion)
-                        }
-                        .accessibilityIdentifier("phoneTrackMore")
+                    .disabled(!canCreateAACVersion)
+                }
+                .visibilityPriority(.high)
+            }
+            if browsingState.isBulkEditMode {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { endEditing() }
+                }
+                .visibilityPriority(.high)
+            } else {
+                ToolbarOverflowMenu {
+                    if !isCategoryBrowser {
+                        Button("Select", systemImage: "checklist") { browsingState.isBulkEditMode = true }
+                            .disabled(orderedItems.isEmpty || !canCreateAACVersion)
+                            .accessibilityIdentifier("multipleEditButton")
                     }
+                    if playlist == nil && !isCategoryBrowser {
+                        Picker("Sort By", selection: $browsingState.sortField) {
+                            ForEach(LibrarySortField.allCases) { field in Text(field.title).tag(field) }
+                        }
+                        Picker("Sort Direction", selection: $browsingState.sortDirection) {
+                            ForEach(LibrarySortDirection.allCases) { direction in
+                                Text(direction.title).tag(direction)
+                            }
+                        }
+                    }
+                    Button("Export…", systemImage: "square.and.arrow.up") { actions.exportItems(orderedItems) }
+                        .disabled(orderedItems.isEmpty || !canCreateAACVersion)
                 }
             }
         }

@@ -4840,23 +4840,6 @@
         }
       }
     },
-    "More" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "More"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "その他"
-          }
-        }
-      }
-    },
     "Videos" : {
       "extractionState" : "manual",
       "localizations" : {

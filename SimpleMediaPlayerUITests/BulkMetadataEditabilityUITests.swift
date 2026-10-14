@@ -143,14 +143,12 @@ final class BulkMetadataEditabilityUITests: XCTestCase {
 
     @MainActor
     private func openEditor(for trackNumbers: [Int], in app: XCUIApplication) {
+        var multipleEdit = app.buttons["multipleEditButton"]
         #if os(iOS)
         if UIDevice.current.userInterfaceIdiom == .phone {
-            let more = app.buttons["phoneTrackMore"]
-            XCTAssertTrue(more.waitForExistence(timeout: 5))
-            more.tap()
+            multipleEdit = app.openToolbarOverflowMenu(item: "Select")
         }
         #endif
-        let multipleEdit = app.buttons["multipleEditButton"]
         XCTAssertTrue(multipleEdit.waitForExistence(timeout: 5))
         press(multipleEdit)
         for number in trackNumbers {

@@ -32,7 +32,7 @@ final class IPhoneEditorPickerUITests: XCTestCase {
             "-AppleLocale", language, "-volumeNormalizationEnabled", "NO"
         ]
         app.launch()
-        XCTAssertTrue(app.buttons["phoneLibraryMore"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 10))
         return app
     }
 
