@@ -179,7 +179,9 @@ struct DetailAreaView: View {
             .padding(16)
         }
         .navigationTitle(title)
+        #if os(macOS)
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
+        #endif
         .toolbar { detailToolbar }
         #if os(macOS)
         .sheet(isPresented: $browsingState.showsSettings) {

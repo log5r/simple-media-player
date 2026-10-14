@@ -126,6 +126,8 @@ struct MainView: View {
             phoneView
         } else {
             expandedIOSView(size: size, portraitPlayer: portraitPlayer)
+                // Own floating search at the screen level so the playback panel doesn't clip it.
+                .searchable(text: $browsingState.searchText, placement: .toolbar, prompt: "Search")
                 // A disappearing orientation branch must not cancel the new branch's shared projection.
                 .modifier(libraryListUpdates)
         }
@@ -193,6 +195,10 @@ extension MainView {
     func desktopView(availableWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
             libraryNavigation
+                #if os(iOS)
+                // Keep the floating vertical toolbar in front of the playback panel.
+                .zIndex(1)
+                #endif
 
             SeekBarView(player: player)
             BottomPanelView(

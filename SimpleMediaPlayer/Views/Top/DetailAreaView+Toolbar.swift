@@ -185,6 +185,9 @@ extension DetailAreaView {
                 }
                 #endif
             }
+            #if os(iOS)
+            .visibilityPriority(.high)
+            #endif
             .prefersVerticalToolbarPlacement()
     }
 }
