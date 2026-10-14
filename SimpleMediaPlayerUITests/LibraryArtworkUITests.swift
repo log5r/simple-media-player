@@ -71,18 +71,21 @@ final class LibraryArtworkUITests: XCTestCase {
         let allSongs = app.buttons["All Songs"]
         XCTAssertTrue(allSongs.waitForExistence(timeout: 10))
         allSongs.tap()
-        XCTAssertTrue(app.buttons["phoneTrackMore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["All Songs"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 5))
         assertLoadedArtworkCount(2, in: app)
         attachScreenshot(of: app, named: "Artwork in phone track list")
 
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.buttons["phoneLibraryMore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 5))
         let trackListDisappeared = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: app.buttons["phoneTrackMore"]
+            predicate: NSPredicate(format: "exists == false"), object: app.navigationBars["All Songs"]
         )
         XCTAssertEqual(XCTWaiter.wait(for: [trackListDisappeared], timeout: 5), .completed)
         allSongs.tap()
-        XCTAssertTrue(app.buttons["phoneTrackMore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["All Songs"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 5))
         assertLoadedArtworkCount(2, in: app)
         attachScreenshot(of: app, named: "Artwork after returning to phone track list")
     }

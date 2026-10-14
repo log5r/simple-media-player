@@ -31,17 +31,7 @@ struct IOSLibraryPresentations: ViewModifier {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("libraryDetailsSheet")
             }
-            .sheet(isPresented: $browsingState.showsEqualizer) {
-                NavigationStack {
-                    ScrollView { EqualizerPanelView(player: player) }
-                        .navigationTitle("Equalizer")
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Close") { browsingState.showsEqualizer = false }
-                            }
-                        }
-                }
-            }
+            .sheet(isPresented: $browsingState.showsEqualizer) { equalizerSheet }
             .sheet(item: $browsingState.lyricsItem) { item in
                 LyricsEditorView(item: item, libraryService: libraryService)
             }
@@ -60,6 +50,19 @@ struct IOSLibraryPresentations: ViewModifier {
                 browsingState: browsingState, renamePlaylist: renamePlaylist,
                 deletePlaylist: deletePlaylist, deleteItem: deleteItem
             ))
+    }
+
+    private var equalizerSheet: some View {
+        NavigationStack {
+            ScrollView { EqualizerPanelView(player: player) }
+                .navigationTitle("Equalizer")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Close") { browsingState.showsEqualizer = false }
+                    }
+                }
+                .disablesVerticalToolbar()
+        }
     }
 }
 #endif

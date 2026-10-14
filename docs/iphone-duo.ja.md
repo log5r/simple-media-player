@@ -22,6 +22,12 @@ Bookでは、activeな横方向のdivisionとそのmarginsから、表示領域�
 
 ClosedでNow Playingを開いてから展開した場合も、デッキのDisplayページを同じ縦向き・横向きのデザインに切り替えます。全画面表示の提示元、選択中のページ、編集シートの所有者は維持します。通常のcompact表示では既存の縦スクロールを使います。ほかのデッキ配置に使うArrangementViewは、NavigationStackの内側、各ScrollViewの外側に置きます。標準ツールバーに属する表示切り替え・設定・フィルターには、iOS 27.1の縦配置の優先設定を適用します。
 
+## ツールバーとキーボードコマンド
+
+iOS 27.1のClosedの外側画面では、ナビゲーションバーとタブバーを右端に縦に並べます。ツールバーの項目は縦に並べられる標準の`ToolbarItem`のままにし、`HStack`でまとめず、ボタンに固定の寸法やアイコンだけのラベルスタイルを指定しません。ライブラリのルート、曲一覧、デッキの補助的な操作は`ToolbarOverflowMenu`に置き、省略記号のボタンはシステムのoverflowボタンだけにします。Filters、Add Tracks、Done、Close、Edit Lyricsには`visibilityPriority(.high)`を指定し、領域が足りない場合もoverflowへ移さないようにします。ほかの項目は既定の順序に従います。Doneは文字だけの項目なので横に残る場合があります。ツールバーの項目がCloseだけのシート（設定、再生の調整、イコライザー）は、iOS 27.1で`toolbarVerticalBehavior(.disabled)`を指定して横のバーを保ちます。狭い画面でボタン1つのために縦の列を使わないためです。
+
+再生のキーボードコマンドは、端末のidiomではなく、フォーカス中のシーンにある操作の提供元で判断します。compactと展開の各レイアウトは`AppMenuActions`を提供します。Duoの縦向き再生画面のように、iOSの再生シーンにレイアウト固有の提供元がない場合は、SpaceとCommand+左右矢印キーでplayerを直接操作します。macOSでは提供元がなければ、これらのコマンドは無効のままです。
+
 ## 状態と処理の所有者
 
 LibraryBrowsingStateはレイアウトの分岐より上で保持します。分類・グループ・プレイリストの経路、検索・フィルター・並び順、選択、複数編集と閲覧位置を共有し、縦向きの再生画面とライブラリの切り替えでも引き継ぎます。iOSの設定、情報・歌詞編集、複数編集、アートワーク拡大、書き出しの命名シートも、分岐で消えない提示元から開きます。デッキのページと編集シート、動画の全画面表示は、それぞれの安定した親Viewが保持します。
@@ -37,7 +43,7 @@ PlayerViewModelを作り直したり、開閉を理由に停止・再読み込�
 Xcodeの全体設定を切り替えず、コマンドごとに`DEVELOPER_DIR`を指定します。
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode-27.1.0-Beta.app/Contents/Developer \
+DEVELOPER_DIR=/Applications/Xcode-27.1.0-Release.Candidate.app/Contents/Developer \
 xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
   -destination 'platform=iOS Simulator,name=iPhone Duo' \
   -derivedDataPath .build/DuoDerivedData \
@@ -58,4 +64,4 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
 
 ## Appleの資料
 
-[Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo)、[Adapt custom layouts](https://developer.apple.com/videos/play/tech-talks/111463/)、[Adapt tab bars and toolbars](https://developer.apple.com/videos/play/tech-talks/111462/)、[Displays and scenes](https://developer.apple.com/videos/play/tech-talks/111464/)に従います。
+[Preparing your app for iPhone Duo](https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo)、[Prepare your app for iPhone Duo](https://developer.apple.com/iphone-duo/prepare/)、[Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo)と、Tech Talkの[Prepare your app for iPhone Duo](https://developer.apple.com/videos/play/tech-talks/111461/)、[Adapt tab bars and toolbars](https://developer.apple.com/videos/play/tech-talks/111462/)、[Adapt custom layouts](https://developer.apple.com/videos/play/tech-talks/111463/)、[Displays and scenes](https://developer.apple.com/videos/play/tech-talks/111464/)に従います。App Storeのスクリーンショットの要件は、Wikiの[TestFlight配布準備](https://github.com/log5r/simple-media-player/wiki/TestFlight-Distribution-Preparation)に記録します。

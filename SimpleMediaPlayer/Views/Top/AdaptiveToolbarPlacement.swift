@@ -14,3 +14,20 @@ extension ToolbarContent {
         #endif
     }
 }
+
+extension View {
+    /// Single-item sheets keep the horizontal bar so a lone Close button doesn't take a full-height column
+    /// on the narrow outer screen.
+    @ViewBuilder
+    func disablesVerticalToolbar() -> some View {
+        #if os(iOS)
+        if #available(iOS 27.1, *) {
+            toolbarVerticalBehavior(.disabled)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}

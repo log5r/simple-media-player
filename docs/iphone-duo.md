@@ -22,6 +22,12 @@ In Book posture, the active horizontal division and its margins determine the en
 
 Opening Now Playing while Closed and then unfolding adapts the deck's Display page to the same portrait or landscape design. Its full-screen presenter, page selection, and editing sheets keep their existing ownership. Ordinary compact scenes retain the vertical scrolling deck. The ArrangementView used by the other deck layout sits inside NavigationStack and outside each pane's ScrollView. View toggles, settings, and filters prefer the standard vertical toolbar placement on iOS 27.1.
 
+## Toolbars and Keyboard Commands
+
+On the Closed outer screen, iOS 27.1 places navigation bars and the tab bar vertically along the trailing edge. Toolbar items stay standard `ToolbarItem`s so they can lay out vertically. They are not combined in an `HStack`, and buttons have no fixed frames or icon-only label styles. Secondary commands of the library root, track lists, and the deck use `ToolbarOverflowMenu`, so the system overflow button is the only ellipsis. Filters, Add Tracks, Done, Close, and Edit Lyrics have `visibilityPriority(.high)` and stay outside the overflow when space runs out; other items keep the default order. Done is text-only and may remain horizontal. Sheets whose only toolbar item is Close (Settings, Playback Adjustments, and Equalizer) keep a horizontal bar with `toolbarVerticalBehavior(.disabled)` on iOS 27.1, so a single button does not occupy a column of the narrow screen.
+
+Keyboard playback commands depend on the providers in the focused scene, not on the device idiom. Compact and expanded layouts provide `AppMenuActions`. When the iOS player scene has no layout-specific provider, as in the Duo portrait player, Space and Command-Left/Right Arrow control the player directly. On macOS these commands stay disabled without a provider.
+
 ## State and Ownership
 
 LibraryBrowsingState lives above the layout branch. It shares category, group and playlist routes, search, filters, sorting, selection, bulk editing, and scroll anchors, including when switching between the portrait player and library. iOS settings, information and lyrics editors, bulk editing, artwork previews, and export naming also have stable presenters. Deck pages and sheets, and full-screen video, are owned by their stable parent views.
@@ -37,7 +43,7 @@ SharedExportSession owns files prepared for sharing. Destroying the activity con
 Set `DEVELOPER_DIR` per command without changing the global Xcode selection.
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode-27.1.0-Beta.app/Contents/Developer \
+DEVELOPER_DIR=/Applications/Xcode-27.1.0-Release.Candidate.app/Contents/Developer \
 xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
   -destination 'platform=iOS Simulator,name=iPhone Duo' \
   -derivedDataPath .build/DuoDerivedData \
@@ -58,4 +64,4 @@ Results, measured geometry, and unverified conditions are recorded in the [GitHu
 
 ## Apple References
 
-The implementation follows [Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo), [Adapt custom layouts](https://developer.apple.com/videos/play/tech-talks/111463/), [Adapt tab bars and toolbars](https://developer.apple.com/videos/play/tech-talks/111462/), and [Displays and scenes](https://developer.apple.com/videos/play/tech-talks/111464/).
+The implementation follows [Preparing your app for iPhone Duo](https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo), [Prepare your app for iPhone Duo](https://developer.apple.com/iphone-duo/prepare/), [Designing for iPhone Duo](https://developer.apple.com/design/human-interface-guidelines/designing-for-iphone-duo), and the Tech Talks [Prepare your app for iPhone Duo](https://developer.apple.com/videos/play/tech-talks/111461/), [Adapt tab bars and toolbars](https://developer.apple.com/videos/play/tech-talks/111462/), [Adapt custom layouts](https://developer.apple.com/videos/play/tech-talks/111463/), and [Displays and scenes](https://developer.apple.com/videos/play/tech-talks/111464/). App Store screenshot requirements are recorded in the [TestFlight distribution preparation](https://github.com/log5r/simple-media-player/wiki/TestFlight-Distribution-Preparation) page of the Wiki.

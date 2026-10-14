@@ -10,15 +10,13 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
 
     @MainActor func testSettingsAndBulkEditing() {
         let app = launch()
-        app.buttons["phoneLibraryMore"].tap()
-        app.buttons["settingsButton"].tap()
+        app.openToolbarOverflowMenu(item: "Settings").tap()
         XCTAssertTrue(app.buttons["settingsCloseButton"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Panel Layout"].exists)
         XCTAssertFalse(app.buttons["Edit Columns"].exists)
         app.buttons["settingsCloseButton"].tap()
         app.buttons["All Songs"].tap()
-        app.buttons["phoneTrackMore"].tap()
-        app.buttons["multipleEditButton"].tap()
+        app.openToolbarOverflowMenu(item: "Select").tap()
         let tracks = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'"))
         tracks.element(boundBy: 0).tap()
         tracks.element(boundBy: 1).tap()
@@ -26,7 +24,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["bulkEditSelectionSummary"].exists)
         app.buttons["Close"].tap()
-        XCTAssertTrue(app.buttons["phoneTrackMore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 5))
     }
 
     @MainActor func testPlaylistAddRenameAndRemove() {
@@ -89,8 +87,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
 
     @MainActor func testExportUsesShareSheet() {
         let app = launch()
-        app.buttons["phoneLibraryMore"].tap()
-        app.buttons["Export…"].tap()
+        app.openToolbarOverflowMenu(item: "Export…").tap()
         XCTAssertTrue(app.buttons["Fill All Names with Timestamps"].waitForExistence(timeout: 10))
         app.buttons["Fill All Names with Timestamps"].tap()
         app.buttons["Fill with Timestamps"].tap()
@@ -100,10 +97,9 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         let close = app.buttons["header.closeButton"]
         XCTAssertTrue(close.waitForExistence(timeout: 5))
         close.tap()
-        XCTAssertTrue(app.buttons["phoneLibraryMore"].waitForExistence(timeout: 5))
-        XCTAssertFalse(shareSheet.exists)
-        app.buttons["phoneLibraryMore"].tap()
-        XCTAssertTrue(app.buttons["Export…"].isEnabled)
+        // The system overflow button can already be found while the share sheet is dismissing.
+        waitForDisappearance(shareSheet)
+        XCTAssertTrue(app.openToolbarOverflowMenu(item: "Export…").isEnabled)
     }
 
     @MainActor func testEnglishLyricsEditorFitsPhoneScreen() {
@@ -122,9 +118,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         dock.tap()
         let close = app.buttons["phoneDeckClose"]
         XCTAssertTrue(close.waitForExistence(timeout: 5))
-        app.buttons["phoneDeckMore"].tap()
-        let createAAC = app.buttons["Create AAC Version"]
-        XCTAssertTrue(createAAC.waitForExistence(timeout: 5))
+        let createAAC = app.openToolbarOverflowMenu(item: "Create AAC Version")
         XCTAssertTrue(createAAC.isEnabled)
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: createAAC)
         wait(for: [ready], timeout: 5)
@@ -138,7 +132,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         XCTAssertTrue(result.waitForExistence(timeout: 30))
         XCTAssertTrue(result.staticTexts["Created an AAC version of “Layout Track 1”."].exists)
         result.buttons["OK"].tap()
-        XCTAssertTrue(app.buttons["phoneTrackMore"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 5))
     }
 
     @MainActor func testJapaneseLyricsEditorFitsPhoneScreen() {
@@ -156,8 +150,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
     @MainActor private func verifyExportNameControls(language: String) {
         let app = launch(language: language)
         let isJapanese = language == "ja"
-        app.buttons["phoneLibraryMore"].tap()
-        app.buttons[isJapanese ? "書き出す…" : "Export…"].tap()
+        app.openToolbarOverflowMenu(item: isJapanese ? "書き出す…" : "Export…").tap()
         let fillNames = app.buttons[isJapanese ? "すべての名前をタイムスタンプで埋める" : "Fill All Names with Timestamps"]
         XCTAssertTrue(fillNames.waitForExistence(timeout: 10))
         fillNames.tap()
@@ -235,7 +228,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         ]
         app.launchArguments += extraArguments
         app.launch()
-        XCTAssertTrue(app.buttons["phoneLibraryMore"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 10))
         return app
     }
 }

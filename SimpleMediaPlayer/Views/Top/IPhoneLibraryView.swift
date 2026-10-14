@@ -89,6 +89,7 @@ struct IPhoneLibraryView: View {
                                 }
                                 .accessibilityIdentifier("advancedSearchButton")
                             }
+                            .visibilityPriority(.high)
                         }
                 }
             }
@@ -109,28 +110,25 @@ struct IPhoneLibraryView: View {
     }
 
     private var libraryMenu: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu("More", systemImage: "ellipsis") {
-                Button("Import...", systemImage: "square.and.arrow.down") { isImporterPresented = true }
-                    .disabled(libraryService.isImporting || aacVersionExporter.isExporting)
-                    .accessibilityIdentifier("importMediaButton")
-                Button("Play from Music…", systemImage: "music.note") { actions.musicLibrary.play() }
-                    .disabled(libraryService.musicLibraryPreparation != nil)
-                    .accessibilityIdentifier("playFromMusicButton")
-                Button("Import from Music…", systemImage: "square.and.arrow.down.on.square") {
-                    actions.musicLibrary.importSongs()
-                }
-                .disabled(
-                    libraryService.isImporting || aacVersionExporter.isExporting
-                        || libraryService.musicLibraryPreparation != nil
-                )
-                .accessibilityIdentifier("importFromMusicButton")
-                Button("Export…", systemImage: "square.and.arrow.up") { actions.exportItems(items) }
-                    .disabled(items.isEmpty || !canCreateAACVersion)
-                Button("Settings", systemImage: "gearshape") { browsingState.showsSettings = true }
-                    .accessibilityIdentifier("settingsButton")
+        ToolbarOverflowMenu {
+            Button("Import...", systemImage: "square.and.arrow.down") { isImporterPresented = true }
+                .disabled(libraryService.isImporting || aacVersionExporter.isExporting)
+                .accessibilityIdentifier("importMediaButton")
+            Button("Play from Music…", systemImage: "music.note") { actions.musicLibrary.play() }
+                .disabled(libraryService.musicLibraryPreparation != nil)
+                .accessibilityIdentifier("playFromMusicButton")
+            Button("Import from Music…", systemImage: "square.and.arrow.down.on.square") {
+                actions.musicLibrary.importSongs()
             }
-            .accessibilityIdentifier("phoneLibraryMore")
+            .disabled(
+                libraryService.isImporting || aacVersionExporter.isExporting
+                    || libraryService.musicLibraryPreparation != nil
+            )
+            .accessibilityIdentifier("importFromMusicButton")
+            Button("Export…", systemImage: "square.and.arrow.up") { actions.exportItems(items) }
+                .disabled(items.isEmpty || !canCreateAACVersion)
+            Button("Settings", systemImage: "gearshape") { browsingState.showsSettings = true }
+                .accessibilityIdentifier("settingsButton")
         }
     }
 

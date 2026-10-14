@@ -41,10 +41,22 @@ private struct AppMenuActionsKey: FocusedValueKey {
     typealias Value = AppMenuActions
 }
 
+private struct AllowsDirectPlaybackCommandsKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
 extension FocusedValues {
     var appMenuActions: AppMenuActions? {
         get { self[AppMenuActionsKey.self] }
         set { self[AppMenuActionsKey.self] = newValue }
+    }
+
+    /// iOS ではプレーヤーのシーンが再生を受け持つ。レイアウト固有の `appMenuActions` を公開しない画面
+    /// （Duo の縦向きプレーヤーなど）でも、再生／一時停止と前後の曲のコマンドは `player` を直接操作する。
+    /// macOS ではこの値を公開しないため、補助ウインドウではこれらのコマンドが無効のままになる。
+    var allowsDirectPlaybackCommands: Bool? {
+        get { self[AllowsDirectPlaybackCommandsKey.self] }
+        set { self[AllowsDirectPlaybackCommandsKey.self] = newValue }
     }
 }
 
@@ -74,13 +86,10 @@ struct AppMenuCommands: Commands {
     let player: PlayerViewModel
 
     @FocusedValue(\.appMenuActions) private var actions
+    @FocusedValue(\.allowsDirectPlaybackCommands) private var allowsDirectPlaybackCommands
 
-    private var usesPhonePlayback: Bool {
-        #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .phone
-        #else
-        false
-        #endif
+    private var usesDirectPlayback: Bool {
+        allowsDirectPlaybackCommands == true
     }
 
     var body: some Commands {
@@ -143,12 +152,12 @@ struct AppMenuCommands: Commands {
             Button(player.isPlaying ? L10n.string("Pause") : L10n.string("Play")) {
                 if let actions {
                     actions.playPause()
-                } else if usesPhonePlayback {
+                } else if usesDirectPlayback {
                     player.togglePlayPause()
                 }
             }
             .keyboardShortcut(.space, modifiers: [])
-            .disabled(!(actions?.playPause.isEnabled ?? (usesPhonePlayback && player.currentItem != nil)))
+            .disabled(!(actions?.playPause.isEnabled ?? (usesDirectPlayback && player.currentItem != nil)))
 
             Button("Stop") {
                 player.stop()
@@ -161,24 +170,24 @@ struct AppMenuCommands: Commands {
             Button("Previous Track") {
                 if let actions {
                     actions.previousTrack()
-                } else if usesPhonePlayback {
+                } else if usesDirectPlayback {
                     player.previous()
                 }
             }
             .keyboardShortcut(AppMenuShortcut.previousTrack)
             .disabled(!(actions?.previousTrack.isEnabled ?? (
-                usesPhonePlayback && player.canPlayPrevious
+                usesDirectPlayback && player.canPlayPrevious
             )))
 
             Button("Next Track") {
                 if let actions {
                     actions.nextTrack()
-                } else if usesPhonePlayback {
+                } else if usesDirectPlayback {
                     player.next()
                 }
             }
             .keyboardShortcut(AppMenuShortcut.nextTrack)
-            .disabled(!(actions?.nextTrack.isEnabled ?? (usesPhonePlayback && player.canSkipToNext)))
+            .disabled(!(actions?.nextTrack.isEnabled ?? (usesDirectPlayback && player.canSkipToNext)))
 
             Button("Skip Back 10 Seconds") {
                 player.seek(to: player.currentTime - 10)

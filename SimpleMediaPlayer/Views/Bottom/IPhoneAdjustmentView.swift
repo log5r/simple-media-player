@@ -43,10 +43,11 @@ struct IPhoneAdjustmentView: View {
             .navigationTitle("Playback Adjustments").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Close") { dismiss() }.frame(minWidth: 44, minHeight: 44)
+                    Button("Close") { dismiss() }
                         .accessibilityIdentifier("phoneAdjustmentClose")
                 }
             }
+            .disablesVerticalToolbar()
         }
         .alert("Save Equalizer Preset", isPresented: $showsSavePreset) {
             TextField("Preset Name", text: $presetName)

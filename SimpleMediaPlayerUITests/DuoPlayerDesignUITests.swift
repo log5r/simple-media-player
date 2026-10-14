@@ -67,6 +67,19 @@ final class DuoPlayerDesignUITests: XCTestCase {
         attach(app, name: "Duo portrait playback after Library and Settings")
     }
 
+    /// The portrait player publishes no layout-specific menu actions, so the scene's direct playback commands apply.
+    @MainActor func testPortraitPlayerSpaceTogglesPlayback() throws {
+        let app = try launch(portrait: true)
+        XCTAssertTrue(app.buttons["duoShowLibrary"].exists)
+        let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
+        for state in ["\"paused\":true", "\"playing\":true"] {
+            app.typeKey(" ", modifierFlags: [])
+            wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value CONTAINS %@", state), object: playback
+            )], timeout: 10)
+        }
+    }
+
     @MainActor func testLibrarySurvivesRealRotationFromPortrait() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] == "1",
                           "Enable interactive Device Hub rotation for this case.")

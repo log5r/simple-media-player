@@ -96,6 +96,7 @@ struct MainView: View {
                 #endif
         }
         #if os(iOS)
+        .focusedSceneValue(\.allowsDirectPlaybackCommands, true)
         .background {
             // Measure posture independently; the foreground still avoids the keyboard.
             GeometryReader { _ in

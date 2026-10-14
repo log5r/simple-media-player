@@ -101,12 +101,8 @@ final class LibraryListUpdatesUITests: XCTestCase {
     private func sort(by field: String, in app: XCUIApplication) {
         #if os(iOS)
         if UIDevice.current.userInterfaceIdiom == .phone {
-            let more = app.buttons["phoneTrackMore"]
-            XCTAssertTrue(more.waitForExistence(timeout: 10))
-            more.tap()
-            // iOS presents these Picker choices directly in the More menu.
-            XCTAssertTrue(app.buttons[field].waitForExistence(timeout: 5))
-            app.buttons[field].tap()
+            // iOS presents these Picker choices directly in the overflow menu.
+            app.openToolbarOverflowMenu(item: field).tap()
             return
         }
         #endif
@@ -117,10 +113,10 @@ final class LibraryListUpdatesUITests: XCTestCase {
 
     @MainActor
     private func beginMultipleSelection(in app: XCUIApplication) {
+        var multipleEdit = app.buttons["multipleEditButton"]
         #if os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .phone { app.buttons["phoneTrackMore"].tap() }
+        if UIDevice.current.userInterfaceIdiom == .phone { multipleEdit = app.openToolbarOverflowMenu(item: "Select") }
         #endif
-        let multipleEdit = app.buttons["multipleEditButton"]
         XCTAssertTrue(multipleEdit.waitForExistence(timeout: 5))
         press(multipleEdit)
     }
