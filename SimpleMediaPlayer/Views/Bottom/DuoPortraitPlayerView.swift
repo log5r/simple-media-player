@@ -24,8 +24,7 @@ struct DuoPortraitPlayerView: View {
         GeometryReader { proxy in
             let placement = DuoPortraitPlayerPlacement.make(
                 in: CGRect(origin: .zero, size: proxy.size),
-                divisionFrames: DeckReservedRegions.activeDivisionFrames(in: proxy),
-                reservedFrames: DeckReservedRegions.activeFrames(in: proxy)
+                occlusionFrames: DeckReservedRegions.activeFrames(in: proxy, includesDivisions: false)
             )
             ZStack(alignment: .topLeading) {
                 meters
@@ -93,7 +92,7 @@ struct DuoPortraitPlayerView: View {
     private func controls(size: CGSize) -> some View {
         ScrollView([.horizontal, .vertical]) {
             VStack(spacing: 14) {
-                SeekBarView(player: player)
+                SeekBarView(player: player, avoidsDisplayDivision: false)
                 AdaptiveBottomControlsView(
                     player: player, selectedItem: selectedItem, queue: queue, palette: palette,
                     width: max(AdaptiveBottomPanelMetrics.minimumControlWidth, size.width - 24),

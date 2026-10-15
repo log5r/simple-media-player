@@ -2,9 +2,10 @@
 import SwiftUI
 
 enum DeckReservedRegions {
-    static func activeFrames(in proxy: GeometryProxy) -> [CGRect] {
+    static func activeFrames(in proxy: GeometryProxy, includesDivisions: Bool = true) -> [CGRect] {
         if #available(iOS 27.1, *) {
-            return frames(in: proxy, kind: .division) + frames(in: proxy, kind: .occlusion)
+            let divisions = includesDivisions ? frames(in: proxy, kind: .division) : []
+            return divisions + frames(in: proxy, kind: .occlusion)
         }
         return []
     }

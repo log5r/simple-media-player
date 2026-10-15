@@ -190,20 +190,13 @@ final class DuoPlayerDesignUITests: XCTestCase {
         let root = try sceneContentFrame(in: app, geometry: geometry)
         let occlusions = try activeRegions("occlusion", in: geometry, origin: root.origin)
         try XCTSkipIf(occlusions.contains { $0.intersects(root) }, "Active occlusion needs a separate UI case.")
-        let divisions = try activeRegions("division", in: geometry, origin: root.origin)
-            .filter { $0.intersects(root) }
-        let hinges = divisions.filter { $0.width > $0.height && $0.width >= root.width / 2 }
-        try XCTSkipIf(hinges.count != divisions.count, "Other division axes need a separate UI case.")
-        try XCTSkipIf(hinges.count > 1, "Multiple active horizontal divisions need a separate UI case.")
-        let upperEnd = hinges.first?.minY ?? root.midY
-        let lowerStart = hinges.first?.maxY ?? root.midY
         XCTAssertEqual(led.width, root.width, accuracy: 2)
         XCTAssertEqual(meters.width, root.width, accuracy: 2)
         XCTAssertEqual(led.height, meters.height, accuracy: 2)
         XCTAssertEqual(led.minY, root.minY, accuracy: 2)
         XCTAssertEqual(led.maxY, meters.minY, accuracy: 2)
-        XCTAssertEqual(meters.maxY, upperEnd, accuracy: 2)
-        XCTAssertEqual(controls.minY, lowerStart, accuracy: 2)
+        XCTAssertEqual(meters.maxY, root.midY, accuracy: 2)
+        XCTAssertEqual(controls.minY, meters.maxY, accuracy: 2)
         XCTAssertEqual(controls.maxY, root.maxY, accuracy: 2)
     }
 
@@ -274,6 +267,23 @@ final class DuoPlayerDesignUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+    }
+}
+extension DuoPlayerDesignUITests {
+    @MainActor func testPartiallyFoldedPortraitDoesNotReserveACenterGap() throws {
+        let app = try launch(portrait: true)
+        let geometry = try metrics(duoDiagnostic("duoLayoutMetrics", in: app))
+        try XCTSkipUnless(geometry["hasActiveDivision"] as? Bool == true,
+                          "Select partially folded portrait in Device Hub for this case.")
+        let led = try regionFrame("duoPortraitLED", in: app)
+        let meters = try regionFrame("duoPortraitMeters", in: app)
+        let controls = try regionFrame("duoPortraitControls", in: app)
+        try assertPortraitAllocation(in: app, geometry: geometry, led: led, meters: meters, controls: controls)
+        assertPlaybackTargets(in: app, containedIn: controls)
+        let seek = app.sliders["Playback Position"]
+        XCTAssertTrue(seek.exists)
+        XCTAssertTrue(seek.isHittable)
+        attach(app, name: "Duo partially folded portrait without center gap")
     }
 }
 #endif

@@ -13,9 +13,12 @@ struct DuoPortraitPlayerLayoutTests {
                                                     compact: false, hasDisplayDivision: true))
     }
 
-    @Test func openPortraitSplitsTheUpperHalfBetweenLEDAndMeters() {
-        let bounds = CGRect(x: 0, y: 0, width: 669, height: 835)
-        let placement = DuoPortraitPlayerPlacement.make(in: bounds, divisionFrames: [], reservedFrames: [])
+    @Test(arguments: [
+        CGRect(x: 0, y: 0, width: 669, height: 835),
+        CGRect(x: 10, y: 20, width: 669, height: 787)
+    ])
+    func portraitSplitsAtTheCenterWithoutAGap(bounds: CGRect) {
+        let placement = DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: [])
         #expect(placement.visuals.height == bounds.height / 2)
         #expect(placement.controls.height == bounds.height / 2)
         #expect(placement.led.height == bounds.height / 4)
@@ -26,38 +29,24 @@ struct DuoPortraitPlayerLayoutTests {
         #expect(placement.meters.maxY == placement.controls.minY)
     }
 
-    @Test func bookPortraitKeepsLEDAndMetersAboveTheHingeAndEveryControlBelowIt() {
-        let bounds = CGRect(x: 0, y: 0, width: 669, height: 835)
-        let hingeWithMargins = CGRect(x: 0, y: 353.5, width: 669, height: 80)
-        let placement = DuoPortraitPlayerPlacement.make(in: bounds, divisionFrames: [hingeWithMargins],
-                                                       reservedFrames: [hingeWithMargins])
-        #expect(placement.led.maxY <= hingeWithMargins.minY)
-        #expect(placement.meters.maxY <= hingeWithMargins.minY)
-        #expect(placement.led.height == placement.meters.height)
-        #expect(placement.controls.minY >= hingeWithMargins.maxY)
-        #expect(placement.controls.height == 401.5)
-        #expect(placement.led.width == bounds.width)
-    }
-
-    @Test func activeCameraAndHingeAreAvoidedTogether() {
+    @Test func activeCamerasAreStillAvoidedInBothHalves() {
         let bounds = CGRect(x: 10, y: 20, width: 700, height: 900)
-        let hinge = CGRect(x: 10, y: 440, width: 700, height: 60)
-        let camera = CGRect(x: 650, y: 20, width: 60, height: 70)
-        let placement = DuoPortraitPlayerPlacement.make(in: bounds, divisionFrames: [hinge],
-                                                       reservedFrames: [hinge, camera])
+        let cameras = [CGRect(x: 650, y: 20, width: 60, height: 70),
+                       CGRect(x: 10, y: 850, width: 60, height: 70)]
+        let placement = DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: cameras)
         for frame in [placement.led, placement.meters, placement.controls] {
             #expect(bounds.contains(frame))
-            for reserved in [hinge, camera] {
+            for reserved in cameras {
                 let intersection = frame.intersection(reserved)
                 #expect(intersection.isNull || intersection.isEmpty)
             }
         }
     }
 
-    @Test func inactiveOrOutsideDivisionDoesNotDisplaceTheCenterSplit() {
+    @Test func outsideOcclusionDoesNotDisplaceTheCenterSplit() {
         let bounds = CGRect(x: 0, y: 0, width: 600, height: 800)
         let outside = CGRect(x: 0, y: 900, width: 600, height: 40)
-        #expect(DuoPortraitPlayerPlacement.make(in: bounds, divisionFrames: [outside], reservedFrames: [outside]) ==
-            DuoPortraitPlayerPlacement.make(in: bounds, divisionFrames: [], reservedFrames: []))
+        #expect(DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: [outside]) ==
+            DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: []))
     }
 }
