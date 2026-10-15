@@ -2,8 +2,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension MainView {
-    func withLibraryPresentations<Content: View>(_ content: Content) -> some View {
-        withPlatformPresentations(content)
+    /// `keepsFoldedPortraitVisible` lets iOS sheets open below the fold of the Duo portrait player.
+    func withLibraryPresentations<Content: View>(
+        _ content: Content, keepsFoldedPortraitVisible: Bool
+    ) -> some View {
+        withPlatformPresentations(content, keepsFoldedPortraitVisible: keepsFoldedPortraitVisible)
         .sheet(item: $addToPlaylistTarget) { playlist in
             PlaylistAddItemsView(playlist: playlist, items: items) { selectedItems in
                 add(selectedItems, to: playlist)
@@ -26,11 +29,14 @@ extension MainView {
     }
 
     /// The Music library picker and the phone deck exist only on iPhone and iPad.
-    private func withPlatformPresentations<Content: View>(_ content: Content) -> some View {
+    private func withPlatformPresentations<Content: View>(
+        _ content: Content, keepsFoldedPortraitVisible: Bool
+    ) -> some View {
         #if os(iOS)
         withMusicLibraryPresentations(withExportPresentations(withImportPresentations(content)))
         .modifier(IOSLibraryPresentations(
             browsingState: browsingState, player: player, libraryService: libraryService,
+            keepsFoldedPortraitVisible: keepsFoldedPortraitVisible,
             renamePlaylist: renamePlaylist, deletePlaylist: deletePlaylist, deleteItem: deleteLibraryItem
         ))
         .fullScreenCover(isPresented: $isPhoneDeckPresented) {

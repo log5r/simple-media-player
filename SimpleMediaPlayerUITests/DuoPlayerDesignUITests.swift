@@ -284,6 +284,57 @@ extension DuoPlayerDesignUITests {
         attach(app, name: "Duo partially folded portrait without center gap")
     }
 
+    /// The Library and the player's sheets open below the fold, leaving the LED visible on the upper half.
+    @MainActor func testPartiallyFoldedPortraitLibraryAndSettingsStayBelowTheFold() throws {
+        let app = try launch(portrait: true)
+        let geometry = try metrics(duoDiagnostic("duoLayoutMetrics", in: app))
+        try XCTSkipUnless(geometry["hasActiveDivision"] as? Bool == true,
+                          "Select partially folded portrait in Device Hub for this case.")
+        // Reserved regions use the root's local coordinates; panel diagnostics use global coordinates.
+        let root = try CGRect(x: number("globalX", in: geometry), y: number("globalY", in: geometry),
+                              width: number("width", in: geometry), height: number("height", in: geometry))
+        let divisions = try activeRegions("division", in: geometry, origin: root.origin)
+            .filter { $0.intersects(root) }
+        try XCTSkipUnless(divisions.count == 1 && divisions[0].width > divisions[0].height,
+                          "Other division arrangements need a separate UI case.")
+        let division = divisions[0]
+
+        app.buttons["duoShowLibrary"].tap()
+        let close = app.buttons["duoCloseLibrary"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        let library = try regionFrame("duoPortraitLibrary", in: app)
+        let led = try regionFrame("duoPortraitLED", in: app)
+        XCTAssertEqual(library.minY, division.maxY, accuracy: 2)
+        XCTAssertEqual(library.maxY, root.maxY, accuracy: 2)
+        XCTAssertLessThanOrEqual(led.maxY, library.minY)
+        XCTAssertFalse(duoDiagnostic("duoPortraitControlsMetrics", in: app).exists)
+        assertTouchTarget(close, in: app, containedIn: library)
+        attach(app, name: "Duo partially folded portrait Library below the fold")
+        close.tap()
+
+        let settings = app.buttons["settingsButton"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let settingsClose = app.buttons["settingsCloseButton"]
+        XCTAssertTrue(settingsClose.waitForExistence(timeout: 5))
+        // A full-height sheet would put Close near the top of the upper half.
+        XCTAssertGreaterThan(settledFrame(of: settingsClose).minY, division.minY)
+        attach(app, name: "Duo partially folded portrait Settings below the fold")
+        settingsClose.tap()
+        XCTAssertTrue(app.buttons["duoShowLibrary"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor private func settledFrame(of element: XCUIElement) -> CGRect {
+        var frame = element.frame
+        for _ in 0..<10 {
+            _ = XCTWaiter.wait(for: [XCTestExpectation(description: "Presentation animation")], timeout: 0.3)
+            let next = element.frame
+            if next == frame { break }
+            frame = next
+        }
+        return frame
+    }
+
     @MainActor func testPartiallyFoldedLandscapePanelsMeetTheDivisionFrame() throws {
         let app = try launch(portrait: false)
         let geometry = try metrics(duoDiagnostic("duoLayoutMetrics", in: app))

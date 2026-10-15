@@ -12,6 +12,8 @@ struct DuoPortraitPlayerView: View {
     let showEqualizer: () -> Void
     let showDetails: () -> Void
     let showVideoFullScreen: () -> Void
+    /// The folded Library covers the lower half, so its controls are not drawn underneath.
+    var showsControls = true
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -48,16 +50,18 @@ struct DuoPortraitPlayerView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Display")
                     .accessibilityIdentifier("duoPortraitLED")
-                controls(size: placement.controls.size)
-                    .frame(width: placement.controls.width, height: placement.controls.height)
-                    .clipped()
-                    #if DEBUG
-                    .modifier(DuoPanelRegionDiagnostics(regionID: "duoPortraitControls"))
-                    #endif
-                    .offset(x: placement.controls.minX, y: placement.controls.minY)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Panel Content")
-                    .accessibilityIdentifier("duoPortraitControls")
+                if showsControls {
+                    controls(size: placement.controls.size)
+                        .frame(width: placement.controls.width, height: placement.controls.height)
+                        .clipped()
+                        #if DEBUG
+                        .modifier(DuoPanelRegionDiagnostics(regionID: "duoPortraitControls"))
+                        #endif
+                        .offset(x: placement.controls.minX, y: placement.controls.minY)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Panel Content")
+                        .accessibilityIdentifier("duoPortraitControls")
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .accessibilityElement(children: .contain)

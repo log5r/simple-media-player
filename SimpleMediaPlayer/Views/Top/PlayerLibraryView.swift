@@ -79,10 +79,21 @@ struct MainView: View {
                 size: keyboardIndependentSize == .zero ? proxy.size : keyboardIndependentSize, compact: compact,
                 hasDisplayDivision: hasDisplayDivision
             )
+            let portraitFoldBottom = portraitPlayer ? DuoPortraitPlayerLayout.foldBottom(
+                in: CGRect(origin: .zero, size: proxy.size),
+                divisionFrames: DeckReservedRegions.activeDivisionFrames(in: proxy)
+            ) : nil
             #else
             let portraitPlayer = false
+            let portraitFoldBottom: CGFloat? = nil
             #endif
-            withLibraryPresentations(libraryContent(compact: compact, size: proxy.size, portraitPlayer: portraitPlayer))
+            withLibraryPresentations(
+                libraryContent(
+                    compact: compact, size: proxy.size, portraitPlayer: portraitPlayer,
+                    portraitFoldBottom: portraitFoldBottom
+                ),
+                keepsFoldedPortraitVisible: portraitFoldBottom != nil
+            )
                 .environment(\.usesPhoneLayout, compact)
                 #if os(iOS)
                 .environment(\.usesDividedDisplay, !compact && hasDisplayDivision)
@@ -120,12 +131,19 @@ struct MainView: View {
     }
 
     @ViewBuilder
-    private func libraryContent(compact: Bool, size: CGSize, portraitPlayer: Bool) -> some View {
+    private func libraryContent(
+        compact: Bool, size: CGSize, portraitPlayer: Bool, portraitFoldBottom: CGFloat?
+    ) -> some View {
         #if os(iOS)
         if compact {
             phoneView
         } else {
-            expandedIOSView(size: size, portraitPlayer: portraitPlayer)
+            expandedIOSView(
+                size: size, portraitPlayer: portraitPlayer,
+                portraitLibraryTop: DuoPortraitPlayerLayout.libraryTop(
+                    in: CGRect(origin: .zero, size: size), foldBottom: portraitFoldBottom
+                )
+            )
                 // Own floating search at the screen level so the playback panel doesn't clip it.
                 .searchable(text: $browsingState.searchText, placement: .toolbar, prompt: "Search")
                 // A disappearing orientation branch must not cancel the new branch's shared projection.
