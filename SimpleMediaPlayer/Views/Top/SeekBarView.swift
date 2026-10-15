@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SeekBarView: View {
     let player: PlayerViewModel
+    var avoidsDisplayDivision = true
     @State private var dragValue: TimeInterval?
     @State private var dragTarget: PlaybackSeekTarget?
     @State private var isDragging = false
@@ -13,7 +14,9 @@ struct SeekBarView: View {
             GeometryReader { proxy in
                 let bounds = CGRect(origin: .zero, size: proxy.size)
                 let safeFrames = DeckSafeRegions.frames(
-                    in: bounds, avoiding: DeckReservedRegions.activeFrames(in: proxy)
+                    in: bounds, avoiding: DeckReservedRegions.activeFrames(
+                        in: proxy, includesDivisions: avoidsDisplayDivision
+                    )
                 )
                 let safeFrame = safeFrames
                     .max { $0.width * $0.height < $1.width * $1.height } ?? .zero

@@ -13,19 +13,14 @@ struct DuoPortraitPlayerPlacement: Equatable {
     let meters: CGRect
     let led: CGRect
 
-    static func make(in bounds: CGRect, divisionFrames: [CGRect], reservedFrames: [CGRect]) -> Self {
-        let horizontalDivision = divisionFrames
-            .map { $0.intersection(bounds) }
-            .filter { !$0.isNull && !$0.isEmpty && $0.width > $0.height && $0.width >= bounds.width * 0.5 }
-            .min { abs($0.midY - bounds.midY) < abs($1.midY - bounds.midY) }
-        let upperEnd = horizontalDivision?.minY ?? bounds.midY
-        let lowerStart = horizontalDivision?.maxY ?? bounds.midY
+    /// Keep the portrait player continuous across the fold; only occlusions reserve space.
+    static func make(in bounds: CGRect, occlusionFrames: [CGRect]) -> Self {
         let upper = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width,
-                           height: max(0, upperEnd - bounds.minY))
-        let lower = CGRect(x: bounds.minX, y: lowerStart, width: bounds.width,
-                           height: max(0, bounds.maxY - lowerStart))
-        let visuals = safeFrame(in: upper, avoiding: reservedFrames)
-        let controls = safeFrame(in: lower, avoiding: reservedFrames)
+                           height: bounds.height / 2)
+        let lower = CGRect(x: bounds.minX, y: bounds.midY, width: bounds.width,
+                           height: bounds.height - upper.height)
+        let visuals = safeFrame(in: upper, avoiding: occlusionFrames)
+        let controls = safeFrame(in: lower, avoiding: occlusionFrames)
         let ledHeight = visuals.height / 2
         return Self(
             visuals: visuals, controls: controls,

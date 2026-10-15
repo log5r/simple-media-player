@@ -1,6 +1,18 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "CFBundleName" : {
+      "comment" : "Bundle name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "SimpleMediaPlayer"
+          }
+        }
+      }
+    },
     "NSAppleEventsUsageDescription" : {
       "comment" : "Reason for requesting permission to read track metadata from the Music app.",
       "extractionState" : "manual",
@@ -33,6 +45,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Musicライブラリの曲を再生・取り込みするために使用します。"
+          }
+        }
+      }
+    },
+    "NSHumanReadableCopyright" : {
+      "comment" : "Copyright (human-readable)",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : ""
           }
         }
       }
