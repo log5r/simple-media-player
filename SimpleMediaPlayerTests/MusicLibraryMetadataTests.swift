@@ -99,12 +99,16 @@ struct MusicLibraryMetadataTests {
     }
 
     #if os(macOS)
-    @Test(arguments: [false, true])
-    func decodesMusicPropertyRecordsIncludingMissingValuesAndFileLocations(compilation: Bool) throws {
+    // Real Music returns `file track` records typed `cFlT`; plain AppleScript records are `reco`.
+    @Test(arguments: [false, true], [false, true])
+    func decodesMusicPropertyRecordsIncludingMissingValuesAndFileLocations(
+        compilation: Bool, fileTrackClass: Bool
+    ) throws {
+        let fileTrackClassProperty = fileTrackClass ? "class:file track, " : ""
         let source = """
         using terms from application "Music"
-            return {{name:"Music title", artist:"Artist", album:"Album", album artist:"Album artist", \
-        composer:"Composer", genre:"Jazz", year:2026, track number:2, track count:12, \
+            return {{\(fileTrackClassProperty)name:"Music title", artist:"Artist", album:"Album", \
+        album artist:"Album artist", composer:"Composer", genre:"Jazz", year:2026, track number:2, track count:12, \
         disc number:1, disc count:2, compilation:\(compilation), comment:"Comment", \
         sort name:"Sort title", sort artist:"Sort artist", sort album:"Sort album", duration:100.5, \
         location:POSIX file "/Music/track.m4a"}, \
@@ -115,6 +119,9 @@ struct MusicLibraryMetadataTests {
         var errorInfo: NSDictionary?
         let result = script.executeAndReturnError(&errorInfo)
         try #require(errorInfo == nil)
+        let fileTrackType: DescType = 0x6346_6C54 // 'cFlT'
+        #expect(result.atIndex(1)?.descriptorType == (fileTrackClass ? fileTrackType : typeAERecord))
+        #expect(result.atIndex(2)?.descriptorType == typeAERecord)
         let snapshot = try #require(MusicLibraryMetadataProvider.snapshot(from: result))
         let match = snapshot.lookup(url: URL(fileURLWithPath: "/Music/track.m4a"), hints: hints(sortTitle: ""))
         guard case let .found(values) = match else { Issue.record("Expected location match"); return }
