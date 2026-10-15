@@ -214,17 +214,15 @@ final class DuoPlayerDesignUITests: XCTestCase {
                       width: width, height: height)
     }
 
+    /// The diagnostic frame already includes the region's margins.
     private func activeRegions(_ kind: String, in geometry: [String: Any], origin: CGPoint) throws -> [CGRect] {
         let regions = geometry[kind] as? [[String: Any]] ?? []
         return try regions.filter { $0["active"] as? Bool == true }.map { region in
-            let margin = region["margins"] as? [String: Any] ?? [:]
-            let leading = try number("leading", in: margin)
-            let top = try number("top", in: margin)
-            return CGRect(
-                x: origin.x + CGFloat(try number("x", in: region) - leading),
-                y: origin.y + CGFloat(try number("y", in: region) - top),
-                width: try number("width", in: region) + leading + number("trailing", in: margin),
-                height: try number("height", in: region) + top + number("bottom", in: margin)
+            CGRect(
+                x: origin.x + CGFloat(try number("x", in: region)),
+                y: origin.y + CGFloat(try number("y", in: region)),
+                width: try number("width", in: region),
+                height: try number("height", in: region)
             )
         }
     }
@@ -284,6 +282,30 @@ extension DuoPlayerDesignUITests {
         XCTAssertTrue(seek.exists)
         XCTAssertTrue(seek.isHittable)
         attach(app, name: "Duo partially folded portrait without center gap")
+    }
+
+    @MainActor func testPartiallyFoldedLandscapePanelsMeetTheDivisionFrame() throws {
+        let app = try launch(portrait: false)
+        let geometry = try metrics(duoDiagnostic("duoLayoutMetrics", in: app))
+        try XCTSkipUnless(geometry["hasActiveDivision"] as? Bool == true,
+                          "Select partially folded landscape in Device Hub for this case.")
+        let root = try sceneContentFrame(in: app, geometry: geometry)
+        let occlusions = try activeRegions("occlusion", in: geometry, origin: root.origin)
+        try XCTSkipIf(occlusions.contains { $0.intersects(root) }, "Active occlusion needs a separate UI case.")
+        let divisions = try activeRegions("division", in: geometry, origin: root.origin)
+            .filter { $0.intersects(root) }
+        try XCTSkipUnless(divisions.count == 1 && divisions[0].height > divisions[0].width,
+                          "Other division arrangements need a separate UI case.")
+        let division = divisions[0]
+        let led = try regionFrame("expandedLEDRegion", in: app)
+        let controls = try regionFrame("expandedControlsRegion", in: app)
+        // The division frame already includes its margins, so the panels meet its edges without another gap.
+        XCTAssertEqual(controls.maxX, division.minX, accuracy: 2)
+        XCTAssertEqual(led.minX, division.maxX, accuracy: 2)
+        XCTAssertEqual(controls.minX, root.minX, accuracy: 2)
+        XCTAssertEqual(led.maxX, root.maxX, accuracy: 2)
+        assertPlaybackTargets(in: app, containedIn: controls)
+        attach(app, name: "Duo partially folded landscape panels at the division")
     }
 }
 #endif
