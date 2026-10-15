@@ -27,13 +27,15 @@ extension MainView {
             }
         } else {
             desktopView(availableWidth: size.width)
+                // Own floating search at the screen level so the playback panel doesn't clip it.
+                .searchable(text: $browsingState.searchText, placement: .toolbar, prompt: "Search")
         }
     }
 
     private func portraitLibrary(isBelowFold: Bool) -> some View {
         let cornerRadius: CGFloat = isBelowFold ? 16 : 0
         return VStack(spacing: 0) {
-            libraryNavigation
+            libraryNavigation(searchesInDetail: true)
             Button { showsPortraitLibrary = false } label: {
                 Label("Close", systemImage: "chevron.down")
                     .frame(maxWidth: .infinity, minHeight: 44)

@@ -144,8 +144,6 @@ struct MainView: View {
                     in: CGRect(origin: .zero, size: size), foldBottom: portraitFoldBottom
                 )
             )
-                // Own floating search at the screen level so the playback panel doesn't clip it.
-                .searchable(text: $browsingState.searchText, placement: .toolbar, prompt: "Search")
                 // A disappearing orientation branch must not cancel the new branch's shared projection.
                 .modifier(libraryListUpdates)
         }
@@ -212,7 +210,7 @@ struct MainView: View {
 extension MainView {
     func desktopView(availableWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
-            libraryNavigation
+            libraryNavigation()
                 #if os(iOS)
                 // Keep the floating vertical toolbar in front of the playback panel.
                 .zIndex(1)
@@ -247,7 +245,8 @@ extension MainView {
         )
     }
 
-    var libraryNavigation: some View {
+    /// Portrait hides the sidebar column, so search there must belong to the detail column to stay visible.
+    func libraryNavigation(searchesInDetail: Bool = false) -> some View {
             NavigationSplitView {
                 SidebarView(
                     selection: Binding(get: { selection }, set: { browsingState.select($0) }),
@@ -261,7 +260,12 @@ extension MainView {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
                 #endif
             } detail: {
-                libraryDetail
+                if searchesInDetail {
+                    libraryDetail
+                        .searchable(text: $browsingState.searchText, placement: .toolbar, prompt: "Search")
+                } else {
+                    libraryDetail
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .minFrame()
