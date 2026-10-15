@@ -10,6 +10,8 @@ struct IOSLibraryPresentations: ViewModifier {
     let renamePlaylist: (Playlist, String) -> Void
     let deletePlaylist: (Playlist) -> Void
     let deleteItem: (MediaItem) -> Void
+    /// The user's choice while folded; folding or opening a sheet starts again at `.medium`.
+    @State private var foldedPlayerSheetDetent = PresentationDetent.medium
 
     func body(content: Content) -> some View {
         content
@@ -20,7 +22,7 @@ struct IOSLibraryPresentations: ViewModifier {
                 if isVideo != true { browsingState.showsVideoFullScreen = false }
             }
             .sheet(isPresented: $browsingState.showsSettings) {
-                AppSettingsView(player: player).presentationDetents(playerSheetDetents)
+                AppSettingsView(player: player).presentationDetents(playerSheetDetents, selection: playerSheetDetent)
             }
             .sheet(isPresented: $browsingState.showsFilters) {
                 AdvancedSearchView(filter: $browsingState.searchFilter)
@@ -34,10 +36,10 @@ struct IOSLibraryPresentations: ViewModifier {
                 )
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("libraryDetailsSheet")
-                .presentationDetents(playerSheetDetents)
+                .presentationDetents(playerSheetDetents, selection: playerSheetDetent)
             }
             .sheet(isPresented: $browsingState.showsEqualizer) {
-                equalizerSheet.presentationDetents(playerSheetDetents)
+                equalizerSheet.presentationDetents(playerSheetDetents, selection: playerSheetDetent)
             }
             .sheet(item: $browsingState.lyricsItem) { item in
                 LyricsEditorView(item: item, libraryService: libraryService)
@@ -53,6 +55,9 @@ struct IOSLibraryPresentations: ViewModifier {
             }, content: { session in
                 BulkMetadataEditView(items: session.items, libraryService: libraryService)
             })
+            // A sheet that stays open while the Duo folds must not keep covering the LED at `.large`.
+            .onChange(of: keepsFoldedPortraitVisible) { _, _ in foldedPlayerSheetDetent = .medium }
+            .onChange(of: isPlayerSheetRequested) { _, _ in foldedPlayerSheetDetent = .medium }
             .modifier(IOSLibraryAlerts(
                 browsingState: browsingState, renamePlaylist: renamePlaylist,
                 deletePlaylist: deletePlaylist, deleteItem: deleteItem
@@ -62,6 +67,17 @@ struct IOSLibraryPresentations: ViewModifier {
     /// `.large` alone matches the default, so the sheet keeps its content when the fold changes.
     private var playerSheetDetents: Set<PresentationDetent> {
         keepsFoldedPortraitVisible ? [.medium, .large] : [.large]
+    }
+
+    private var playerSheetDetent: Binding<PresentationDetent> {
+        Binding(
+            get: { keepsFoldedPortraitVisible ? foldedPlayerSheetDetent : .large },
+            set: { if keepsFoldedPortraitVisible { foldedPlayerSheetDetent = $0 } }
+        )
+    }
+
+    private var isPlayerSheetRequested: Bool {
+        browsingState.showsSettings || browsingState.showsEqualizer || browsingState.showsDetails
     }
 
     private var equalizerSheet: some View {
