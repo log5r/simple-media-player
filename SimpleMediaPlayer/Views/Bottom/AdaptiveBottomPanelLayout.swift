@@ -97,7 +97,8 @@ struct AdaptiveBottomPanelPlacement: Equatable {
 }
 
 enum DeckSafeRegions {
-    /// Both division and occlusion margins are included before these local rectangles are supplied.
+    /// Callers supply active division and occlusion frames in local coordinates.
+    /// Each frame already includes its margins.
     static func frames(in bounds: CGRect, avoiding reservedFrames: [CGRect]) -> [CGRect] {
         reservedFrames.reduce([bounds]) { regions, reserved in
             regions.flatMap { subtract(reserved, from: $0) }

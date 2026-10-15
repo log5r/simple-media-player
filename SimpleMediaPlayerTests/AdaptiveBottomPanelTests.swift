@@ -93,14 +93,18 @@ struct AdaptiveBottomPanelTests {
     }
 
     @Test func verticalDivisionHeightConvergesUsingTheLocalControlWidth() {
-        let division = CGRect(x: 435.5, y: -500, width: 80, height: 1_500)
+        // Duo Simulator, Book landscape: ReservedRegion.frame already includes 20 pt leading/trailing margins.
+        let division = CGRect(x: 455.5, y: -500, width: 40, height: 1_500)
         for height in [CGFloat(180), CGFloat(216)] {
             let bounds = CGRect(x: 0, y: 0, width: 951, height: height)
             let placement = AdaptiveBottomPanelPlacement.make(
                 in: bounds, avoiding: [division], side: .right, layout: .ledHalf
             )
             let width = placement.controlWidthForVerticalDivision(in: bounds, divisionFrames: [division])
-            #expect(width == 435.5)
+            #expect(width == 455.5)
+            #expect(placement.display.width == 455.5)
+            #expect(placement.controls.maxX == division.minX)
+            #expect(placement.display.minX == division.maxX)
             #expect(AdaptiveBottomPanelMetrics.height(width: 951, layout: .ledHalf, dividedControlWidth: width) == 216)
         }
         #expect(AdaptiveBottomPanelMetrics.height(width: 951, layout: .ledHalf, dividedControlWidth: nil) == 216)

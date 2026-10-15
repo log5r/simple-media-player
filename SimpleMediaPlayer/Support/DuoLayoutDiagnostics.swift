@@ -71,10 +71,13 @@ struct DuoLayoutDiagnostics: ViewModifier {
 
     private func metrics(for geometry: GeometryProxy) -> String {
         let inset = geometry.safeAreaInsets
+        let globalFrame = geometry.frame(in: .global)
         var values: [String: Any] = [
             "layout": layoutName,
             "width": geometry.size.width,
             "height": geometry.size.height,
+            "globalX": globalFrame.minX,
+            "globalY": globalFrame.minY,
             "displayScale": displayScale,
             "portrait": geometry.size.height > geometry.size.width,
             "horizontalSizeClass": sizeClassName(horizontalSizeClass),

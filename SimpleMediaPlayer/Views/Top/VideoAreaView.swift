@@ -138,7 +138,7 @@ struct FullScreenVideoView: View {
         GeometryReader { proxy in
             let frame = FullScreenVideoLayout.videoFrame(
                 in: CGRect(origin: .zero, size: proxy.size),
-                activeDivisionFrames: activeDivisionFrames(in: proxy)
+                activeDivisionFrames: DeckReservedRegions.activeDivisionFrames(in: proxy)
             )
             PlayerLayerView(player: player.videoService.player)
                 .frame(width: frame.width, height: frame.height)
@@ -155,17 +155,6 @@ struct FullScreenVideoView: View {
             .modifier(VideoPlaybackAccessibility(player: player))
         #endif
     }
-
-    #if os(iOS)
-    private func activeDivisionFrames(in proxy: GeometryProxy) -> [CGRect] {
-        if #available(iOS 27.1, *) {
-            // ReservedRegion.frame already includes its margins.
-            return proxy.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed)
-                .filter(\.isActive).map(\.frame)
-        }
-        return []
-    }
-    #endif
 
     private var closeButton: some View {
         Button {
