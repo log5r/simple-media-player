@@ -79,7 +79,7 @@ struct DuoPortraitPlayerView: View {
 
     private func display(size: CGSize) -> some View {
         let height = max(1, size.height - 17)
-        return LEDBezelPlate(corner: corner, side: .right, palette: palette) { shape in
+        return LEDBezelPlate(corner: corner, side: .right, palette: palette, meetsWindowCorner: false) { shape in
             LEDDisplayView(
                 player: player, height: height, visualizerHeight: max(20, height - 95),
                 cornerShape: shape, alignsContentToBottom: true,
