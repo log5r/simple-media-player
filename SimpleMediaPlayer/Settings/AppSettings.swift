@@ -409,7 +409,7 @@ enum LEDPanelCorner: String, CaseIterable, Identifiable {
         }
     }
 
-    func cornerStyles(side: LEDPanelSide, inset: CGFloat = 0) -> LEDPanelCornerStyles {
+    func cornerStyles(side: LEDPanelSide, inset: CGFloat = 0, meetsWindowCorner: Bool = true) -> LEDPanelCornerStyles {
         switch self {
         case .rounded:
             let radius = max(0, 9 - inset)
@@ -420,13 +420,13 @@ enum LEDPanelCorner: String, CaseIterable, Identifiable {
                 bottomTrailing: .fixed(radius)
             )
         case .adaptive:
-            let fixedRadius = max(0, 2 - inset)
-            let minimumWindowRadius = Edge.Corner.Style.fixed(max(0, 10 - inset))
+            let fixedRadius = Edge.Corner.Style.fixed(max(0, 2 - inset))
+            let windowRadius = meetsWindowCorner ? .concentric(minimum: .fixed(max(0, 10 - inset))) : fixedRadius
             return LEDPanelCornerStyles(
-                topLeading: .fixed(fixedRadius),
-                topTrailing: .fixed(fixedRadius),
-                bottomLeading: side == .left ? .concentric(minimum: minimumWindowRadius) : .fixed(fixedRadius),
-                bottomTrailing: side == .right ? .concentric(minimum: minimumWindowRadius) : .fixed(fixedRadius)
+                topLeading: fixedRadius,
+                topTrailing: fixedRadius,
+                bottomLeading: side == .left ? windowRadius : fixedRadius,
+                bottomTrailing: side == .right ? windowRadius : fixedRadius
             )
         }
     }

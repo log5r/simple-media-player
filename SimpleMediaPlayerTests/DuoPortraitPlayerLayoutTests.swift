@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import Testing
 @testable import SimpleMediaPlayer
 
@@ -48,5 +49,26 @@ struct DuoPortraitPlayerLayoutTests {
         let outside = CGRect(x: 0, y: 900, width: 600, height: 40)
         #expect(DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: [outside]) ==
             DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: []))
+    }
+
+    @Test(arguments: LEDPanelSide.allCases)
+    func adaptiveLEDCornersStayFixedAwayFromTheWindowCorner(side: LEDPanelSide) {
+        let outerStyles = LEDPanelCorner.adaptive.cornerStyles(side: side, meetsWindowCorner: false)
+        let innerStyles = LEDPanelCorner.adaptive.cornerStyles(side: side, inset: 1, meetsWindowCorner: false)
+        #expect(outerStyles == LEDPanelCornerStyles(
+            topLeading: .fixed(2), topTrailing: .fixed(2), bottomLeading: .fixed(2), bottomTrailing: .fixed(2)
+        ))
+        #expect(innerStyles == LEDPanelCornerStyles(
+            topLeading: .fixed(1), topTrailing: .fixed(1), bottomLeading: .fixed(1), bottomTrailing: .fixed(1)
+        ))
+    }
+
+    @Test(arguments: LEDPanelSide.allCases)
+    func roundedLEDCornersIgnoreTheWindowCorner(side: LEDPanelSide) {
+        let styles = LEDPanelCorner.rounded.cornerStyles(side: side, meetsWindowCorner: false)
+        #expect(styles == LEDPanelCorner.rounded.cornerStyles(side: side))
+        #expect(styles == LEDPanelCornerStyles(
+            topLeading: .fixed(9), topTrailing: .fixed(9), bottomLeading: .fixed(9), bottomTrailing: .fixed(9)
+        ))
     }
 }
