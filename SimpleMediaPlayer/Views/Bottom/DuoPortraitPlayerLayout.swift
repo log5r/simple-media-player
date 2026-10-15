@@ -2,8 +2,25 @@ import CoreGraphics
 
 /// Use the current display's division capability, rather than an iPhone model or pixel dimensions.
 enum DuoPortraitPlayerLayout {
+    /// Below this height, the Library's navigation bar, rows, and Close button do not fit under the fold.
+    static let minimumFoldedLibraryHeight: CGFloat = 280
+
     static func isPreferred(size: CGSize, compact: Bool, hasDisplayDivision: Bool) -> Bool {
         !compact && hasDisplayDivision && size.height > size.width
+    }
+
+    /// The lower edge of an active fold that divides the view into upper and lower parts.
+    static func foldBottom(in bounds: CGRect, divisionFrames: [CGRect]) -> CGFloat? {
+        divisionFrames
+            .filter { $0.width > $0.height && $0.intersects(bounds) }
+            .map(\.maxY)
+            .max()
+    }
+
+    /// Place the Library below the fold so the visuals stay above it; the keyboard can leave too little room there.
+    static func libraryTop(in bounds: CGRect, foldBottom: CGFloat?) -> CGFloat? {
+        guard let foldBottom, bounds.maxY - foldBottom >= minimumFoldedLibraryHeight else { return nil }
+        return max(0, foldBottom - bounds.minY)
     }
 }
 
