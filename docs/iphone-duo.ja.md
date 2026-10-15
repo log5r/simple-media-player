@@ -22,6 +22,8 @@ Duoの縦向きでは、再生画面の上半分を幅いっぱいの上下2段�
 
 ClosedでNow Playingを開いてから展開した場合も、デッキのDisplayページを同じ縦向き・横向きのデザインに切り替えます。全画面表示の提示元、選択中のページ、編集シートの所有者は維持します。通常のcompact表示では既存の縦スクロールを使います。ほかのデッキ配置に使うArrangementViewは、NavigationStackの内側、各ScrollViewの外側に置きます。標準ツールバーに属する表示切り替え・設定・フィルターには、iOS 27.1の縦配置の優先設定を適用します。
 
+フルスクリーン動画は、縦向きで半折りの場合、有効な横方向の画面分割領域とそのマージンより上の領域に収めます。完全に開くか横向きにすると画面全体へ戻ります。配置変更中も同じAVPlayerを使用し、再生・一時停止・閉じる操作を維持します。開いたDuo、通常のiPhone、iPad、macOSでは従来どおり中央に表示します。
+
 ## ツールバーとキーボードコマンド
 
 iOS 27.1のClosedの外側画面では、ナビゲーションバーとタブバーを右端に縦に並べます。ツールバーの項目は縦に並べられる標準の`ToolbarItem`のままにし、`HStack`でまとめず、ボタンに固定の寸法やアイコンだけのラベルスタイルを指定しません。ライブラリのルート、曲一覧、デッキの補助的な操作は`ToolbarOverflowMenu`に置き、省略記号のボタンはシステムのoverflowボタンだけにします。Filters、Add Tracks、Done、Close、Edit Lyricsには`visibilityPriority(.high)`を指定し、領域が足りない場合もoverflowへ移さないようにします。ほかの項目は既定の順序に従います。Doneは文字だけの項目なので横に残る場合があります。ツールバーの項目がCloseだけのシート（設定、再生の調整、イコライザー）は、iOS 27.1で`toolbarVerticalBehavior(.disabled)`を指定して横のバーを保ちます。狭い画面でボタン1つのために縦の列を使わないためです。
@@ -61,6 +63,8 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
 - macOSとiPad、iOS 27.0のiPhoneもビルドし、関連する操作テストを実行します。`scripts/lint.sh`と`git diff --check`も実行します。
 
 実行結果、観測した寸法と残る未検証条件は[GitHub Wikiの実装記録](https://github.com/log5r/simple-media-player/wiki/iPhone-Duo-Implementation-Plan)に記録します。
+
+FullScreenVideoLayoutTestsで動画の上側配置、分割領域のマージンとローカル座標、完全に開いた状態、横向き、画面を分割しない領域を確認します。縦向きの半折りでDuoFullScreenVideoUITestsを実行すると、生成した動画で実際の分割領域と配置を比較し、一時停止・再開、ダブルタップで閉じる操作、閉じるボタンを確認できます。姿勢や画面座標が一致しない場合はskipします。フルスクリーン再生中に完全に開く・回転する遷移は手動で確認します。`--ui-testing-duo-layout`では`fullScreenVideoMetrics`が動画の配置領域を返すため、有効な分割領域と比較できます。
 
 ## Appleの資料
 

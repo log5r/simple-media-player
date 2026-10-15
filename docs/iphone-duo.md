@@ -22,6 +22,8 @@ In portrait, the player splits at the center of its current view in both Open an
 
 Opening Now Playing while Closed and then unfolding adapts the deck's Display page to the same portrait or landscape design. Its full-screen presenter, page selection, and editing sheets keep their existing ownership. Ordinary compact scenes retain the vertical scrolling deck. The ArrangementView used by the other deck layout sits inside NavigationStack and outside each pane's ScrollView. View toggles, settings, and filters prefer the standard vertical toolbar placement on iOS 27.1.
 
+Full-screen video in partially folded portrait fits within the area above the active horizontal display division, including its margins. Unfolding or rotating to landscape restores the full display area. The same AVPlayer stays attached during these layout changes; playback, pause, and close keep their existing behavior. Open Duo, ordinary iPhone, iPad, and macOS retain centered full-screen video.
+
 ## Toolbars and Keyboard Commands
 
 On the Closed outer screen, iOS 27.1 places navigation bars and the tab bar vertically along the trailing edge. Toolbar items stay standard `ToolbarItem`s so they can lay out vertically. They are not combined in an `HStack`, and buttons have no fixed frames or icon-only label styles. Secondary commands of the library root, track lists, and the deck use `ToolbarOverflowMenu`, so the system overflow button is the only ellipsis. Filters, Add Tracks, Done, Close, and Edit Lyrics have `visibilityPriority(.high)` and stay outside the overflow when space runs out; other items keep the default order. Done is text-only and may remain horizontal. Sheets whose only toolbar item is Close (Settings, Playback Adjustments, and Equalizer) keep a horizontal bar with `toolbarVerticalBehavior(.disabled)` on iOS 27.1, so a single button does not occupy a column of the narrow screen.
@@ -61,6 +63,8 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
 - Build macOS, iPad, and an iPhone running iOS 27.0, then run the relevant operation tests. Run `scripts/lint.sh` and `git diff --check`.
 
 Results, measured geometry, and unverified conditions are recorded in the [GitHub Wiki implementation record](https://github.com/log5r/simple-media-player/wiki/iPhone-Duo-Implementation-Plan).
+
+FullScreenVideoLayoutTests verifies the upper video area, division margins and local coordinates, unfolding, landscape, and non-splitting regions. Run DuoFullScreenVideoUITests in partially folded portrait to check the video frame against the actual division and test pause/resume, double-tap to close, and the Close button with a generated video. The case skips if the posture or screen coordinates do not match. Manually unfold and rotate during full-screen playback to check the transition. With `--ui-testing-duo-layout`, `fullScreenVideoMetrics` reports the assigned video frame for comparison with the active division.
 
 ## Apple References
 

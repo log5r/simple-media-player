@@ -44,10 +44,14 @@ enum PhoneLayoutUITestFixture {
         let playlist = Playlist(name: "Layout Playlist")
         context.insert(playlist)
         let duration = ProcessInfo.processInfo.arguments.contains("--ui-testing-duo-long-playback") ? 180 : 60
+        let videoURL = try videoFixtureURL()
         for index in 1...3 {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("phone-layout-\(index).wav")
-            let file = try AVAudioFile(forWriting: url, settings: format.settings)
-            for _ in 0..<duration { try file.write(from: buffer) }
+            let url = (index == 1 ? videoURL : nil)
+                ?? FileManager.default.temporaryDirectory.appendingPathComponent("phone-layout-\(index).wav")
+            if url.pathExtension == "wav" {
+                let file = try AVAudioFile(forWriting: url, settings: format.settings)
+                for _ in 0..<duration { try file.write(from: buffer) }
+            }
             let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
             let usesLongTitle = index == 1
                 && ProcessInfo.processInfo.arguments.contains("--ui-testing-phone-long-title")
@@ -60,7 +64,7 @@ enum PhoneLayoutUITestFixture {
                 title: title, artist: usesOtherGroup ? "Other Artist" : "Layout Artist",
                 album: usesOtherGroup ? "Other Album" : "Layout Album",
                 genre: usesOtherGroup ? "Other Genre" : nil,
-                duration: TimeInterval(duration), isVideo: false,
+                duration: TimeInterval(duration), isVideo: index == 1 && videoURL != nil,
                 lyricsRaw: "[00:00.00]First lyric\n[00:20.00]Second lyric\n[00:40.00]Third lyric",
                 bookmarkData: bookmark, fileName: url.lastPathComponent
             )
@@ -70,6 +74,14 @@ enum PhoneLayoutUITestFixture {
             context.insert(entry)
         }
         try context.save()
+    }
+
+    private static func videoFixtureURL() throws -> URL? {
+        guard let encoded = ProcessInfo.processInfo.environment["PHONE_LAYOUT_VIDEO_BASE64"],
+              let data = Data(base64Encoded: encoded) else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("phone-layout-video.mp4")
+        try data.write(to: url)
+        return url
     }
 
     private static func fillAudio(_ buffer: AVAudioPCMBuffer) {

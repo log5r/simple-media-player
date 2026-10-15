@@ -115,11 +115,9 @@ struct FullScreenVideoView: View {
             Color.black
                 .ignoresSafeArea()
 
-            PlayerLayerView(player: player.videoService.player)
-                .ignoresSafeArea()
+            fullScreenVideo
                 .contentShape(Rectangle())
                 .gesture(videoTapGesture)
-                .modifier(VideoPlaybackAccessibility(player: player))
 
             #if os(iOS)
             DeckSafeControlsOverlay {
@@ -134,6 +132,40 @@ struct FullScreenVideoView: View {
             #endif
         }
     }
+
+    @ViewBuilder private var fullScreenVideo: some View {
+        #if os(iOS)
+        GeometryReader { proxy in
+            let frame = FullScreenVideoLayout.videoFrame(
+                in: CGRect(origin: .zero, size: proxy.size),
+                activeDivisionFrames: activeDivisionFrames(in: proxy)
+            )
+            PlayerLayerView(player: player.videoService.player)
+                .frame(width: frame.width, height: frame.height)
+                .modifier(VideoPlaybackAccessibility(player: player))
+                #if DEBUG
+                .modifier(DuoPanelRegionDiagnostics(regionID: "fullScreenVideo"))
+                #endif
+                .offset(x: frame.minX, y: frame.minY)
+        }
+        .ignoresSafeArea()
+        #else
+        PlayerLayerView(player: player.videoService.player)
+            .ignoresSafeArea()
+            .modifier(VideoPlaybackAccessibility(player: player))
+        #endif
+    }
+
+    #if os(iOS)
+    private func activeDivisionFrames(in proxy: GeometryProxy) -> [CGRect] {
+        if #available(iOS 27.1, *) {
+            // ReservedRegion.frame already includes its margins.
+            return proxy.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed)
+                .filter(\.isActive).map(\.frame)
+        }
+        return []
+    }
+    #endif
 
     private var closeButton: some View {
         Button {
