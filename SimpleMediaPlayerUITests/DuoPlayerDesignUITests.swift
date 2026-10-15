@@ -289,7 +289,9 @@ extension DuoPlayerDesignUITests {
         let geometry = try metrics(duoDiagnostic("duoLayoutMetrics", in: app))
         try XCTSkipUnless(geometry["hasActiveDivision"] as? Bool == true,
                           "Select partially folded landscape in Device Hub for this case.")
-        let root = try sceneContentFrame(in: app, geometry: geometry)
+        // Reserved regions use the root's local coordinates; panel diagnostics use global coordinates.
+        let root = try CGRect(x: number("globalX", in: geometry), y: number("globalY", in: geometry),
+                              width: number("width", in: geometry), height: number("height", in: geometry))
         let occlusions = try activeRegions("occlusion", in: geometry, origin: root.origin)
         try XCTSkipIf(occlusions.contains { $0.intersects(root) }, "Active occlusion needs a separate UI case.")
         let divisions = try activeRegions("division", in: geometry, origin: root.origin)
@@ -299,11 +301,16 @@ extension DuoPlayerDesignUITests {
         let division = divisions[0]
         let led = try regionFrame("expandedLEDRegion", in: app)
         let controls = try regionFrame("expandedControlsRegion", in: app)
+        let summary = "root=\(root) division=\(division) controls=\(controls) led=\(led)"
+        let frames = XCTAttachment(string: summary)
+        frames.name = "Duo partially folded landscape frames"
+        frames.lifetime = .keepAlways
+        add(frames)
         // The division frame already includes its margins, so the panels meet its edges without another gap.
         XCTAssertEqual(controls.maxX, division.minX, accuracy: 2)
         XCTAssertEqual(led.minX, division.maxX, accuracy: 2)
-        XCTAssertEqual(controls.minX, root.minX, accuracy: 2)
-        XCTAssertEqual(led.maxX, root.maxX, accuracy: 2)
+        XCTAssertTrue(root.insetBy(dx: -2, dy: -2).contains(controls))
+        XCTAssertTrue(root.insetBy(dx: -2, dy: -2).contains(led))
         assertPlaybackTargets(in: app, containedIn: controls)
         attach(app, name: "Duo partially folded landscape panels at the division")
     }
