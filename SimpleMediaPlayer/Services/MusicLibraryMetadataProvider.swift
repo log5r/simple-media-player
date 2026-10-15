@@ -146,7 +146,8 @@ extension MusicLibraryMetadataProvider {
         guard result.descriptorType == typeAEList else { return nil }
         var tracks: [MusicLibraryMetadataSnapshot.Track] = []
         for index in 0..<result.numberOfItems {
-            guard let record = result.atIndex(index + 1), record.descriptorType == typeAERecord else { return nil }
+            // Music types each record by its class, such as `cFlT`, rather than `reco`.
+            guard let record = result.atIndex(index + 1), record.isRecordDescriptor else { return nil }
             var values = MediaMetadataEmbeddedValues()
             values.title = text(record, "pnam")
             values.artist = text(record, "pArt")
