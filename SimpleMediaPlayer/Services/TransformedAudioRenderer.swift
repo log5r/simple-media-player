@@ -100,12 +100,16 @@ nonisolated private final class TransformedAudioRenderSession {
         engine.disableManualRenderingMode()
     }
 
+    private var processingLatency: TimeInterval {
+        max(0, timePitch.latency + pitchEffect.latency + protection.latency)
+    }
+
     private func schedule(_ sourceFile: AVAudioFile) throws {
         // An exhausted player can flag silence without pulling the effect's delayed samples.
         // Feed actual zero PCM so the pitch processor and limiter drain across render boundaries.
         let paddingFrames = AVAudioFrameCount(max(
             Double(maximumFrameCount),
-            ((pitchEffect.latency + protection.latency + protection.tailTime) * sourceFile.processingFormat.sampleRate
+            ((processingLatency + protection.tailTime) * sourceFile.processingFormat.sampleRate
                 * Double(timePitch.rate)).rounded(.up)
         ))
         guard let padding = AVAudioPCMBuffer(pcmFormat: sourceFile.processingFormat, frameCapacity: paddingFrames),
@@ -127,7 +131,7 @@ nonisolated private final class TransformedAudioRenderSession {
         }
         // Latency is reported in seconds; round to the nearest sample, avoiding 96.000004 -> 97.
         var leadingFrames = AVAudioFramePosition(
-            ((pitchEffect.latency + protection.latency) * format.sampleRate).rounded()
+            (processingLatency * format.sampleRate).rounded()
         )
         var writtenFrames: AVAudioFramePosition = 0
         var retryCount = 0

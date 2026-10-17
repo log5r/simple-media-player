@@ -703,7 +703,8 @@ nonisolated extension AudioEngineService {
     }
 
     private var playbackProcessingLatency: TimeInterval {
-        max(0, pitchEffect.latency + outputProtection.latency)
+        // TimePitch buffers real-time audio even in bypass; offline rendering can report zero.
+        max(0, timePitch.latency + pitchEffect.latency + outputProtection.latency)
     }
 
     private func performPendingSeek(for requestID: UUID, seekID: UUID? = nil) {
