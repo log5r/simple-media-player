@@ -83,8 +83,10 @@ struct AudioEngineTrackSwitchTests {
 
         probe.engine.load(url: first)
         try await waitUntil { probe.loadedDurations.count == 1 }
-        // The control queue starts playback before it handles the next load, which then fades out.
+        // Establish actual playback before testing its fade. A load submitted while
+        // play is still preparing correctly supersedes that pending play request.
         probe.engine.play()
+        try await waitUntil { probe.engine.currentTime > 0 }
         probe.engine.load(url: second)
         try await waitUntil { probe.loadedDurations.count == 2 }
 
