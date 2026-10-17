@@ -14,15 +14,21 @@ private struct PendingSeek {
 // ロックで守った表示用クロックのキャッシュのみを参照する。
 nonisolated final class AudioEngineService: @unchecked Sendable {
     // resetEngine() でインスタンスごと作り直すため var(controlQueue 上でのみ差し替える)
-    private var engine = AVAudioEngine()
+    private var engine: AVAudioEngine
     private var playerNode = AVAudioPlayerNode()
-    private var timePitch = AVAudioUnitTimePitch()
+    private var timePitch = AudioProcessingQuality.makeTimePitch()
+    private var pitchEffectStorage: SMPPitchEffect?
+    private var fadeMixer = AVAudioMixerNode()
     private var loudnessGain = AVAudioUnitEQ(numberOfBands: 0)
     private var graphicEQ = AVAudioUnitEQ(numberOfBands: EqualizerSettings.bandCount)
     private var reverb = AVAudioUnitReverb()
+    private var outputProtection = AudioOutputProtection()
+    private var configurationObservation: AudioEngineConfigurationObservation?
     private let analyzer: SpectrumAnalyzer
     private let openReadableFile: @Sendable (URL) throws -> ExtendedAudioCache.ReadableFile
     private let waitForFadeStep: @Sendable (useconds_t) -> Void
+    private let engineFactory: @Sendable () -> AVAudioEngine
+    private let preparePlayer: @Sendable (AVAudioPlayerNode, AVAudioFrameCount) -> Void
     typealias IdleSchedule = @Sendable (TimeInterval, DispatchQueue, DispatchWorkItem) -> Void
     private let scheduleIdleSuspension: IdleSchedule?
     private let controlQueue = DispatchQueue(label: "SimpleMediaPlayer.AudioEngineService.control", qos: .userInitiated)
@@ -49,6 +55,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     private let stateLock = NSLock()
     private var displayBaseTime: TimeInterval = 0
     private var displayElapsedTime: TimeInterval = 0
+    private var displayLatencyRemaining: TimeInterval = 0
     private var displayIsPlaying = false
     private var displayRate: Double = 1.0
     private var cachedDuration: TimeInterval = 0
@@ -67,13 +74,20 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
             try ExtendedAudioSource.readableFile(for: $0)
         },
         waitForFadeStep: @escaping @Sendable (useconds_t) -> Void = { usleep($0) },
-        scheduleIdleSuspension: IdleSchedule? = nil
+        scheduleIdleSuspension: IdleSchedule? = nil,
+        engineFactory: @escaping @Sendable () -> AVAudioEngine = { AVAudioEngine() },
+        preparePlayer: @escaping @Sendable (AVAudioPlayerNode, AVAudioFrameCount) -> Void = {
+            $0.prepare(withFrameCount: $1)
+        }
     ) {
         self.analyzer = analyzer
         self.openReadableFile = openReadableFile
         self.waitForFadeStep = waitForFadeStep
         self.scheduleIdleSuspension = scheduleIdleSuspension
-        buildEngineGraph()
+        self.engineFactory = engineFactory
+        self.preparePlayer = preparePlayer
+        engine = engineFactory()
+        controlQueue.async { self.buildEngineGraph() }
     }
 
     private var loudnessNormalization: AudioLoudnessNormalization {
@@ -86,24 +100,34 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         return normalization
     }
 
-    // init と performEngineReset からのみ呼ぶ(reset 時は controlQueue 上)
+    // 初回構築も再構築も controlQueue 上。後続の load / play より先に実行する。
     private func buildEngineGraph() {
+        dispatchPrecondition(condition: .onQueue(controlQueue))
         engine.attach(playerNode)
         engine.attach(timePitch)
+        engine.attach(pitchEffect.node)
+        engine.attach(fadeMixer)
         engine.attach(loudnessGain)
         engine.attach(graphicEQ)
         engine.attach(reverb)
+        outputProtection.attach(to: engine)
         engine.connect(playerNode, to: timePitch, format: nil)
-        engine.connect(timePitch, to: loudnessGain, format: nil)
+        engine.connect(timePitch, to: pitchEffect.node, format: nil)
+        engine.connect(pitchEffect.node, to: fadeMixer, format: nil)
+        engine.connect(fadeMixer, to: loudnessGain, format: nil)
         engine.connect(loudnessGain, to: graphicEQ, format: nil)
         engine.connect(graphicEQ, to: reverb, format: nil)
         engine.connect(reverb, to: engine.mainMixerNode, format: nil)
         loudnessGain.bypass = true
+        timePitch.pitch = 0
+        timePitch.bypass = timePitch.rate == 1
         configureGraphicEqualizerBands()
         applyEqualizer(currentEqualizerSettings)
-        installTap()
+        observeEngineConfiguration()
     }
 
+    // Transport actions use this output clock too. Subtracting the latest rate times
+    // the DSP delay from playerTime would jump after a rate change or route loss.
     var currentTime: TimeInterval {
         stateLock.lock()
         defer { stateLock.unlock() }
@@ -126,7 +150,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     func setPitchCents(_ cents: Float) {
         let clamped = max(-2400, min(2400, cents))
         controlQueue.async {
-            self.timePitch.pitch = clamped
+            self.pitchEffect.pitchCents = clamped
         }
     }
 
@@ -134,10 +158,9 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         let clamped = max(0.25, min(4.0, rate))
         controlQueue.async {
             self.timePitch.rate = clamped
+            self.timePitch.bypass = clamped == 1
+            self.stateLock.withLock { self.displayRate = Double(clamped) }
         }
-        stateLock.lock()
-        displayRate = Double(clamped)
-        stateLock.unlock()
     }
 
     func setVolumeNormalizationEnabled(_ enabled: Bool) {
@@ -288,7 +311,7 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
             self.appliedPlaybackRequestID = playbackRequestID
             self.playWhenReady = false
             self.loudnessNormalization.cancel()
-            self.seekFrame = self.frame(for: self.preciseCurrentTime())
+            self.seekFrame = self.frame(for: self.currentTime)
             self.setDisplayClock(playing: false)
             self.resetDisplayClock(to: Double(self.seekFrame) / self.sampleRate)
             self.invalidateScheduledSegment()
@@ -328,49 +351,44 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
             self.idleSuspension.cancel()
             self.engine.stop()
             self.reverb.reset()
+            self.outputProtection.reset()
             self.releaseLoadedAudio()
             self.loudnessNormalization.load(nil)
         }
     }
 
-    // 再生速度の変更を繰り返すと特定の周波数帯が消えることがある(原因未特定、
-    // AVAudioUnitTimePitch 内部状態の破損を疑っている)ため、切り分け用に
-    // エンジンと全ノードをインスタンスごと作り直す完全リセットを提供する。
-    // 再生位置・再生状態・音量・ピッチ・速度は引き継ぐ
-    func resetEngine() {
-        controlQueue.async {
-            self.performEngineReset()
-        }
-    }
-
     private func performEngineReset() {
         idleSuspension.cancel()
-        let resumeTime = preciseCurrentTime()
+        let resumeTime = currentTime
         stateLock.lock()
         let wasPlaying = displayIsPlaying
         stateLock.unlock()
         let volume = playerNode.volume
-        let pitch = timePitch.pitch
+        let pitch = pitchEffect.pitchCents
         let rate = timePitch.rate
 
         setDisplayClock(playing: false)
         invalidateScheduledSegment()
         playerNode.stop()
-        engine.mainMixerNode.removeTap(onBus: 0)
+        outputProtection.outputNode.removeTap(onBus: 0)
         engine.stop()
 
-        engine = AVAudioEngine()
+        engine = engineFactory()
         playerNode = AVAudioPlayerNode()
-        timePitch = AVAudioUnitTimePitch()
+        timePitch = AudioProcessingQuality.makeTimePitch()
+        pitchEffect = SMPPitchEffect()
+        fadeMixer = AVAudioMixerNode()
         loudnessGain = AVAudioUnitEQ(numberOfBands: 0)
         graphicEQ = AVAudioUnitEQ(numberOfBands: EqualizerSettings.bandCount)
         reverb = AVAudioUnitReverb()
+        outputProtection = AudioOutputProtection()
         loadedReverbPreset = nil
         buildEngineGraph()
 
         playerNode.volume = volume
-        timePitch.pitch = pitch
+        pitchEffect.pitchCents = pitch
         timePitch.rate = rate
+        timePitch.bypass = rate == 1
         applyLoudnessGain(loudnessNormalization.gainForPlayback)
 
         // ファイルの読み取り状態も含めて作り直す(失敗時は既存のファイルを使い続ける)
@@ -381,6 +399,31 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         resetDisplayClock(to: Double(seekFrame) / sampleRate)
         if wasPlaying {
             performPlay()
+        }
+    }
+
+}
+
+nonisolated extension AudioEngineService {
+    // Registration and Audio Unit initialization can wait on CoreAudio.
+    private var pitchEffect: SMPPitchEffect {
+        get {
+            dispatchPrecondition(condition: .onQueue(controlQueue))
+            if let pitchEffectStorage { return pitchEffectStorage }
+            let effect = SMPPitchEffect()
+            pitchEffectStorage = effect
+            return effect
+        }
+        set {
+            dispatchPrecondition(condition: .onQueue(controlQueue))
+            pitchEffectStorage = newValue
+        }
+    }
+
+    // 再生位置・再生状態・各種設定を引き継いで、エンジンと全ノードを作り直す。
+    func resetEngine() {
+        controlQueue.async {
+            self.performEngineReset()
         }
     }
 
@@ -399,9 +442,38 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
         }
     }
 
-}
+    private func observeEngineConfiguration() {
+        let observedEngine = engine
+        configurationObservation = AudioEngineConfigurationObservation(engine: observedEngine) { [weak self] in
+            self?.controlQueue.async { [weak self] in
+                guard let self, self.engine === observedEngine else { return }
+                self.recoverFromConfigurationChange()
+            }
+        }
+    }
 
-nonisolated extension AudioEngineService {
+    private func recoverFromConfigurationChange() {
+        guard engine.isRunning == false else { return }
+        // User intent is published before its control-queue work. A queued pause,
+        // stop, seek or load must win over an older route-change notification.
+        let shouldResume = stateLock.withLock {
+            displayIsPlaying && appliedPlaybackRequestID == activePlaybackRequestID
+        }
+        guard shouldResume else { return }
+        let resumeTime = currentTime
+        idleSuspension.cancel()
+        invalidateScheduledSegment()
+        playerNode.stop()
+        resetPitchProcessors()
+        reverb.reset()
+        graphicEQ.reset()
+        outputProtection.reset()
+        seekFrame = frame(for: resumeTime)
+        setDisplayClock(playing: false)
+        resetDisplayClock(to: Double(seekFrame) / sampleRate)
+        performPlay()
+    }
+
     private var idleSuspension: AudioEngineIdleSuspension {
         dispatchPrecondition(condition: .onQueue(controlQueue))
         if let idleSuspensionStorage { return idleSuspensionStorage }
@@ -444,7 +516,8 @@ nonisolated extension AudioEngineService {
     }
 
     private func performPlay() {
-        guard let audioFile else { return }
+        guard let audioFile, let requestID = appliedPlaybackRequestID,
+              isActivePlaybackRequest(requestID) else { return }
         idleSuspension.cancel()
         guard seekFrame < audioFile.length else {
             finishPlayback(at: audioFile.length)
@@ -453,29 +526,53 @@ nonisolated extension AudioEngineService {
         loudnessNormalization.resume()
         do {
             if engine.isRunning == false {
+                outputProtection.outputNode.removeTap(onBus: 0)
+                try outputProtection.connect(to: engine)
+                installTap()
                 try engine.start()
             }
+            guard continuePlayback(ifCurrent: requestID) else { return }
             if playerNode.isPlaying == false {
                 schedule(file: audioFile, from: seekFrame)
                 // schedule直後にplayすると、ファイル先読みが数msぶんしか
                 // 間に合わず冒頭で音が途切れて「プツッ」というノイズになる
                 // (起動直後・デバッガ接続時などディスク読みが遅い時に顕在化)。
                 // 0.5秒ぶん先読みを済ませてから再生を開始する
-                playerNode.prepare(withFrameCount: AVAudioFrameCount(sampleRate / 2))
+                preparePlayer(playerNode, AVAudioFrameCount(sampleRate / 2))
+                guard continuePlayback(ifCurrent: requestID) else { return }
                 playerNode.play()
             }
-            setDisplayClock(playing: true)
+            let didPublish = stateLock.withLock {
+                guard activePlaybackRequestID == requestID else { return false }
+                displayIsPlaying = true
+                return true
+            }
+            if didPublish == false { _ = continuePlayback(ifCurrent: requestID) }
         } catch {
+            guard continuePlayback(ifCurrent: requestID) else { return }
             loudnessNormalization.cancel()
             setDisplayClock(playing: false)
             suspendAfterTail()
-            reportError(error)
+            reportError(error, playbackRequestID: requestID)
         }
+    }
+
+    // Engine start and player preparation can block. Recheck the request after each
+    // one without holding stateLock across AudioUnit operations.
+    private func continuePlayback(ifCurrent requestID: UUID) -> Bool {
+        guard isActivePlaybackRequest(requestID) == false else { return true }
+        invalidateScheduledSegment()
+        playerNode.stop()
+        resetPitchProcessors()
+        setDisplayClock(playing: false)
+        loudnessNormalization.cancel()
+        suspendAfterTail()
+        return false
     }
 
     private func performStop(reset: Bool) {
         loudnessNormalization.cancel()
-        let stoppedTime = preciseCurrentTime()
+        let stoppedTime = currentTime
         setDisplayClock(playing: false)
         invalidateScheduledSegment()
         stopWithFadeOut()
@@ -500,6 +597,7 @@ nonisolated extension AudioEngineService {
             // the engine stays ready, so the next segment cannot revive the tail.
             self.reverb.reset()
             self.graphicEQ.reset()
+            self.outputProtection.reset()
         }
     }
 
@@ -508,7 +606,7 @@ nonisolated extension AudioEngineService {
         setDisplayClock(playing: false)
         invalidateScheduledSegment()
         playerNode.stop()
-        timePitch.reset()
+        resetPitchProcessors()
         seekFrame = finalFrame
         resetDisplayClock(to: Double(finalFrame) / sampleRate)
         suspendAfterTail()
@@ -575,21 +673,19 @@ nonisolated extension AudioEngineService {
         reverb.bypass = settings.isEnabled == false || wetDryMix == 0
     }
 
-    // 再生中に playerNode.stop() を直接呼ぶと波形が振幅の途中でぶつ切りになり、
-    // 切る瞬間の振幅が大きいと「プツッ」というノイズになる(曲の切り替え・停止・
-    // シーク時)。ミキサーへの入力音量を短時間で0まで落としてから止め、音量を
-    // 元に戻す。controlQueue 上でのみ呼ぶこと
+    // ピッチ処理の後でフェードする。入力側の音量を落とすだけでは、DSPの遅延分が
+    // 排出される前にresetして波形を切ることになる。controlQueue 上でのみ呼ぶこと。
     private func stopWithFadeOut() {
         guard playerNode.isPlaying else {
             playerNode.stop()
-            timePitch.reset()
+            resetPitchProcessors()
             return
         }
-        let original = playerNode.volume
+        let original = fadeMixer.outputVolume
         if original > 0 {
             let steps = 10
             for step in 1...steps {
-                playerNode.volume = original * Float(steps - step) / Float(steps)
+                fadeMixer.outputVolume = original * Float(steps - step) / Float(steps)
                 waitForFadeStep(6000)
             }
             // 最後の音量変更(→0)のミキサー内部平滑が完了するのを待ってから止める。
@@ -597,8 +693,18 @@ nonisolated extension AudioEngineService {
             waitForFadeStep(15000)
         }
         playerNode.stop()
+        resetPitchProcessors()
+        fadeMixer.outputVolume = original
+    }
+
+    private func resetPitchProcessors() {
         timePitch.reset()
-        playerNode.volume = original
+        pitchEffect.reset()
+    }
+
+    private var playbackProcessingLatency: TimeInterval {
+        // TimePitch buffers real-time audio even in bypass; offline rendering can report zero.
+        max(0, timePitch.latency + pitchEffect.latency + outputProtection.latency)
     }
 
     private func performPendingSeek(for requestID: UUID, seekID: UUID? = nil) {
@@ -642,7 +748,7 @@ nonisolated extension AudioEngineService {
         }
         startFrame = frame
         seekFrame = frame
-        resetDisplayClock(to: Double(frame) / sampleRate)
+        resetDisplayClock(to: Double(frame) / sampleRate, latency: playbackProcessingLatency)
         // 世代番号で stop 済みセグメントの完了コールバックを無効化する。
         // 世代の比較を controlQueue 上に寄せることで stop() との競合も排除する
         scheduleGeneration += 1
@@ -656,7 +762,7 @@ nonisolated extension AudioEngineService {
         ) { [weak self] _ in
             guard let self else { return }
             self.controlQueue.async {
-                guard generation == self.scheduleGeneration else { return }
+                guard generation == self.scheduleGeneration, self.engine.isRunning else { return }
                 self.finishPlayback(at: file.length)
             }
         }
@@ -664,16 +770,6 @@ nonisolated extension AudioEngineService {
 
     private func invalidateScheduledSegment() {
         scheduleGeneration += 1
-    }
-
-    // playerNode 内部のロックを取るため controlQueue 上でのみ呼ぶこと
-    private func preciseCurrentTime() -> TimeInterval {
-        guard let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime)
-        else {
-            return Double(seekFrame) / sampleRate
-        }
-        return Double(seekFrame + AVAudioFramePosition(playerTime.sampleTime)) / sampleRate
     }
 
     private func frame(for time: TimeInterval) -> AVAudioFramePosition {
@@ -691,10 +787,11 @@ nonisolated extension AudioEngineService {
         return Int((Double(fileSize) * 8 / duration / 1000).rounded())
     }
 
-    private func reportError(_ error: Error, for requestID: UUID? = nil) {
+    private func reportError(_ error: Error, for requestID: UUID? = nil, playbackRequestID: UUID? = nil) {
         let message = error.localizedDescription
         Task { @MainActor in
             if let requestID, self.isActiveLoad(requestID) == false { return }
+            if let playbackRequestID, self.isActivePlaybackRequest(playbackRequestID) == false { return }
             self.onError?(message)
         }
     }
@@ -719,8 +816,7 @@ nonisolated extension AudioEngineService {
     }
 
     private func installTap() {
-        engine.mainMixerNode.removeTap(onBus: 0)
-        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, _ in
+        outputProtection.outputNode.installTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
             let clock = self.advanceDisplayClock(byFrames: buffer.frameLength, sampleRate: buffer.format.sampleRate)
             self.analyzer.analyze(buffer, currentTime: clock.time, isPlaying: clock.isPlaying)
@@ -739,10 +835,11 @@ nonisolated extension AudioEngineService {
         stateLock.unlock()
     }
 
-    private func resetDisplayClock(to time: TimeInterval) {
+    private func resetDisplayClock(to time: TimeInterval, latency: TimeInterval = 0) {
         stateLock.lock()
         displayBaseTime = time
         displayElapsedTime = 0
+        displayLatencyRemaining = latency
         stateLock.unlock()
     }
 
@@ -753,7 +850,13 @@ nonisolated extension AudioEngineService {
         stateLock.lock()
         defer { stateLock.unlock() }
         if displayIsPlaying, sampleRate > 0 {
-            displayElapsedTime += Double(frames) / sampleRate * displayRate
+            let renderedDuration = Double(frames) / sampleRate
+            let delayedDuration = min(displayLatencyRemaining, renderedDuration)
+            displayLatencyRemaining -= delayedDuration
+            displayElapsedTime = min(
+                max(0, cachedDuration - displayBaseTime),
+                displayElapsedTime + (renderedDuration - delayedDuration) * displayRate
+            )
         }
         return (displayBaseTime + displayElapsedTime, displayIsPlaying)
     }

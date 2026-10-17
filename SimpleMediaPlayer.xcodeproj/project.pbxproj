@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C6F170000000000000000001 /* PitchShiftAudioUnit.mm in Sources */ = {isa = PBXBuildFile; fileRef = C6F170000000000000000002 /* PitchShiftAudioUnit.mm */; settings = {COMPILER_FLAGS = "-O2"; }; };
 		C6F140000000000000000001 /* SFBAudioEngine in Frameworks */ = {isa = PBXBuildFile; productRef = C6F140000000000000000005 /* SFBAudioEngine */; };
 		C6F140000000000000000002 /* AetherFFmpegBuild in Frameworks */ = {isa = PBXBuildFile; productRef = C6F140000000000000000006 /* AetherFFmpegBuild */; };
 /* End PBXBuildFile section */
@@ -29,6 +30,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C6F170000000000000000002 /* PitchShiftAudioUnit.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = SimpleMediaPlayer/Services/PitchShiftAudioUnit.mm; sourceTree = SOURCE_ROOT; };
 		C6381F3A2FF810D800377C67 /* SimpleMediaPlayer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleMediaPlayer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C6381F492FF810DA00377C67 /* SimpleMediaPlayerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMediaPlayerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C6381F532FF810DA00377C67 /* SimpleMediaPlayerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SimpleMediaPlayerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -36,9 +38,23 @@
 		C6A214982FFAB59C00E0233F /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Signing.xcconfig; path = Configs/Signing.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C6F170000000000000000003 /* Exceptions for SimpleMediaPlayer */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Services/PitchShiftAudioUnit.mm,
+				Vendor/SignalsmithStretch/README.md,
+			);
+			target = C6381F392FF810D800377C67 /* SimpleMediaPlayer */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C6381F3C2FF810D800377C67 /* SimpleMediaPlayer */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C6F170000000000000000003 /* Exceptions for SimpleMediaPlayer */,
+			);
 			path = SimpleMediaPlayer;
 			sourceTree = "<group>";
 		};
@@ -258,6 +274,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C6F170000000000000000001 /* PitchShiftAudioUnit.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -466,7 +483,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = SimpleMediaPlayer/Services/FFmpegAudioBridge.h;
+				SWIFT_OBJC_BRIDGING_HEADER = SimpleMediaPlayer/Services/AudioBridgingHeader.h;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2,6";
@@ -510,7 +527,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = SimpleMediaPlayer/Services/FFmpegAudioBridge.h;
+				SWIFT_OBJC_BRIDGING_HEADER = SimpleMediaPlayer/Services/AudioBridgingHeader.h;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2,6";
