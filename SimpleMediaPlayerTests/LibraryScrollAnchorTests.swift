@@ -60,4 +60,15 @@ struct LibraryScrollAnchorTests {
         #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [later]) == 86)
         #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [outgoing, incoming]) == 158)
     }
+
+    @Test func tallUpcomingHeaderIsNotPinnedUntilItPushes() {
+        // A wrapped title makes the next header taller than the pinned one, with part of a row between them.
+        let pinned = CGRect(x: 0, y: 96, width: 320, height: 44)
+        let upcoming = CGRect(x: 0, y: 160, width: 320, height: 88)
+        let outgoing = CGRect(x: 0, y: 70, width: 320, height: 44)
+        let incoming = CGRect(x: 0, y: 114, width: 320, height: 88)
+
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [pinned, upcoming]) == 140)
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [outgoing, incoming]) == 202)
+    }
 }

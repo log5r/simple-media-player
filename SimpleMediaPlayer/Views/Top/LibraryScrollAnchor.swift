@@ -109,9 +109,15 @@ struct LibraryScrollAnchor: ViewModifier {
 
     /// The top of the rows left visible by the top inset and the section headers pinned at it.
     /// A pinned header's content sits below the inset by its cell padding, which is less than its own height.
+    /// A following header counts only within the pinned one's height, since a taller one would count before it pushes.
     static func visibleTop(belowInset inset: CGFloat, sectionHeaders: [CGRect]) -> CGFloat {
-        sectionHeaders
-            .filter { $0.minY < inset + $0.height && $0.maxY > inset }
+        let reaching = sectionHeaders.filter { $0.maxY > inset }
+        guard let pinned = reaching
+            .filter({ $0.minY < inset + $0.height })
+            .min(by: { $0.minY < $1.minY })
+        else { return inset }
+        return reaching
+            .filter { $0.minY < inset + pinned.height }
             .map(\.maxY)
             .max() ?? inset
     }
