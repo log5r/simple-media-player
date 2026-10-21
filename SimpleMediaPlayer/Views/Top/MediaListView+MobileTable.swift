@@ -2,13 +2,16 @@ import SwiftUI
 
 extension MediaListView {
     #if !os(macOS)
+    /// The pinned header shares the row height, which `LibraryScrollAnchor` relies on to restore rows below it.
+    static let mobileTableRowHeight: CGFloat = 44
+
     func mobileTableHeader(columns: [MediaListColumn]) -> some View {
         HStack(spacing: 0) {
             ForEach(columns) { column in
                 mobileTableHeaderCell(for: column)
             }
         }
-        .frame(height: 44)
+        .frame(height: Self.mobileTableRowHeight)
         .background(.bar)
         .overlay(alignment: .bottom) {
             Divider()
@@ -64,7 +67,7 @@ extension MediaListView {
                     .padding(.horizontal, 6)
             }
         }
-        .frame(height: 44)
+        .frame(height: Self.mobileTableRowHeight)
         .contentShape(Rectangle())
         .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         .overlay(alignment: .bottom) {

@@ -165,7 +165,11 @@ extension MediaListView {
         }
         .defaultScrollAnchor(.topLeading)
         .background(.background)
-        .modifier(LibraryScrollAnchor(itemIDs: tableRows.map(\.id), browsingState: browsingState))
+        .modifier(LibraryScrollAnchor(
+            itemIDs: tableRows.map(\.id),
+            browsingState: browsingState,
+            pinnedHeaderHeight: Self.mobileTableRowHeight
+        ))
         #endif
     }
 
