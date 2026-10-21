@@ -25,13 +25,13 @@ final class LibraryTableHeaderUITests: XCTestCase {
         let table = try launchTable()
         let (app, rows, header) = (table.app, table.rows, table.header)
         try scrollTable(rows: rows, below: header, in: app)
-        let saved = savedScrollItemID(in: app)
+        let saved = savedScrollItemID(in: app, prefix: "libraryTrack.")
         let visible = rows.allElementsBoundByIndex
             .filter { $0.frame.maxY > header.frame.maxY + 0.5 }
             .min { $0.frame.minY < $1.frame.minY }
         XCTAssertEqual(saved, visible?.identifier, "The saved row must be the first one visible below the header")
 
-        recreateTable(in: app, rows: rows)
+        recreateLibraryList(in: app, rows: rows)
         let restored = rows.matching(identifier: saved).firstMatch
         XCTAssertTrue(restored.waitForExistence(timeout: 10))
         XCTAssertEqual(
@@ -73,35 +73,6 @@ final class LibraryTableHeaderUITests: XCTestCase {
             forDuration: 0.05,
             thenDragTo: origin.withOffset(CGVector(dx: header.frame.midX, dy: header.frame.maxY + 40))
         )
-    }
-
-    /// A search without results replaces the table, and clearing it builds a new one from the saved row.
-    @MainActor private func recreateTable(in app: XCUIApplication, rows: XCUIElementQuery) {
-        var field = app.searchFields.firstMatch
-        if field.exists == false {
-            let activateSearch = app.buttons["Search"].firstMatch
-            XCTAssertTrue(activateSearch.waitForExistence(timeout: 5))
-            activateSearch.tap()
-            field = app.searchFields.firstMatch
-        }
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
-        field.typeText("zzz")
-        let emptied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: rows)
-        XCTAssertEqual(XCTWaiter.wait(for: [emptied], timeout: 10), .completed)
-        field.buttons["Clear text"].tap()
-        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
-    }
-
-    @MainActor private func savedScrollItemID(in app: XCUIApplication) -> String {
-        let metrics = duoDiagnostic("duoSelectionMetrics", in: app)
-        let saved = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "NOT (value CONTAINS %@)", "\"scrollItemID\":\"\""), object: metrics
-        )
-        XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 10), .completed)
-        let json = Data((metrics.value as? String ?? "").utf8)
-        let values = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any]
-        return "libraryTrack.\(values?["scrollItemID"] as? String ?? "")"
     }
 }
 

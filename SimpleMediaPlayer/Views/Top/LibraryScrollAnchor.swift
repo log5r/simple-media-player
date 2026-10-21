@@ -8,6 +8,14 @@ nonisolated private struct LibraryRowFrames: PreferenceKey {
     }
 }
 
+nonisolated private struct LibrarySectionHeaderFrames: PreferenceKey {
+    static var defaultValue: [CGRect] { [] }
+
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 struct LibraryScrollAnchorRow: ViewModifier {
     let id: UUID
 
@@ -23,6 +31,20 @@ struct LibraryScrollAnchorRow: ViewModifier {
     }
 }
 
+/// Marks a section header that hides rows when pinned, for `LibraryScrollAnchor.coversRowsUnderTopInset`.
+struct LibraryScrollAnchorSectionHeader: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: LibrarySectionHeaderFrames.self,
+                    value: [geometry.frame(in: .named("libraryTrackScroll"))]
+                )
+            }
+        }
+    }
+}
+
 /// Save a visible item, rather than a pixel offset whose meaning changes with row layout.
 /// Projection replacement may briefly be empty; restore only after its first populated result.
 struct LibraryScrollAnchor: ViewModifier {
@@ -31,8 +53,13 @@ struct LibraryScrollAnchor: ViewModifier {
     /// The height of a header pinned over the rows, which must equal the row height.
     /// `scrollTo` aligns a row with the viewport top, beneath that header.
     var pinnedHeaderHeight: CGFloat = 0
+    /// Whether rows scroll under the top content inset, such as a navigation bar, and under section headers
+    /// pinned there, as in a `List`. Only saving needs them; `List.scrollTo` restores a row below its header.
+    var coversRowsUnderTopInset = false
     @State private var rowFrames: [UUID: CGRect] = [:]
     @State private var viewportHeight: CGFloat = 0
+    @State private var topInset: CGFloat = 0
+    @State private var sectionHeaderFrames: [CGRect] = []
     @State private var hasRestored = false
     @State private var destination: Destination?
     @State private var position = ScrollPosition()
@@ -43,7 +70,11 @@ struct LibraryScrollAnchor: ViewModifier {
                 .scrollPosition($position)
                 .coordinateSpace(name: "libraryTrackScroll")
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.top } action: { _, top in
+                    topInset = top
+                }
                 .onPreferenceChange(LibraryRowFrames.self) { rowFrames = $0 }
+                .onPreferenceChange(LibrarySectionHeaderFrames.self) { sectionHeaderFrames = $0 }
                 .onChange(of: Destination(browsingState)) { _, _ in
                     hasRestored = false
                     destination = nil
@@ -55,7 +86,10 @@ struct LibraryScrollAnchor: ViewModifier {
                 }
                 .onScrollPhaseChange { _, phase in
                     guard phase == .idle, hasRestored, destination == Destination(browsingState) else { return }
-                    let bounds = pinnedHeaderHeight..<viewportHeight
+                    let top = coversRowsUnderTopInset
+                        ? Self.visibleTop(belowInset: topInset, sectionHeaders: sectionHeaderFrames)
+                        : pinnedHeaderHeight
+                    let bounds = top..<max(top, viewportHeight)
                     if let first = Self.firstVisibleItemID(in: rowFrames, within: bounds) {
                         browsingState.scrollItemID = first
                     }
@@ -69,6 +103,15 @@ struct LibraryScrollAnchor: ViewModifier {
             .filter { $0.value.maxY > bounds.lowerBound && $0.value.minY < bounds.upperBound }
             .min { $0.value.minY < $1.value.minY }?
             .key
+    }
+
+    /// The top of the rows left visible by the top inset and the section headers pinned at it.
+    /// A pinned header's content sits below the inset by its cell padding, which is less than its own height.
+    static func visibleTop(belowInset inset: CGFloat, sectionHeaders: [CGRect]) -> CGFloat {
+        sectionHeaders
+            .filter { $0.minY < inset + $0.height && $0.maxY > inset }
+            .map(\.maxY)
+            .max() ?? inset
     }
 
     private func restoreScrollPosition(using proxy: ScrollViewProxy) {
