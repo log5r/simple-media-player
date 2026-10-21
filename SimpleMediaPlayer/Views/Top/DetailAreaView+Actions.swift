@@ -281,7 +281,7 @@ extension DetailAreaView {
 
     var detailPanelMinimumWidth: CGFloat {
         #if os(iOS)
-        240
+        LibraryLayoutPolicy.inlineDetailsWidth
         #else
         280
         #endif
@@ -289,7 +289,7 @@ extension DetailAreaView {
 
     var detailPanelMaximumWidth: CGFloat {
         #if os(iOS)
-        240
+        LibraryLayoutPolicy.inlineDetailsWidth
         #else
         320
         #endif
@@ -297,7 +297,7 @@ extension DetailAreaView {
 
     var detailPanelWidth: CGFloat {
         #if os(iOS)
-        240
+        LibraryLayoutPolicy.inlineDetailsWidth
         #else
         300
         #endif

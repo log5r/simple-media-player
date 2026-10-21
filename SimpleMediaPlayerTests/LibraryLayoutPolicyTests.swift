@@ -12,11 +12,17 @@ struct LibraryLayoutPolicyTests {
     }
 
     @Test func detailsRequireSpaceBesideTheListAndReadableText() {
-        #expect(!LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 619, height: 500),
+        #expect(!LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 719, height: 500),
                                                        accessibilityText: false))
-        #expect(!LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 700, height: 299),
+        #expect(!LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 800, height: 299),
                                                        accessibilityText: false))
-        #expect(LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 620, height: 300),
+        #expect(LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 720, height: 300),
+                                                      accessibilityText: false))
+        // iPhone Duo's Open portrait list would keep only 429pt beside the details column.
+        #expect(!LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 669, height: 951),
+                                                       accessibilityText: false))
+        // iPad mini's portrait list keeps 504pt, so it still shows the column.
+        #expect(LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 744, height: 1133),
                                                       accessibilityText: false))
         #expect(!LibraryLayoutPolicy.showsInlineDetails(size: CGSize(width: 900, height: 500),
                                                        accessibilityText: true))

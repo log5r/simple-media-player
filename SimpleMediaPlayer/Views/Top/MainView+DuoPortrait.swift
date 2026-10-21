@@ -25,6 +25,11 @@ extension MainView {
                         .padding(.top, portraitLibraryTop ?? 0)
                 }
             }
+        } else if UIDevice.current.userInterfaceIdiom == .phone {
+            // iOS 27.1 stacks the phone's toolbar vertically, so toolbar search would float over the sidebar rows.
+            desktopView(
+                availableWidth: size.width, detailSearchPlacement: .navigationBarDrawer(displayMode: .always)
+            )
         } else {
             desktopView(availableWidth: size.width)
                 // Own floating search at the screen level so the playback panel doesn't clip it.
@@ -35,7 +40,8 @@ extension MainView {
     private func portraitLibrary(isBelowFold: Bool) -> some View {
         let cornerRadius: CGFloat = isBelowFold ? 16 : 0
         return VStack(spacing: 0) {
-            libraryNavigation(searchesInDetail: true)
+            // The floating search field adds a bottom safe area, so the last row still scrolls above it.
+            libraryNavigation(detailSearchPlacement: .toolbar)
             Button { showsPortraitLibrary = false } label: {
                 Label("Close", systemImage: "chevron.down")
                     .frame(maxWidth: .infinity, minHeight: 44)
