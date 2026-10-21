@@ -35,5 +35,10 @@ struct LibraryScrollAnchorTests {
 
         #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 44, to: 30) == nil)
         #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 44, to: 0) == nil)
+
+        // Row 1 spans 10..<54, reaching past both ends of the inverted interval.
+        let straddling = frames(scrolledBy: 34)
+
+        #expect(LibraryScrollAnchor.firstVisibleItemID(in: straddling, from: 44, to: 30) == nil)
     }
 }

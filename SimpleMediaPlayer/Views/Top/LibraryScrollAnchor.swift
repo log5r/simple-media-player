@@ -65,7 +65,8 @@ struct LibraryScrollAnchor: ViewModifier {
     /// The topmost row with any part between `top` and `bottom` of the viewport.
     /// An empty or inverted interval, such as a viewport shorter than the header, has no visible row.
     static func firstVisibleItemID(in rowFrames: [UUID: CGRect], from top: CGFloat, to bottom: CGFloat) -> UUID? {
-        rowFrames
+        guard bottom > top else { return nil }
+        return rowFrames
             .filter { $0.value.maxY > top && $0.value.minY < bottom }
             .min { $0.value.minY < $1.value.minY }?
             .key
