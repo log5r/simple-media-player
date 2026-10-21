@@ -33,31 +33,29 @@ struct IPhoneDeckView: View {
     @State private var showsVideoFullScreen = false
     @State private var showsSettings = false
     @State private var showsEqualizer = false
+    @State private var informationRevision = 0
 
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                VStack(spacing: 12) {
+                VStack(spacing: 0) {
                     if page == .display {
                         if usesExpandedDisplay(in: proxy) {
-                            expandedDisplay(size: proxy.size)
+                            expandedDisplay(size: proxy.size).padding(.bottom, 12)
                         } else {
-                            IPhoneDeckArrangementView { height, compactControls in
-                                display(height: height, compactControls: compactControls)
-                            } controls: { compact in
-                                displayControls(compact: compact)
+                            IPhoneDeckArrangementView { height, compactDisplay in
+                                display(height: height, compactDisplay: compactDisplay)
+                            } controls: {
+                                displayControls
                             }
                         }
                     } else {
-                        DeckSafeRow(height: 90) {
-                            LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
-                                .clipShape(RoundedRectangle(cornerRadius: 10)).padding(.horizontal, 16)
-                        }
-                        pageContent.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        SeekBarView(player: player).frame(minHeight: 44)
-                        DeckSafeRow(height: 52) { transport(large: false).padding(.horizontal, 16) }
+                        pageLayout
                     }
-                    DeckSafeRow(height: dynamicTypeSize.isAccessibilitySize ? 72 : 52) { pageSwitcher }
+                    DeckSafeRow(
+                        height: (dynamicTypeSize.isAccessibilitySize ? 64 : IPhoneDeckLayout.rowHeight)
+                            + IPhoneDeckLayout.bottomPadding
+                    ) { pageSwitcher }
                 }
             }
             .background(palette.panelBackground.ignoresSafeArea())
@@ -76,7 +74,9 @@ struct IPhoneDeckView: View {
             }
             .presentationDetents([.medium, .large])
         })
-        .sheet(item: $infoItem) { item in MediaInfoView(item: item, libraryService: libraryService) }
+        .sheet(item: $infoItem, onDismiss: { informationRevision += 1 }, content: { item in
+            MediaInfoView(item: item, libraryService: libraryService)
+        })
         .sheet(item: $lyricsItem) { item in LyricsEditorView(item: item, libraryService: libraryService) }
         .sheet(isPresented: $showsSettings) { AppSettingsView(player: player) }
         .sheet(isPresented: $showsEqualizer) {
@@ -167,21 +167,25 @@ struct IPhoneDeckView: View {
         }
     }
 
-    @ViewBuilder private func display(height: CGFloat, compactControls: Bool) -> some View {
+    @ViewBuilder private func display(height: CGFloat, compactDisplay: Bool) -> some View {
+        let plateCorner = IPhoneDeckLayout.displayCornerRadius
+        let bezel = IPhoneDeckLayout.displayBezelHeight / 2
         if player.isVideoMode {
             VideoAreaView(player: player, showsBackToListButton: false,
                           presentVideoFullScreen: { showsVideoFullScreen = true })
-                .frame(height: height).clipShape(RoundedRectangle(cornerRadius: 12))
+                .frame(height: height).clipShape(RoundedRectangle(cornerRadius: plateCorner))
         } else {
             LEDDisplayView(
                 player: player, height: height,
                 visualizerHeight: IPhoneDeckLayout.visualizerHeight(
-                    displayHeight: height, compactControls: compactControls
+                    displayHeight: height, compactControls: compactDisplay
                 ),
                 layout: height < 200 ? .phoneStrip : .phoneDeck
             )
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(5).background(palette.displayBezelFill, in: RoundedRectangle(cornerRadius: 16))
+                // The plate keeps its size, so its LED fonts stop growing at the largest standard text size.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .clipShape(RoundedRectangle(cornerRadius: plateCorner - bezel))
+                .padding(bezel).background(palette.displayBezelFill, in: RoundedRectangle(cornerRadius: plateCorner))
         }
     }
 
@@ -192,7 +196,7 @@ struct IPhoneDeckView: View {
                 item: player.currentItem,
                 listIndex: player.queue.firstIndex(where: { $0.id == player.currentItem?.id }).map { $0 + 1 },
                 libraryService: libraryService, page: page == .lyrics ? .lyrics : .information,
-                playbackPlayer: player
+                playbackPlayer: player, showsEditBar: false, informationRevision: informationRevision
             )
         case .upNext:
             List(player.queue) { item in
@@ -209,74 +213,92 @@ struct IPhoneDeckView: View {
                     .accessibilityIdentifier("phoneQueue.\(item.id)")
                     .accessibilityValue(item.id == player.currentItem?.id ? queuePlaybackState : "")
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         case .display: EmptyView()
         }
     }
 
-    private func indicators(minimumHeight: CGFloat) -> some View {
-        HStack(spacing: 12) {
-            lamp("EQ", label: "Equalizer", value: player.activeEqualizerPresetName,
-                 active: player.equalizer.isEnabled, minimumHeight: minimumHeight)
+    private var indicators: some View {
+        IPhoneDeckCellRow(spacing: IPhoneDeckLayout.rowSpacing) {
+            lamp("EQ", label: "Equalizer", value: player.activeEqualizerPresetName, active: player.equalizer.isEnabled)
             lamp(
                 "KEY", label: "Key",
                 value: PitchSpeedTextFormatter.pitch(pitchSpeedAvailable ? player.pitchSemitones : 0),
-                active: pitchSpeedAvailable && player.pitchSemitones != 0, minimumHeight: minimumHeight
+                active: pitchSpeedAvailable && player.pitchSemitones != 0
             ).disabled(!pitchSpeedAvailable)
             lamp(
                 "SPEED", label: "Speed",
                 value: PitchSpeedTextFormatter.rate(pitchSpeedAvailable ? player.playbackRate : 1),
-                active: pitchSpeedAvailable && abs(player.playbackRate - 1) > 0.001, minimumHeight: minimumHeight
+                active: pitchSpeedAvailable && abs(player.playbackRate - 1) > 0.001
             ).disabled(!pitchSpeedAvailable)
         }
     }
 
-    private func lamp(
-        _ title: String, label: String, value: String, active: Bool, minimumHeight: CGFloat
-    ) -> some View {
+    private func lamp(_ title: String, label: String, value: String, active: Bool) -> some View {
         Button { showsAdjustments = true } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: 2) {
                 HStack(spacing: 5) {
                     Circle().fill(active ? palette.indicatorLEDOn : palette.indicatorLEDOff)
                         .frame(width: 7, height: 7).shadow(color: active ? palette.indicatorLEDGlow : .clear, radius: 4)
-                    Text(title).font(.caption.weight(.bold))
+                    // The untranslated legend stays on one line at accessibility sizes.
+                    Text(title).font(.caption.weight(.bold)).lineLimit(1).minimumScaleFactor(0.5)
                 }
-                Text(value).font(.caption.monospacedDigit()).lineLimit(1)
+                Text(value).font(.caption.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.5)
             }
             .foregroundStyle(palette.labelColor)
-            .frame(maxWidth: .infinity, minHeight: minimumHeight)
-            .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, minHeight: IPhoneDeckLayout.rowHeight)
+            .background(palette.normalButtonFill)
+            .iPhoneDeckControlFrame(palette)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L10n.string(String.LocalizationValue(label))).accessibilityValue(value)
         .accessibilityHint("Open playback adjustments")
         .accessibilityIdentifier("phoneLamp.\(title)")
     }
-
-    private func transport(large: Bool) -> some View {
-        HStack(spacing: 10) {
-            IPhoneTransportButton(title: "Stop", symbol: "stop.fill", identifier: "phoneStop") { player.stop() }
-            IPhoneTransportButton(title: "Previous Track", symbol: "backward.end.fill", identifier: "phonePrevious") {
-                player.previous()
-            }.disabled(!player.canPlayPrevious)
-            IPhoneTransportButton(
-                title: player.isPlaying ? "Pause" : "Play", symbol: player.isPlaying ? "pause.fill" : "play.fill",
-                identifier: "phonePlayPause", size: large ? 76 : 52
-            ) { player.togglePlayPause() }
-            IPhoneTransportButton(title: "Next Track", symbol: "forward.end.fill", identifier: "phoneNext") {
-                player.next()
-            }.disabled(!player.canSkipToNext)
-            IPhoneRoutePicker().frame(width: 44, height: 44)
-        }.frame(maxWidth: .infinity)
-    }
 }
 
 private extension IPhoneDeckView {
-    func displayControls(compact: Bool) -> some View {
-        VStack(spacing: compact ? IPhoneDeckLayout.compactControlsSpacing : 18) {
-            SeekBarView(player: player).frame(minHeight: 44)
-            indicators(minimumHeight: compact ? 44 : 54)
-            transport(large: !compact)
-            volume
+    /// Lyrics, Info, and Up Next keep the Display page's column, rows, and transport bar.
+    var pageLayout: some View {
+        VStack(spacing: 0) {
+            DeckSafeRow(height: 90) {
+                LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .clipShape(RoundedRectangle(cornerRadius: IPhoneDeckLayout.displayCornerRadius))
+                    .padding(.horizontal, IPhoneDeckLayout.gutter)
+            }
+            DeckSafeContentRegion { _ in
+                pageContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background)
+                    .clipShape(RoundedRectangle(cornerRadius: IPhoneDeckLayout.cardCornerRadius))
+                    .padding(.horizontal, IPhoneDeckLayout.gutter)
+            }
+            .padding(.vertical, IPhoneDeckLayout.groupSpacing)
+            SeekBarView(player: player, drawsOnPanel: true)
+                .padding(.horizontal, IPhoneDeckLayout.gutter)
+            DeckSafeRow(height: IPhoneDeckLayout.rowHeight) {
+                IPhoneTransportBar(player: player).padding(.horizontal, IPhoneDeckLayout.gutter)
+            }
+            .padding(.top, IPhoneDeckLayout.rowSpacing)
+            .padding(.bottom, IPhoneDeckLayout.groupSpacing)
+        }
+    }
+
+    var displayControls: some View {
+        VStack(spacing: IPhoneDeckLayout.groupSpacing) {
+            VStack(spacing: IPhoneDeckLayout.rowSpacing) {
+                SeekBarView(player: player, drawsOnPanel: true)
+                    #if DEBUG
+                    .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckSeek"))
+                    #endif
+                indicators
+            }
+            VStack(spacing: IPhoneDeckLayout.rowSpacing) {
+                IPhoneTransportBar(player: player)
+                volume
+            }
         }
     }
 
@@ -300,8 +322,11 @@ private extension IPhoneDeckView {
                 } label: {
                     Label(L10n.string(String.LocalizationValue(page.rawValue)), systemImage: "chevron.up.chevron.down")
                         .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.enabledIcon)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .frame(maxWidth: .infinity, minHeight: IPhoneDeckLayout.rowHeight)
+                        .background(palette.normalButtonFill)
+                        .iPhoneDeckControlFrame(palette)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -312,38 +337,39 @@ private extension IPhoneDeckView {
                 pageButtons
             }
         }
-        .background(Color.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 16).padding(.bottom, 8)
+        #if DEBUG
+        .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckPageSwitcher"))
+        #endif
+        .padding(.horizontal, IPhoneDeckLayout.gutter).padding(.bottom, IPhoneDeckLayout.bottomPadding)
     }
 
     var pageButtons: some View {
-        HStack(spacing: 0) {
-            ForEach(IPhoneDeckPage.allCases, id: \.self) { target in
-                Button { page = target } label: {
+        IPhoneDeckCellRow {
+            ForEach(Array(IPhoneDeckPage.allCases.enumerated()), id: \.element) { index, target in
+                IPhoneDeckBarCell(isSelected: page == target, showsDivider: index > 0) { page = target } label: {
                     Text(L10n.string(String.LocalizationValue(target.rawValue)))
                         .font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background {
-                            if page == target { RoundedRectangle(cornerRadius: 8).fill(palette.normalButtonFill) }
-                        }
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
                 .accessibilityAddTraits(page == target ? .isSelected : [])
                 .accessibilityIdentifier("phonePage.\(target.rawValue)")
             }
         }
+        .frame(height: IPhoneDeckLayout.rowHeight)
+        .iPhoneDeckControlFrame(palette)
     }
 
+    /// Mute, the slot, and AirPlay; the level is shown over the slot only while dragging.
     var volume: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: IPhoneDeckLayout.rowSpacing) {
             IPhoneTransportButton(
                 title: player.isMuted ? "Unmute" : "Mute",
                 symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill", identifier: "phoneMute"
             ) { player.toggleMuted() }
-            VolumeSlotView(value: player.volume, palette: palette, axis: .horizontal) { player.setVolume($0) }
-                .frame(height: 44)
-            Text("\(Int(player.volume * 100))").font(.caption.monospacedDigit()).frame(width: 30)
+            VolumeSlotView(
+                value: player.volume, palette: palette, axis: .horizontal, showsValueWhileDragging: true
+            ) { player.setVolume($0) }
+                .frame(height: IPhoneDeckLayout.rowHeight)
+            IPhoneRouteButton()
         }
     }
 

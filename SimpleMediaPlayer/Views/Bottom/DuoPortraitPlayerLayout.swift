@@ -31,11 +31,13 @@ struct DuoPortraitPlayerPlacement: Equatable {
     let led: CGRect
 
     /// Keep the portrait player continuous across the fold; only occlusions reserve space.
-    static func make(in bounds: CGRect, occlusionFrames: [CGRect]) -> Self {
+    /// With `controlsHeight`, the controls keep only that much of the lower half and the LED and meters take the rest.
+    static func make(in bounds: CGRect, occlusionFrames: [CGRect], controlsHeight: CGFloat? = nil) -> Self {
+        let halfHeight = bounds.height - bounds.height / 2
+        let lowerHeight = controlsHeight.map { min(halfHeight, max(0, $0)) } ?? halfHeight
         let upper = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width,
-                           height: bounds.height / 2)
-        let lower = CGRect(x: bounds.minX, y: bounds.midY, width: bounds.width,
-                           height: bounds.height - upper.height)
+                           height: bounds.height - lowerHeight)
+        let lower = CGRect(x: bounds.minX, y: upper.maxY, width: bounds.width, height: lowerHeight)
         let visuals = safeFrame(in: upper, avoiding: occlusionFrames)
         let controls = safeFrame(in: lower, avoiding: occlusionFrames)
         let ledHeight = visuals.height / 2

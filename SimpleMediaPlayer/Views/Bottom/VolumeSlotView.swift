@@ -4,7 +4,10 @@ struct VolumeSlotView: View {
     let value: Double
     let palette: BottomPanelPalette
     var axis: Axis = .vertical
+    /// The phone deck has no room for a number beside the slot, so it shows the level only while dragging.
+    var showsValueWhileDragging = false
     let onChange: (Double) -> Void
+    @GestureState private var isDragging = false
 
     private let ribHeight: CGFloat = 2
     private let ribSpacing: CGFloat = 1.5
@@ -46,9 +49,22 @@ struct VolumeSlotView: View {
                     .frame(height: 1)
                     .offset(y: 1)
             }
+            .overlay {
+                if showsValueWhileDragging && isDragging {
+                    Text(verbatim: "\(Int(value * 100))")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(palette.labelColor)
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: 22)
+                        .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 3))
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
+                }
+            }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($isDragging) { _, dragging, _ in dragging = true }
                     .onChanged { gesture in
                         let position = axis == .vertical ? gesture.location.y : gesture.location.x
                         let fraction = Double(min(max(position - innerPadding, 0), innerLength) / innerLength)

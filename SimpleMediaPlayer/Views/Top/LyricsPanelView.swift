@@ -10,6 +10,10 @@ struct LyricsPanelView: View {
     var browsingState: LibraryBrowsingState?
     /// Sheets can share page selection while keeping their nested editors locally presented.
     var contentSelection: Binding<PanelContent>?
+    /// The phone deck edits from its navigation bar and More menu, so it hides the bottom edit bar.
+    var showsEditBar = true
+    /// Editors presented outside this panel advance this so the information reloads after they close.
+    var informationRevision = 0
     @Environment(\.usesTouchControls) var usesTouchControls
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) var modelContext
@@ -64,6 +68,7 @@ struct LyricsPanelView: View {
         .onChange(of: browsingState?.infoItem?.id) { oldID, newID in
             if newID == nil, oldID == item?.id { Task { await reloadInformation() } }
         }
+        .onChange(of: informationRevision) { _, _ in Task { await reloadInformation() } }
         .sheet(isPresented: Binding(
             get: { infoItem != nil },
             set: { if $0 == false { infoItem = nil } }
@@ -136,24 +141,10 @@ struct LyricsPanelView: View {
                 }
             }
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button {
-                    if let browsingState {
-                        browsingState.lyricsItem = item
-                    } else {
-                        lyricsItem = item
-                    }
-                } label: {
-                    Label(lyricsButtonTitle, systemImage: "square.and.pencil")
-                        .frame(minHeight: usesTouchControls ? 44 : nil)
-                }
-                .disabled(item?.isInLibrary != true || item?.isVideo == true)
+            if showsEditBar {
+                Divider()
+                lyricsEditBar
             }
-            .padding(12)
-            .background(.bar)
         }
     }
 
@@ -239,25 +230,51 @@ struct LyricsPanelView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button {
-                    if let browsingState {
-                        browsingState.infoItem = item
-                    } else {
-                        infoItem = item
-                    }
-                } label: {
-                    Label("Edit Information…", systemImage: "pencil")
-                        .frame(minHeight: usesTouchControls ? 44 : nil)
-                }
-                .disabled(item?.isInLibrary != true || informationDraftItemID != item?.id)
+            if showsEditBar {
+                Divider()
+                informationEditBar
             }
-            .padding(12)
-            .background(.bar)
         }
     }
 
+}
+
+private extension LyricsPanelView {
+    var lyricsEditBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                if let browsingState {
+                    browsingState.lyricsItem = item
+                } else {
+                    lyricsItem = item
+                }
+            } label: {
+                Label(lyricsButtonTitle, systemImage: "square.and.pencil")
+                    .frame(minHeight: usesTouchControls ? 44 : nil)
+            }
+            .disabled(item?.isInLibrary != true || item?.isVideo == true)
+        }
+        .padding(12)
+        .background(.bar)
+    }
+
+    var informationEditBar: some View {
+        HStack {
+            Spacer()
+            Button {
+                if let browsingState {
+                    browsingState.infoItem = item
+                } else {
+                    infoItem = item
+                }
+            } label: {
+                Label("Edit Information…", systemImage: "pencil")
+                    .frame(minHeight: usesTouchControls ? 44 : nil)
+            }
+            .disabled(item?.isInLibrary != true || informationDraftItemID != item?.id)
+        }
+        .padding(12)
+        .background(.bar)
+    }
 }

@@ -3,6 +3,8 @@ import SwiftUI
 struct SeekBarView: View {
     let player: PlayerViewModel
     var avoidsDisplayDivision = true
+    /// The phone deck draws the seek row directly on its panel and aligns the times to its content column.
+    var drawsOnPanel = false
     @State private var dragValue: TimeInterval?
     @State private var dragTarget: PlaybackSeekTarget?
     @State private var isDragging = false
@@ -31,7 +33,7 @@ struct SeekBarView: View {
             #endif
         }
         .frame(height: seekHeight)
-        .background(.bar)
+        .background(drawsOnPanel ? AnyShapeStyle(.clear) : AnyShapeStyle(.bar))
         .onChange(of: player.playbackGeneration) { _, _ in dragValue = nil }
         .onChange(of: player.currentItem?.id) { _, _ in dragValue = nil }
         .onAppear { isVisible = true }
@@ -46,7 +48,7 @@ struct SeekBarView: View {
     private var seekControls: some View {
         HStack(spacing: 10) {
             Text(displayTime.mediaTime)
-                .frame(width: 48, alignment: .trailing)
+                .frame(width: 48, alignment: drawsOnPanel ? .leading : .trailing)
 
             Slider(
                 value: Binding(
@@ -93,11 +95,11 @@ struct SeekBarView: View {
             )
 
             Text("-" + max(0, player.duration - displayTime).mediaTime)
-                .frame(width: 54, alignment: .leading)
+                .frame(width: 54, alignment: drawsOnPanel ? .trailing : .leading)
         }
         .font(.footnote.monospacedDigit())
         .foregroundStyle(player.currentItem == nil ? .secondary : .primary)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, drawsOnPanel ? 0 : 14)
     }
 
     private var displayTime: TimeInterval {

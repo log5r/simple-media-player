@@ -65,6 +65,30 @@ final class IPhoneInformationAccessibilityUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+        verifyEditingFromToolbar(in: app, language: language)
+    }
+
+    /// The deck has no bottom edit bars; Info edits from the More menu and Lyrics from the navigation bar.
+    @MainActor private func verifyEditingFromToolbar(in app: XCUIApplication, language: String) {
+        let editInformation = language == "ja" ? "情報を編集…" : "Edit Information…"
+        app.openToolbarOverflowMenu(item: editInformation).tap()
+        let close = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", language == "ja" ? "閉じる" : "Close", "phoneDeckClose"
+        )).firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 10), "Edit Information must open from the More menu")
+        close.tap()
+        XCTAssertTrue(app.buttons["phonePageMenu"].waitForExistence(timeout: 10))
+
+        app.buttons["phonePageMenu"].tap()
+        let lyricsPage = app.buttons["phonePage.Lyrics"]
+        XCTAssertTrue(lyricsPage.waitForExistence(timeout: 5))
+        lyricsPage.tap()
+        let editLyrics = language == "ja" ? "歌詞を編集…" : "Edit Lyrics…"
+        let addLyrics = language == "ja" ? "歌詞を追加…" : "Add Lyrics…"
+        let navigationEdit = app.navigationBars.buttons[editLyrics]
+        XCTAssertTrue(navigationEdit.waitForExistence(timeout: 5), "Edit Lyrics must stay in the navigation bar")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", editLyrics)).count, 1)
+        XCTAssertFalse(app.buttons[addLyrics].exists, "The Lyrics page must not repeat the edit action at its bottom")
     }
 
     @MainActor private func openInformation(in app: XCUIApplication, language: String) -> XCUIElement? {
@@ -79,20 +103,19 @@ final class IPhoneInformationAccessibilityUITests: XCTestCase {
             predicate: NSPredicate(format: "value == %@", language == "ja" ? "情報" : "Info"), object: pageMenu
         )
         wait(for: [selected], timeout: 5)
-        let footer = app.buttons[language == "ja" ? "情報を編集…" : "Edit Information…"]
-        guard footer.waitForExistence(timeout: 10) else {
-            let pageValue = String(describing: pageMenu.value)
-            XCTFail("Info page did not open. Page value: \(pageValue)\n\(app.debugDescription)")
-            return nil
-        }
         let artwork = language == "ja" ? "アートワークがありません" : "No artwork available"
-        // After the footer appears, the deck's only ScrollView is the Info content, not the old Display page.
-        let information = app.scrollViews.firstMatch
-        guard information.staticTexts[artwork].waitForExistence(timeout: 10) else {
-            XCTFail("Info metadata did not load. Scroll views: \(app.scrollViews.count)\n\(app.debugDescription)")
+        guard app.staticTexts[artwork].waitForExistence(timeout: 10) else {
+            let pageValue = String(describing: pageMenu.value)
+            XCTFail("Info metadata did not load. Page value: \(pageValue)\n\(app.debugDescription)")
             return nil
         }
-        XCTAssertEqual(app.scrollViews.count, 1, "The page transition must leave only the Info scroll view")
+        // Once the metadata appears, the deck's only ScrollView is the Info content, not the old Display page.
+        let single = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 1"), object: app.scrollViews)
+        wait(for: [single], timeout: 5)
+        let information = app.scrollViews.firstMatch
+        XCTAssertTrue(information.staticTexts[artwork].exists, "The Info scroll view must hold the metadata")
+        let footer = app.buttons[language == "ja" ? "情報を編集…" : "Edit Information…"]
+        XCTAssertFalse(footer.exists, "The Info page must not repeat the More menu's edit action at its bottom")
         return information
     }
 
