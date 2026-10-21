@@ -17,9 +17,10 @@ struct IPhoneTransportButton: View {
             Image(systemName: symbol).font(.system(size: size > 52 ? 28 : 18, weight: .semibold))
                 .foregroundStyle(isEnabled ? palette.enabledIcon : palette.disabledIcon)
                 .frame(width: size, height: size)
-                .background(palette.normalButtonFill, in: Circle())
-                .overlay(Circle().stroke(palette.controlStroke, lineWidth: 1))
-                .shadow(color: palette.buttonShadow, radius: 2, y: 2)
+                .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(palette.controlStroke, lineWidth: 1))
+                .shadow(color: palette.buttonShadow, radius: 2, y: 1)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L10n.string(String.LocalizationValue(title))).accessibilityIdentifier(identifier)

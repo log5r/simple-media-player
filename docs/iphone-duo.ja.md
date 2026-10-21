@@ -24,7 +24,7 @@ ClosedでNow Playingを開いてから展開した場合も、デッキのDispla
 
 フルスクリーン動画は、縦向きで半折りの場合、有効な横方向の画面分割領域とそのマージンより上の領域に収めます。再生／一時停止・閉じるボタンは分割領域より下に置き、動画と重ならず、カメラなどのactiveなocclusionも避けます。完全に開くか横向きにすると、動画は画面全体へ、操作ボタンは右上へ戻ります。配置変更中も同じAVPlayerを使用し、再生・一時停止・閉じる操作を維持します。開いたDuo、通常のiPhone、iPad、macOSでは従来どおり中央に表示します。
 
-横の安全領域があるcompactの縦向きデッキでは、操作部の高さを測り、残りの高さに合わせてLEDを最大300ptまで縮めます。これにより、縦に短いClosedでも再生操作を初期表示に収めます。通常のiPhoneの縦向き、横向き、アクセシビリティ文字サイズでは、従来の300ptの表示と縦スクロールを維持します。曲一覧の複数選択バーは、背景の拡張を下の安全領域だけに限り、縦のタブバーの下へ広がらないようにします。再生ドックの上に置く既存の配置は維持します。
+iPhoneのデッキの再生・停止・曲送り・ミュートは、macOSと同じ角丸3ptの四角いボタンを使います。横の安全領域がある縦に短いcompactデッキでは、再生ボタンを52pt、調整用ランプを44ptにし、縦の間隔も詰めます。LEDの情報とステレオスペクトラムを残したまま、Closedの初期表示に再生操作を収めます。操作領域は44pt以上を維持し、さらに狭い領域ではスクロールできるようにします。通常のiPhoneの縦向き、横向き、アクセシビリティ文字サイズでは、従来の300ptの表示と縦スクロールを維持します。曲一覧の複数選択バーは、背景の拡張を下の安全領域だけに限り、縦のタブバーの下へ広がらないようにします。再生ドックの上に置く既存の配置は維持します。
 
 ## ツールバーとキーボードコマンド
 
@@ -44,7 +44,7 @@ PlayerViewModelを作り直したり、開閉を理由に停止・再読み込�
 
 ## 確認方法
 
-IPhoneDeckLayoutTestsと、ClosedのDuo・通常の縦向きiPhone上のIPhoneDeckLayoutUITestsで、再生操作の初期表示、通常iPhoneの表示高、アクセシビリティ文字サイズのスクロールを確認します。CompactSelectionToolbarUITestsは、再生ドック表示中の選択と編集を英語・日本語で確認し、最大アクセシビリティ文字サイズも使います。OpenのSplit Viewの左右でも繰り返します。XCTestのキャプチャが非表示の画面を指す場合、選択テストはskipするためDevice Hubで直接確認します。Duoの撮影では`simctl io <device> enumerate`で画面IDを調べ、`simctl io <device> screenshot --display=<screen-ID> <path>`で表示中の画面を明示します。
+IPhoneDeckLayoutTestsと、ClosedのDuo・通常の縦向きiPhone上のIPhoneDeckLayoutUITestsで、スペクトラムと再生操作の同時表示、LED内容の見切れ、通常iPhoneの表示高、アクセシビリティ文字サイズのスクロールを確認します。CompactSelectionToolbarUITestsは、再生ドック表示中の選択と編集を英語・日本語で確認し、最大アクセシビリティ文字サイズも使います。OpenのSplit Viewの左右でも繰り返します。XCTestのキャプチャが非表示の画面を指す場合、選択テストはskipするためDevice Hubで直接確認します。Duoの撮影では`simctl io <device> enumerate`で画面IDを調べ、`simctl io <device> screenshot --display=<screen-ID> <path>`で表示中の画面を明示します。
 
 Xcodeの全体設定を切り替えず、コマンドごとに`DEVELOPER_DIR`を指定します。
 

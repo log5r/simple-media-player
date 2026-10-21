@@ -24,7 +24,7 @@ Opening Now Playing while Closed and then unfolding adapts the deck's Display pa
 
 Full-screen video in partially folded portrait fits within the area above the active horizontal display division, including its margins. Play/Pause and Close sit below the division, away from the video, and continue to avoid active occlusions. Unfolding or rotating to landscape restores the full display area and the upper trailing controls. The same AVPlayer stays attached during these layout changes; playback, pause, and close keep their existing behavior. Open Duo, ordinary iPhone, iPad, and macOS retain centered full-screen video.
 
-In a compact portrait deck with a side safe-area inset, the LED height uses the space left after measuring the playback controls, up to the existing 300pt height. This keeps the controls visible on the short Closed display. Ordinary portrait iPhones, landscape scenes, and accessibility text sizes retain the existing 300pt scrolling display. The track-list selection bar extends its background only into the bottom safe area, keeping it beside vertical tabs and above the Now Playing dock.
+The iPhone deck uses rectangular playback, stop, track-skip, and mute buttons with the same 3pt corner radius as macOS. A short compact portrait deck with a side safe-area inset uses a 52pt playback button, 44pt adjustment lamps, and tighter vertical spacing. It keeps the full LED content and stereo spectrum visible while fitting the playback controls on the Closed display. All touch targets remain at least 44pt, and very small viewports can still scroll. Ordinary portrait iPhones, landscape scenes, and accessibility text sizes retain the existing 300pt scrolling display. The track-list selection bar extends its background only into the bottom safe area, keeping it beside vertical tabs and above the Now Playing dock.
 
 ## Toolbars and Keyboard Commands
 
@@ -44,7 +44,7 @@ SharedExportSession owns files prepared for sharing. Destroying the activity con
 
 ## Verification
 
-Run IPhoneDeckLayoutTests and, on Closed Duo and an ordinary portrait iPhone, IPhoneDeckLayoutUITests to check initial playback-control visibility, ordinary-phone display height, and accessibility scrolling. CompactSelectionToolbarUITests checks English and Japanese selection/editing with a playing dock, including maximum accessibility text. Repeat it on both sides of Open Split View. If XCTest captures an inactive display, the selection tests skip; verify the operations directly in Device Hub. Capture the active Duo display explicitly with `simctl io <device> screenshot --display=<screen-ID> <path>`; find the screen ID with `simctl io <device> enumerate`.
+Run IPhoneDeckLayoutTests and, on Closed Duo and an ordinary portrait iPhone, IPhoneDeckLayoutUITests to check simultaneous spectrum and playback-control visibility, LED content bounds, ordinary-phone display height, and accessibility scrolling. CompactSelectionToolbarUITests checks English and Japanese selection/editing with a playing dock, including maximum accessibility text. Repeat it on both sides of Open Split View. If XCTest captures an inactive display, the selection tests skip; verify the operations directly in Device Hub. Capture the active Duo display explicitly with `simctl io <device> screenshot --display=<screen-ID> <path>`; find the screen ID with `simctl io <device> enumerate`.
 
 Set `DEVELOPER_DIR` per command without changing the global Xcode selection.
 

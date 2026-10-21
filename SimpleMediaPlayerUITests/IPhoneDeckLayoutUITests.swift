@@ -9,7 +9,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
     }
 
     /// Select the Duo's Closed posture in Device Hub before running this case.
-    @MainActor func testClosedDuoShowsPlaybackControlsWithoutScrolling() throws {
+    @MainActor func testClosedDuoShowsSpectrumAndPlaybackControlsWithoutScrolling() throws {
         let app = launch()
         let geometry = try rootMetrics(in: app)
         let safeArea = geometry["safeArea"] as? [String: Double] ?? [:]
@@ -26,6 +26,16 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
             app.frame.contains(playPause.frame) && playPause.frame.maxY <= page.frame.minY
         }, object: nil)
         wait(for: [visible], timeout: 5)
+        let display = try regionFrame("phoneDeckCompactDisplayMetrics", in: app)
+        let spectrum = try regionFrame("phoneDeckSpectrumMetrics", in: app)
+        let content = try regionFrame("phoneDeckLEDContentMetrics", in: app)
+        XCTAssertGreaterThanOrEqual(spectrum.height, 44)
+        XCTAssertGreaterThan(spectrum.width, 100)
+        XCTAssertTrue(display.contains(spectrum), "Spectrum must stay inside the visible LED display")
+        XCTAssertTrue(display.contains(content), "LED metadata and spectrum must fit without clipping")
+        XCTAssertLessThanOrEqual(spectrum.maxY, app.sliders["Playback Position"].frame.minY)
+        XCTAssertEqual(playPause.frame.height, 52, accuracy: 1)
+        XCTAssertEqual(app.buttons["phoneLamp.EQ"].frame.height, 44, accuracy: 1)
         for identifier in ["phoneStop", "phonePrevious", "phonePlayPause", "phoneNext", "phoneMute"] {
             let button = app.buttons[identifier]
             assertTouchTarget(button, in: app)
@@ -33,7 +43,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
             XCTAssertLessThanOrEqual(button.frame.maxY, page.frame.minY, identifier)
         }
         attachScreenshot(in: app, name: "Duo Closed deck before scrolling")
-        playPause.tap()
+        playPause.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.08)).tap()
         XCTAssertEqual(playPause.label, "Play")
         playPause.tap()
         XCTAssertEqual(playPause.label, "Pause")
@@ -51,6 +61,8 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         )
         openDeck(in: app)
         try assertFullDisplayHeight(in: app)
+        XCTAssertEqual(app.buttons["phonePlayPause"].frame.height, 76, accuracy: 1)
+        XCTAssertEqual(app.buttons["phoneLamp.EQ"].frame.height, 54, accuracy: 1)
         attachScreenshot(in: app, name: "Ordinary iPhone full deck display")
     }
 
@@ -104,6 +116,16 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         let element = duoDiagnostic("phoneDeckCompactDisplayMetrics", in: app)
         XCTAssertTrue(element.waitForExistence(timeout: 5))
         XCTAssertEqual(try XCTUnwrap(try metrics(element)["height"] as? Double), 310, accuracy: 1)
+    }
+
+    @MainActor private func regionFrame(_ identifier: String, in app: XCUIApplication) throws -> CGRect {
+        let element = duoDiagnostic(identifier, in: app)
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        let values = try metrics(element)
+        return CGRect(
+            x: try XCTUnwrap(values["x"] as? Double), y: try XCTUnwrap(values["y"] as? Double),
+            width: try XCTUnwrap(values["width"] as? Double), height: try XCTUnwrap(values["height"] as? Double)
+        )
     }
 
     @MainActor private func metrics(_ element: XCUIElement) throws -> [String: Any] {
