@@ -42,15 +42,10 @@ struct IPhoneDeckView: View {
                         if usesExpandedDisplay(in: proxy) {
                             expandedDisplay(size: proxy.size)
                         } else {
-                            IPhoneDeckArrangementView { height in
-                                display(height: height)
-                            } controls: {
-                                VStack(spacing: 18) {
-                                    SeekBarView(player: player).frame(minHeight: 44)
-                                    indicators
-                                    transport(large: true)
-                                    volume
-                                }
+                            IPhoneDeckArrangementView { height, compactControls in
+                                display(height: height, compactControls: compactControls)
+                            } controls: { compact in
+                                displayControls(compact: compact)
                             }
                         }
                     } else {
@@ -172,14 +167,17 @@ struct IPhoneDeckView: View {
         }
     }
 
-    @ViewBuilder private func display(height: CGFloat) -> some View {
+    @ViewBuilder private func display(height: CGFloat, compactControls: Bool) -> some View {
         if player.isVideoMode {
             VideoAreaView(player: player, showsBackToListButton: false,
                           presentVideoFullScreen: { showsVideoFullScreen = true })
                 .frame(height: height).clipShape(RoundedRectangle(cornerRadius: 12))
         } else {
             LEDDisplayView(
-                player: player, height: height, visualizerHeight: min(88, max(20, height - 180)),
+                player: player, height: height,
+                visualizerHeight: IPhoneDeckLayout.visualizerHeight(
+                    displayHeight: height, compactControls: compactControls
+                ),
                 layout: height < 200 ? .phoneStrip : .phoneDeck
             )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -215,23 +213,26 @@ struct IPhoneDeckView: View {
         }
     }
 
-    private var indicators: some View {
+    private func indicators(minimumHeight: CGFloat) -> some View {
         HStack(spacing: 12) {
-            lamp("EQ", label: "Equalizer", value: player.activeEqualizerPresetName, active: player.equalizer.isEnabled)
+            lamp("EQ", label: "Equalizer", value: player.activeEqualizerPresetName,
+                 active: player.equalizer.isEnabled, minimumHeight: minimumHeight)
             lamp(
                 "KEY", label: "Key",
                 value: PitchSpeedTextFormatter.pitch(pitchSpeedAvailable ? player.pitchSemitones : 0),
-                active: pitchSpeedAvailable && player.pitchSemitones != 0
+                active: pitchSpeedAvailable && player.pitchSemitones != 0, minimumHeight: minimumHeight
             ).disabled(!pitchSpeedAvailable)
             lamp(
                 "SPEED", label: "Speed",
                 value: PitchSpeedTextFormatter.rate(pitchSpeedAvailable ? player.playbackRate : 1),
-                active: pitchSpeedAvailable && abs(player.playbackRate - 1) > 0.001
+                active: pitchSpeedAvailable && abs(player.playbackRate - 1) > 0.001, minimumHeight: minimumHeight
             ).disabled(!pitchSpeedAvailable)
         }
     }
 
-    private func lamp(_ title: String, label: String, value: String, active: Bool) -> some View {
+    private func lamp(
+        _ title: String, label: String, value: String, active: Bool, minimumHeight: CGFloat
+    ) -> some View {
         Button { showsAdjustments = true } label: {
             VStack(spacing: 6) {
                 HStack(spacing: 5) {
@@ -242,7 +243,7 @@ struct IPhoneDeckView: View {
                 Text(value).font(.caption.monospacedDigit()).lineLimit(1)
             }
             .foregroundStyle(palette.labelColor)
-            .frame(maxWidth: .infinity, minHeight: 54)
+            .frame(maxWidth: .infinity, minHeight: minimumHeight)
             .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -270,6 +271,15 @@ struct IPhoneDeckView: View {
 }
 
 private extension IPhoneDeckView {
+    func displayControls(compact: Bool) -> some View {
+        VStack(spacing: compact ? IPhoneDeckLayout.compactControlsSpacing : 18) {
+            SeekBarView(player: player).frame(minHeight: 44)
+            indicators(minimumHeight: compact ? 44 : 54)
+            transport(large: !compact)
+            volume
+        }
+    }
+
     var pageSwitcher: some View {
         Group {
             if dynamicTypeSize.isAccessibilitySize {

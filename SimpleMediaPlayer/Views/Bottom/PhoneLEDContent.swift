@@ -53,11 +53,17 @@ struct PhoneLEDContent: View {
                 Spacer(minLength: 0)
                 MusicAnalysisStripView(player: player, palette: palette, mediaInfoStyle: mediaInfoStyle)
                 VisualizerHostView(player: player, palette: palette).frame(height: visualizerHeight)
+                    #if DEBUG && os(iOS)
+                    .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckSpectrum"))
+                    #endif
             } else {
                 PlaybackProgressStrip(player: player, color: palette.primaryColor)
             }
         }
         .foregroundStyle(palette.primaryColor)
+        #if DEBUG && os(iOS)
+        .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckLEDContent"))
+        #endif
     }
 
     private var trackNumber: String {
