@@ -17,6 +17,7 @@ nonisolated final class VideoSpectrumAccumulator {
     private var left: [Float] = []
     private var right: [Float] = []
     private var nextTime: TimeInterval?
+    private var expectedSourceTime: TimeInterval?
     private var sampleRate = 0.0
     private var sourceEpoch: UInt64 = 0
     private var generation = 0
@@ -24,15 +25,19 @@ nonisolated final class VideoSpectrumAccumulator {
     private(set) var revision = 0
 
     func append(_ batch: VideoAudioSampleRing.Batch, mode: VisualizerResponseMode) -> Result {
-        let expectedTime = nextTime.map { $0 + Double(left.count) / batch.sampleRate }
+        // The tap supplies an asset time range, whose duration need not equal
+        // its PCM frame count / sample rate. Keep this separate from the chunk clock.
         let didReset = batch.startsStream || generation != batch.analysisGeneration
             || sourceEpoch != batch.sourceEpoch || sampleRate != batch.sampleRate || self.mode != mode
-            || expectedTime.map({ abs($0 - batch.time) > 2 / batch.sampleRate }) == true
+            || expectedSourceTime.map({ abs($0 - batch.time) > 2 / batch.sampleRate }) == true
         if didReset { reset() }
         generation = batch.analysisGeneration
         sourceEpoch = batch.sourceEpoch
         sampleRate = batch.sampleRate
         self.mode = mode
+        expectedSourceTime = batch.sourceEndTime.flatMap {
+            $0.isFinite && $0 >= batch.time ? $0 : nil
+        } ?? batch.time + Double(batch.left.count) / batch.sampleRate
         if nextTime == nil { nextTime = batch.time }
         left.append(contentsOf: batch.left)
         right.append(contentsOf: batch.right)
@@ -54,6 +59,7 @@ nonisolated final class VideoSpectrumAccumulator {
         left.removeAll(keepingCapacity: true)
         right.removeAll(keepingCapacity: true)
         nextTime = nil
+        expectedSourceTime = nil
         revision &+= 1
     }
 }

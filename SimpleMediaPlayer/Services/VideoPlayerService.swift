@@ -299,11 +299,13 @@ nonisolated private final class VideoAudioTapProcessor: @unchecked Sendable {
         if startsStream { processor.equalizer.reset() }
         let frameCount = numberFramesOut.pointee
         processor.equalizer.process(bufferListInOut, frameCount: frameCount)
+        let sourceEndTime = timeRange.end.seconds
         processor.sampleRing?.enqueue(
             bufferListInOut, frameCount: frameCount,
             stamp: VideoAudioSampleRing.Stamp(
                 time: timeRange.start.seconds, analysisGeneration: analysisGeneration,
-                sourceEpoch: sourceEpoch, startsStream: startsStream
+                sourceEpoch: sourceEpoch, startsStream: startsStream,
+                sourceEndTime: sourceEndTime.isFinite ? sourceEndTime : nil
             )
         )
     }

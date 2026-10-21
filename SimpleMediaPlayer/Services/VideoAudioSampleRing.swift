@@ -26,6 +26,7 @@ nonisolated final class VideoAudioSampleRing: @unchecked Sendable {
         let analysisGeneration: Int
         let sourceEpoch: UInt64
         let startsStream: Bool
+        var sourceEndTime: TimeInterval?
     }
 
     struct Stamp {
@@ -33,6 +34,7 @@ nonisolated final class VideoAudioSampleRing: @unchecked Sendable {
         let analysisGeneration: Int
         let sourceEpoch: UInt64
         let startsStream: Bool
+        var sourceEndTime: TimeInterval?
     }
 
     private struct Slot {
@@ -43,6 +45,7 @@ nonisolated final class VideoAudioSampleRing: @unchecked Sendable {
         var analysisGeneration = 0
         var sourceEpoch: UInt64 = 0
         var startsStream = false
+        var sourceEndTime: TimeInterval?
     }
 
     private let slots: UnsafeMutablePointer<Slot>
@@ -147,6 +150,7 @@ nonisolated final class VideoAudioSampleRing: @unchecked Sendable {
         slot.pointee.analysisGeneration = stamp.analysisGeneration
         slot.pointee.sourceEpoch = stamp.sourceEpoch
         slot.pointee.startsStream = stamp.startsStream || needsDiscontinuity
+        slot.pointee.sourceEndTime = stamp.sourceEndTime
         needsDiscontinuity = false
         // Publish PCM and metadata together, after the entire slot has been copied.
         writeIndex.store(next, ordering: .releasing)
@@ -164,7 +168,7 @@ nonisolated final class VideoAudioSampleRing: @unchecked Sendable {
                 right: Array(UnsafeBufferPointer(start: slot.right, count: slot.count)),
                 sampleRate: sampleRate, time: slot.time,
                 analysisGeneration: slot.analysisGeneration, sourceEpoch: slot.sourceEpoch,
-                startsStream: slot.startsStream
+                startsStream: slot.startsStream, sourceEndTime: slot.sourceEndTime
             )
             index = (index + 1) % slotCount
             readIndex.store(index, ordering: .releasing)
