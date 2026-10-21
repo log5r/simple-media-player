@@ -39,7 +39,8 @@ struct LibraryScrollAnchor: ViewModifier {
 
     func body(content: Content) -> some View {
         ScrollViewReader { proxy in
-            positioned(content)
+            content
+                .scrollPosition($position)
                 .coordinateSpace(name: "libraryTrackScroll")
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
                 .onPreferenceChange(LibraryRowFrames.self) { rowFrames = $0 }
@@ -72,30 +73,18 @@ struct LibraryScrollAnchor: ViewModifier {
             .key
     }
 
-    @ViewBuilder
-    private func positioned(_ content: Content) -> some View {
-        if pinnedHeaderHeight > 0 {
-            content.scrollPosition($position)
-        } else {
-            content
-        }
-    }
-
     private func restoreScrollPosition(using proxy: ScrollViewProxy) {
-        guard hasRestored == false, let first = itemIDs.first else { return }
+        guard hasRestored == false, itemIDs.isEmpty == false else { return }
         hasRestored = true
         destination = Destination(browsingState)
-        let saved = browsingState.scrollItemID.flatMap { itemIDs.contains($0) ? $0 : nil }
-        guard pinnedHeaderHeight > 0 else {
-            proxy.scrollTo(saved ?? first, anchor: .topLeading)
+        let index = browsingState.scrollItemID.flatMap(itemIDs.firstIndex(of:)) ?? 0
+        // `scrollTo` would hide what precedes the first row, such as an album header or a pinned section header.
+        guard index > 0 else {
+            position.scrollTo(x: 0, y: 0)
             return
         }
         // The previous row goes under the one-row header, leaving the saved row just below it.
-        if let index = saved.flatMap(itemIDs.firstIndex(of:)), index > 0 {
-            proxy.scrollTo(itemIDs[index - 1], anchor: .topLeading)
-        } else {
-            position.scrollTo(x: 0, y: 0)
-        }
+        proxy.scrollTo(itemIDs[pinnedHeaderHeight > 0 ? index - 1 : index], anchor: .topLeading)
     }
 
     private struct Destination: Equatable {
