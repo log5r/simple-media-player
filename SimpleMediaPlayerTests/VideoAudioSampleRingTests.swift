@@ -12,11 +12,17 @@ struct VideoAudioSampleRingTests {
         let epoch = state.setActive(true)
         let ring = VideoAudioSampleRing(maxFrames: 8, format: buffer.format, state: state)
         fill(buffer, left: 0.25, right: -0.5)
-        #expect(enqueue(ring, buffer, epoch: epoch))
+        #expect(ring.enqueue(
+            buffer.mutableAudioBufferList, frameCount: 8,
+            stamp: .init(time: 0.1, analysisGeneration: 1, sourceEpoch: epoch,
+                         startsStream: false, sourceEndTime: 0.15)
+        ))
         fill(buffer, left: 0, right: 0)
         var batches: [VideoAudioSampleRing.Batch] = []
         ring.drain { batches.append($0) }
         let batch = try #require(batches.first)
+        #expect(batch.time == 0.1)
+        #expect(batch.sourceEndTime == 0.15)
         #expect(batch.left == Array(repeating: 0.25, count: 8))
         #expect(batch.right == Array(repeating: channels == 1 ? 0.25 : -0.5, count: 8))
     }

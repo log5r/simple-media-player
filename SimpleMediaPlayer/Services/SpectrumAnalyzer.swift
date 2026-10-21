@@ -36,10 +36,8 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
     private var responseMode = VisualizerResponseMode.normal
     private var chunkHistoryL: [Float] = []
     private var chunkHistoryR: [Float] = []
-    private let chunkWindowSize = 2048
     private let fft = SpectrumFFT()
     private var lastFrameTime: TimeInterval = 0
-
     var onFrame: (@MainActor (AudioFrameData) -> Void)?
 
     func setPlaybackActive(_ active: Bool, currentTime: TimeInterval) {
@@ -88,33 +86,23 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
     }
 
     private func processChunk(
-        chunkL: [Float],
-        chunkR: [Float],
-        sampleRate: Float,
-        currentTime: TimeInterval,
-        isPlaying: Bool,
-        params: SpectrumSmoothing,
-        generation: Int,
-        isSourceCurrent: (@Sendable () -> Bool)? = nil,
-        usesHistory: Bool = true
+        chunkL: [Float], chunkR: [Float], sampleRate: Float,
+        currentTime: TimeInterval, isPlaying: Bool, params: SpectrumSmoothing, generation: Int,
+        isSourceCurrent: (@Sendable () -> Bool)? = nil
     ) {
-        var historyL = usesHistory ? chunkHistoryL : []
-        var historyR = usesHistory ? chunkHistoryR : []
-        if usesHistory {
-            appendChunkHistory(&historyL, chunkL)
-            appendChunkHistory(&historyR, chunkR)
-        }
-        let newL = fft.bandLevels(for: usesHistory ? historyL : chunkL,
-                                  sampleRate: sampleRate, bandCount: requestedBandCount)
-        let newR = fft.bandLevels(for: usesHistory ? historyR : chunkR,
-                                  sampleRate: sampleRate, bandCount: requestedBandCount)
-        let rms = (left: normalizedDB(vDSP.rootMeanSquare(chunkL)), right: normalizedDB(vDSP.rootMeanSquare(chunkR)))
+        let windowSize = SpectrumFFT.windowSize(sampleRate: sampleRate, bandCount: requestedBandCount)
+        var historyL = chunkHistoryL
+        var historyR = chunkHistoryR
+        appendChunkHistory(&historyL, chunkL, windowSize: windowSize)
+        appendChunkHistory(&historyR, chunkR, windowSize: windowSize)
+        let newL = fft.bandLevels(for: historyL, sampleRate: sampleRate, bandCount: requestedBandCount)
+        let newR = fft.bandLevels(for: historyR, sampleRate: sampleRate, bandCount: requestedBandCount)
+        let rms = (left: SpectrumFFT.normalizedDB(vDSP.rootMeanSquare(chunkL)),
+                   right: SpectrumFFT.normalizedDB(vDSP.rootMeanSquare(chunkR)))
         // FFT and RMS run without stateLock. Revalidate before applying their result.
         guard isCurrent(generation), isSourceCurrent?() != false else { return }
-        if usesHistory {
-            chunkHistoryL = historyL
-            chunkHistoryR = historyR
-        }
+        chunkHistoryL = historyL
+        chunkHistoryR = historyR
         levelsL = zip(newL, levelsL).map { $0 > $1 ? min(1, $0 * 1.12) : max($0, $1 * params.levelRelease) }
         levelsR = zip(newR, levelsR).map { $0 > $1 ? min(1, $0 * 1.12) : max($0, $1 * params.levelRelease) }
         params.updatePeaks(levels: levelsL, peaks: &peaksL, ages: &peakAgesL)
@@ -143,10 +131,10 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
         rmsPeakAgeR = 0
     }
 
-    private func appendChunkHistory(_ history: inout [Float], _ chunk: [Float]) {
+    private func appendChunkHistory(_ history: inout [Float], _ chunk: [Float], windowSize: Int) {
         history.append(contentsOf: chunk)
-        if history.count > chunkWindowSize {
-            history.removeFirst(history.count - chunkWindowSize)
+        if history.count > windowSize {
+            history.removeFirst(history.count - windowSize)
         }
     }
 
@@ -219,11 +207,6 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + 1 / responseMode.framesPerSecond) { [weak self] in
             self?.decayUntilSilent(currentTime: currentTime, generation: generation, deadline: deadline)
         }
-    }
-
-    private func normalizedDB(_ value: Float) -> Float {
-        let decibels = 20 * log10(max(value, 0.000_001))
-        return min(1, max(0, (decibels + 60) / 60))
     }
 
     private func updateRMS(levels: (left: Float, right: Float), params: SpectrumSmoothing) {
@@ -352,7 +335,7 @@ nonisolated extension SpectrumAnalyzer {
             self.processChunk(
                 chunkL: left, chunkR: right, sampleRate: sampleRate,
                 currentTime: currentTime, isPlaying: isPlaying,
-                params: .slow, generation: generation, usesHistory: false
+                params: .slow, generation: generation
             )
         }
     }
@@ -388,13 +371,8 @@ nonisolated extension SpectrumAnalyzer {
     // 通常・高速モードでは指定fps分のチャンクに分割し、実再生タイミングに
     // 合わせて時間差で解析・発光する。
     private func scheduleChunkedAnalysis(
-        left: [Float],
-        right: [Float],
-        sampleRate: Float,
-        currentTime: TimeInterval,
-        isPlaying: Bool,
-        mode: VisualizerResponseMode,
-        generation: Int
+        left: [Float], right: [Float], sampleRate: Float,
+        currentTime: TimeInterval, isPlaying: Bool, mode: VisualizerResponseMode, generation: Int
     ) {
         let updateRate = mode.framesPerSecond
         let chunkFrames = max(1, Int(Double(sampleRate) / updateRate))

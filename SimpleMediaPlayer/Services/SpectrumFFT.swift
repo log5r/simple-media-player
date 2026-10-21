@@ -3,6 +3,7 @@ import Foundation
 
 // Confined to SpectrumAnalyzer's serial analysis queue.
 nonisolated final class SpectrumFFT {
+    private static let minimumFrequency: Float = 20
     private var cachedFFTSize = 0
     private var cachedFFTWindow: [Float] = []
     private var cachedFFTSetup: FFTSetup?
@@ -11,6 +12,16 @@ nonisolated final class SpectrumFFT {
         if let cachedFFTSetup {
             vDSP_destroy_fftsetup(cachedFFTSetup)
         }
+    }
+
+    // Resolve the narrowest logarithmic band across at least two FFT bins
+    // to account for the Hann window's main lobe.
+    // The display's update rate must not determine its frequency resolution.
+    static func windowSize(sampleRate: Float, bandCount: Int) -> Int {
+        let maximumFrequency = min(Float(20_000), sampleRate / 2)
+        let bandWidth = minimumFrequency * (pow(maximumFrequency / minimumFrequency, 1 / Float(bandCount)) - 1)
+        let samples = min(Float(131_072), max(Float(2_048), 2 * sampleRate / bandWidth))
+        return 1 << Int(ceil(log2(samples)))
     }
 
     func bandLevels(for samples: [Float], sampleRate: Float, bandCount: Int) -> [Float] {
@@ -25,7 +36,7 @@ nonisolated final class SpectrumFFT {
             return Array(repeating: 0, count: bandCount)
         }
 
-        let input = samples.count == fftSize ? samples : Array(samples.prefix(fftSize))
+        let input = samples.count == fftSize ? samples : Array(samples.suffix(fftSize))
         var windowed = [Float](repeating: 0, count: fftSize)
         vDSP.multiply(input, cachedFFTWindow, result: &windowed)
 
@@ -54,22 +65,24 @@ nonisolated final class SpectrumFFT {
             }
         }
 
-        let minFreq = Float(20)
+        let minFreq = Self.minimumFrequency
         let maxFreq = min(Float(20_000), sampleRate / 2)
         return (0..<bandCount).map { band in
             let startFraction = Float(band) / Float(bandCount)
             let endFraction = Float(band + 1) / Float(bandCount)
             let startFrequency = minFreq * pow(maxFreq / minFreq, startFraction)
             let endFrequency = minFreq * pow(maxFreq / minFreq, endFraction)
-            let startBin = max(1, min(halfSize - 1, Int(startFrequency / sampleRate * Float(fftSize))))
-            let endBin = max(startBin + 1, min(halfSize, Int(endFrequency / sampleRate * Float(fftSize))))
+            // A bin belongs only to the band containing its frequency. During
+            // warm-up a narrow band can have no bins; do not borrow its neighbor's.
+            let startBin = max(1, min(halfSize, Int(ceil(startFrequency / sampleRate * Float(fftSize)))))
+            let endBin = min(halfSize, Int(ceil(endFrequency / sampleRate * Float(fftSize))))
             let count = endBin - startBin
             guard count > 0 else { return Float(0) }
             var peak = Float(0)
             magnitudes.withUnsafeBufferPointer { pointer in
                 vDSP_maxv(pointer.baseAddress! + startBin, 1, &peak, vDSP_Length(count))
             }
-            return min(1, normalizedDB(peak) * 1.18)
+            return min(1, Self.normalizedDB(peak) * 1.18)
         }
     }
 
@@ -91,7 +104,7 @@ nonisolated final class SpectrumFFT {
         return cachedFFTSetup != nil
     }
 
-    private func normalizedDB(_ value: Float) -> Float {
+    static func normalizedDB(_ value: Float) -> Float {
         let decibels = 20 * log10(max(value, 0.000_001))
         return min(1, max(0, (decibels + 60) / 60))
     }
