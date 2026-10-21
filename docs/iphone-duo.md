@@ -24,6 +24,8 @@ Opening Now Playing while Closed and then unfolding adapts the deck's Display pa
 
 Full-screen video in partially folded portrait fits within the area above the active horizontal display division, including its margins. Play/Pause and Close sit below the division, away from the video, and continue to avoid active occlusions. Unfolding or rotating to landscape restores the full display area and the upper trailing controls. The same AVPlayer stays attached during these layout changes; playback, pause, and close keep their existing behavior. Open Duo, ordinary iPhone, iPad, and macOS retain centered full-screen video.
 
+In a compact portrait deck with a side safe-area inset, the LED height uses the space left after measuring the playback controls, up to the existing 300pt height. This keeps the controls visible on the short Closed display. Ordinary portrait iPhones, landscape scenes, and accessibility text sizes retain the existing 300pt scrolling display. The track-list selection bar extends its background only into the bottom safe area, keeping it beside vertical tabs and above the Now Playing dock.
+
 ## Toolbars and Keyboard Commands
 
 On the Closed outer screen, iOS 27.1 places navigation bars and the tab bar vertically along the trailing edge. Toolbar items stay standard `ToolbarItem`s so they can lay out vertically. They are not combined in an `HStack`, and buttons have no fixed frames or icon-only label styles. Secondary commands of the library root, track lists, and the deck use `ToolbarOverflowMenu`, so the system overflow button is the only ellipsis. Filters, Add Tracks, Done, Close, and Edit Lyrics have `visibilityPriority(.high)` and stay outside the overflow when space runs out; other items keep the default order. Done is text-only and may remain horizontal. Sheets whose only toolbar item is Close (Settings, Playback Adjustments, and Equalizer) keep a horizontal bar with `toolbarVerticalBehavior(.disabled)` on iOS 27.1, so a single button does not occupy a column of the narrow screen.
@@ -41,6 +43,8 @@ Layout changes neither recreate PlayerViewModel nor stop or reload playback. See
 SharedExportSession owns files prepared for sharing. Destroying the activity controller does not delete them. Completion, cancellation, or releasing the session does. If the system ends the presentation, choosing Export again shares the retained output. Presentation IDs reject completion callbacks from an obsolete controller.
 
 ## Verification
+
+Run IPhoneDeckLayoutTests and, on Closed Duo and an ordinary portrait iPhone, IPhoneDeckLayoutUITests to check initial playback-control visibility, ordinary-phone display height, and accessibility scrolling. CompactSelectionToolbarUITests checks English and Japanese selection/editing with a playing dock, including maximum accessibility text. Repeat it on both sides of Open Split View. If XCTest captures an inactive display, the selection tests skip; verify the operations directly in Device Hub. Capture the active Duo display explicitly with `simctl io <device> screenshot --display=<screen-ID> <path>`; find the screen ID with `simctl io <device> enumerate`.
 
 Set `DEVELOPER_DIR` per command without changing the global Xcode selection.
 

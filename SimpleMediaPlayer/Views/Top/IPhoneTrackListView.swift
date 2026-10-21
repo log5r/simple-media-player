@@ -78,7 +78,7 @@ struct IPhoneTrackListView: View {
                     .disabled(selectedBulkItems.isEmpty || !canCreateAACVersion)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(.bar)
+                    .background(.bar, ignoresSafeAreaEdges: .bottom)
                     .accessibilityIdentifier("editSelectedMediaButton")
                     .accessibilityLabel(L10n.format("Edit Selected, %lld selected", selectedBulkItems.count))
             }

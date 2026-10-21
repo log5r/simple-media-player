@@ -6,6 +6,8 @@ struct IPhoneDeckArrangementView<Display: View, Controls: View>: View {
     let display: (CGFloat) -> Display
     let controls: () -> Controls
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var compactControlsHeight: CGFloat = 0
 
     init(@ViewBuilder display: @escaping (CGFloat) -> Display, @ViewBuilder controls: @escaping () -> Controls) {
         self.display = display
@@ -17,14 +19,27 @@ struct IPhoneDeckArrangementView<Display: View, Controls: View>: View {
             if #available(iOS 27.1, *), shouldArrange(in: proxy) {
                 arrangedContent
             } else {
-                ScrollView {
-                    VStack(spacing: 18) {
-                        display(300)
-                        controls()
-                    }
-                    .padding(.horizontal, 16).padding(.bottom, 12)
-                }
+                compactContent(in: proxy)
             }
+        }
+    }
+
+    private func compactContent(in proxy: GeometryProxy) -> some View {
+        let height = IPhoneDeckLayout.displayHeight(
+            availableSize: proxy.size, controlsHeight: compactControlsHeight,
+            horizontalSafeArea: proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing,
+            accessibilityText: dynamicTypeSize.isAccessibilitySize
+        )
+        return ScrollView {
+            VStack(spacing: IPhoneDeckLayout.spacing) {
+                display(height)
+                    #if DEBUG
+                    .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckCompactDisplay"))
+                    #endif
+                controls()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { compactControlsHeight = $0 }
+            }
+            .padding(.horizontal, 16).padding(.bottom, IPhoneDeckLayout.bottomPadding)
         }
     }
 
