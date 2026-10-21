@@ -22,7 +22,7 @@ In portrait, the player splits at the center of its current view in both Open an
 
 Opening Now Playing while Closed and then unfolding adapts the deck's Display page to the same portrait or landscape design. Its full-screen presenter, page selection, and editing sheets keep their existing ownership. Ordinary compact scenes retain the vertical scrolling deck. The ArrangementView used by the other deck layout sits inside NavigationStack and outside each pane's ScrollView. View toggles, settings, and filters prefer the standard vertical toolbar placement on iOS 27.1.
 
-Full-screen video in partially folded portrait fits within the area above the active horizontal display division, including its margins. Unfolding or rotating to landscape restores the full display area. The same AVPlayer stays attached during these layout changes; playback, pause, and close keep their existing behavior. Open Duo, ordinary iPhone, iPad, and macOS retain centered full-screen video.
+Full-screen video in partially folded portrait fits within the area above the active horizontal display division, including its margins. Play/Pause and Close sit below the division, away from the video, and continue to avoid active occlusions. Unfolding or rotating to landscape restores the full display area and the upper trailing controls. The same AVPlayer stays attached during these layout changes; playback, pause, and close keep their existing behavior. Open Duo, ordinary iPhone, iPad, and macOS retain centered full-screen video.
 
 ## Toolbars and Keyboard Commands
 
@@ -64,7 +64,7 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
 
 Results, measured geometry, and unverified conditions are recorded in the [GitHub Wiki implementation record](https://github.com/log5r/simple-media-player/wiki/iPhone-Duo-Implementation-Plan).
 
-FullScreenVideoLayoutTests verifies the upper video area, division margins and local coordinates, unfolding, landscape, and non-splitting regions. Run DuoFullScreenVideoUITests in partially folded portrait to check the video frame against the actual division and test pause/resume, double-tap to close, and the Close button with a generated video. The case skips if the posture or screen coordinates do not match. Manually unfold and rotate during full-screen playback to check the transition. With `--ui-testing-duo-layout`, `fullScreenVideoMetrics` reports the assigned video frame for comparison with the active division.
+FullScreenVideoLayoutTests verifies the upper video and lower control areas, division margins and local coordinates, unfolding, landscape, and non-splitting regions. Run DuoFullScreenVideoUITests in partially folded portrait to check the video frame against the actual division, ensure both buttons stay below it without overlapping the video and retain 44pt touch targets, and test pause/resume, double-tap to close, and the Close button with a generated video. Set `TEST_RUNNER_DUO_FULL_SCREEN_TEST_LANGUAGE=ja` in the xcodebuild environment to repeat the check with Japanese labels; English is the default. The case skips if the posture or screen coordinates do not match. Manually unfold and rotate during full-screen playback to check the transition. With `--ui-testing-duo-layout`, `fullScreenVideoMetrics` reports the assigned video frame for comparison with the active division.
 
 ## Apple References
 
