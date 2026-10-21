@@ -39,8 +39,8 @@ final class DuoPlayerDesignUITests: XCTestCase {
         let lamp = element("indicatorEQ", in: app)
         XCTAssertTrue(lamp.exists)
         XCTAssertTrue(meters.insetBy(dx: -2, dy: -2).contains(lamp.frame))
-        assertPlaybackTargets(in: app, containedIn: controls)
-        assertVolumeRowFillsControls(in: app, controls: controls, inset: 20)
+        assertPlaybackTargets(in: app, containedIn: controls, deckVolumeRow: true)
+        try assertPortraitColumn(in: app, controls: controls, folded: geometry["hasActiveDivision"] as? Bool == true)
         attach(app, name: "Duo portrait LED above meters and controls")
 
         let library = app.buttons["duoShowLibrary"]
@@ -131,15 +131,6 @@ final class DuoPlayerDesignUITests: XCTestCase {
         return app
     }
 
-    @MainActor private func assertPlaybackTargets(in app: XCUIApplication, containedIn frame: CGRect) {
-        for identifier in [
-            "previousTrackButton", "playButton", "pauseButton", "stopButton", "nextTrackButton",
-            "pitchButton", "speedButton", "volumeUpButton", "volumeDownButton", "phoneMute"
-        ] {
-            assertTouchTarget(app.buttons[identifier], in: app, containedIn: frame)
-        }
-    }
-
     @MainActor private func assertVolumeRowFillsControls(in app: XCUIApplication, controls: CGRect, inset: CGFloat) {
         let volume = element("volumeControl", in: app)
         let mute = app.buttons["phoneMute"]
@@ -156,7 +147,7 @@ final class DuoPlayerDesignUITests: XCTestCase {
         XCTAssertEqual(slider.frame.maxX, app.buttons["volumeUpButton"].frame.minX - 6, accuracy: 2)
     }
 
-    @MainActor private func assertTouchTarget(
+    @MainActor func assertTouchTarget(
         _ element: XCUIElement, in app: XCUIApplication, containedIn frame: CGRect? = nil
     ) {
         XCTAssertTrue(element.exists, element.identifier)
@@ -195,7 +186,12 @@ final class DuoPlayerDesignUITests: XCTestCase {
         XCTAssertEqual(led.height, meters.height, accuracy: 2)
         XCTAssertEqual(led.minY, root.minY, accuracy: 2)
         XCTAssertEqual(led.maxY, meters.minY, accuracy: 2)
-        XCTAssertEqual(meters.maxY, root.midY, accuracy: 2)
+        if geometry["hasActiveDivision"] as? Bool == true {
+            XCTAssertEqual(meters.maxY, root.midY, accuracy: 2)
+        } else {
+            // A flat display gives the controls' spare lower-half height to the LED and meters.
+            XCTAssertGreaterThanOrEqual(meters.maxY, root.midY - 2)
+        }
         XCTAssertEqual(controls.minY, meters.maxY, accuracy: 2)
         XCTAssertEqual(controls.maxY, root.maxY, accuracy: 2)
     }
@@ -227,7 +223,7 @@ final class DuoPlayerDesignUITests: XCTestCase {
         }
     }
 
-    @MainActor private func regionFrame(_ regionID: String, in app: XCUIApplication) throws -> CGRect {
+    @MainActor func regionFrame(_ regionID: String, in app: XCUIApplication) throws -> CGRect {
         let diagnostic = duoDiagnostic("\(regionID)Metrics", in: app)
         XCTAssertTrue(diagnostic.waitForExistence(timeout: 5), regionID)
         let values = try metrics(diagnostic)
@@ -238,7 +234,7 @@ final class DuoPlayerDesignUITests: XCTestCase {
         return frame
     }
 
-    @MainActor private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+    @MainActor func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         let container = app.otherElements.matching(identifier: identifier).firstMatch
         if container.exists { return container }
         return app.descendants(matching: .any).matching(identifier: identifier).firstMatch
@@ -277,7 +273,8 @@ extension DuoPlayerDesignUITests {
         let meters = try regionFrame("duoPortraitMeters", in: app)
         let controls = try regionFrame("duoPortraitControls", in: app)
         try assertPortraitAllocation(in: app, geometry: geometry, led: led, meters: meters, controls: controls)
-        assertPlaybackTargets(in: app, containedIn: controls)
+        assertPlaybackTargets(in: app, containedIn: controls, deckVolumeRow: true)
+        try assertPortraitColumn(in: app, controls: controls, folded: true)
         let seek = app.sliders["Playback Position"]
         XCTAssertTrue(seek.exists)
         XCTAssertTrue(seek.isHittable)

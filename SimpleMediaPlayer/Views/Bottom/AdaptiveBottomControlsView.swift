@@ -12,23 +12,36 @@ struct AdaptiveBottomControlsView: View {
     let requestSaveCopy: (MediaItem) -> Void
     var showsMeters = true
     var showsOutputControls = false
+    /// The Duo player uses the phone deck's volume row, Mute | slot | AirPlay, and its callers' 16 pt column.
+    var usesDeckVolumeRow = false
 
+    /// `AdaptiveBottomPanelMetrics.compactControlsHeight` includes this padding on both sides.
+    private let compactPadding: CGFloat = 8
     private var usesInlineControls: Bool { width >= AdaptiveBottomPanelMetrics.inlineControlWidth }
     private var combinesAdjustmentAndTransport: Bool { width >= AdaptiveBottomPanelMetrics.combinedButtonsWidth }
 
     var body: some View {
         Group {
             if layout == .ledHalf {
-                compactControls.padding(8)
+                compactControls.padding(usesDeckVolumeRow ? 0 : compactPadding)
             } else if usesInlineControls {
                 inlineControls.padding(14)
             } else {
                 stackedControls.padding(14)
             }
         }
-        .frame(width: width, height: AdaptiveBottomPanelMetrics.controlHeight(
-            width: width, layout: layout, showsMeters: showsMeters, showsOutputControls: showsOutputControls
-        ))
+        .frame(width: width, height: height)
+    }
+
+    private var height: CGFloat {
+        guard usesDeckVolumeRow else {
+            return AdaptiveBottomPanelMetrics.controlHeight(
+                width: width, layout: layout, showsMeters: showsMeters, showsOutputControls: showsOutputControls
+            )
+        }
+        // Mute and AirPlay share the volume row, and the caller supplies the outer padding.
+        return AdaptiveBottomPanelMetrics.controlHeight(width: width, layout: layout, showsMeters: showsMeters)
+            - 2 * compactPadding
     }
 
     private var compactControls: some View {
@@ -43,11 +56,15 @@ struct AdaptiveBottomControlsView: View {
             }
             HStack(spacing: AdaptiveBottomPanelMetrics.compactSpacing) {
                 if !combinesAdjustmentAndTransport { adjustments }
-                horizontalVolume.frame(maxWidth: .infinity)
-                if showsOutputControls && combinesAdjustmentAndTransport { outputControls }
+                if usesDeckVolumeRow {
+                    deckVolume.frame(maxWidth: .infinity)
+                } else {
+                    horizontalVolume.frame(maxWidth: .infinity)
+                    if showsOutputControls && combinesAdjustmentAndTransport { outputControls }
+                }
             }
             .frame(maxWidth: .infinity)
-            if showsOutputControls && !combinesAdjustmentAndTransport { outputControls }
+            if showsOutputControls && !combinesAdjustmentAndTransport && !usesDeckVolumeRow { outputControls }
             if showsMeters { meters }
         }
     }
@@ -58,17 +75,25 @@ struct AdaptiveBottomControlsView: View {
                 label: player.isMuted ? "Unmute" : "Mute",
                 symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill", identifier: "phoneMute"
             ) { player.toggleMuted() }
-            IPhoneRoutePicker().frame(width: 44, height: 44)
-                .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 3))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 3).stroke(palette.controlStroke, lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
-                .shadow(color: palette.buttonShadow, radius: 2, y: 1)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("phoneRoutePicker")
+            IPhoneRouteButton()
         }
         .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var deckVolume: some View {
+        HStack(spacing: AdaptiveBottomPanelMetrics.compactSpacing) {
+            squareButton(
+                label: player.isMuted ? "Unmute" : "Mute",
+                symbol: player.isMuted ? "speaker.slash.fill" : "speaker.wave.1.fill", identifier: "phoneMute"
+            ) { player.toggleMuted() }
+            VolumeSlotView(
+                value: player.volume, palette: palette, axis: .horizontal, showsValueWhileDragging: true
+            ) { player.setVolume($0) }
+                .frame(minWidth: 44, minHeight: 44)
+            IPhoneRouteButton()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("volumeControl")
     }
 
     private var inlineControls: some View {

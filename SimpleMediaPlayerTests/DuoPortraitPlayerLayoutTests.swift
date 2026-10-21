@@ -79,6 +79,24 @@ struct DuoPortraitPlayerLayoutTests {
         }
     }
 
+    /// A flat display gives the controls' unused lower-half height to the LED and meters.
+    @Test func measuredControlsGiveTheSpareHeightToTheVisuals() {
+        let bounds = CGRect(x: 0, y: 0, width: 669, height: 835)
+        let placement = DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: [], controlsHeight: 300)
+        #expect(placement.controls.height == 300)
+        #expect(placement.controls.maxY == bounds.maxY)
+        #expect(placement.visuals.height == bounds.height - 300)
+        #expect(placement.led.height == placement.meters.height)
+        #expect(placement.meters.maxY == placement.controls.minY)
+    }
+
+    @Test(arguments: [CGFloat(417.5), 600])
+    func controlsTallerThanTheLowerHalfKeepTheCenterSplit(controlsHeight: CGFloat) {
+        let bounds = CGRect(x: 0, y: 0, width: 669, height: 835)
+        #expect(DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: [], controlsHeight: controlsHeight) ==
+            DuoPortraitPlayerPlacement.make(in: bounds, occlusionFrames: []))
+    }
+
     @Test func outsideOcclusionDoesNotDisplaceTheCenterSplit() {
         let bounds = CGRect(x: 0, y: 0, width: 600, height: 800)
         let outside = CGRect(x: 0, y: 900, width: 600, height: 40)

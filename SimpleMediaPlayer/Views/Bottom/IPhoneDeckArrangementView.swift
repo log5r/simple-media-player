@@ -4,14 +4,14 @@ import SwiftUI
 /// Keep this layout between the navigation container and each pane's scrolling content.
 struct IPhoneDeckArrangementView<Display: View, Controls: View>: View {
     let display: (CGFloat, Bool) -> Display
-    let controls: (Bool) -> Controls
+    let controls: () -> Controls
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var compactControlsHeight: CGFloat = 0
+    @State private var measuredControlsHeight: CGFloat = 0
 
     init(
         @ViewBuilder display: @escaping (CGFloat, Bool) -> Display,
-        @ViewBuilder controls: @escaping (Bool) -> Controls
+        @ViewBuilder controls: @escaping () -> Controls
     ) {
         self.display = display
         self.controls = controls
@@ -21,34 +21,60 @@ struct IPhoneDeckArrangementView<Display: View, Controls: View>: View {
         GeometryReader { proxy in
             if #available(iOS 27.1, *), shouldArrange(in: proxy) {
                 arrangedContent
+            } else if horizontalSizeClass == .compact, IPhoneDeckLayout.usesSideBySide(availableSize: proxy.size) {
+                sideBySideContent(in: proxy)
             } else {
-                compactContent(in: proxy)
+                stackedContent(in: proxy)
             }
         }
     }
 
-    private func compactContent(in proxy: GeometryProxy) -> some View {
-        let compactControls = IPhoneDeckLayout.usesCompactControls(
-            availableSize: proxy.size, horizontalSafeArea: proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing,
+    /// The LED takes the height the controls leave, and the stack sits on the page switcher without a gap.
+    private func stackedContent(in proxy: GeometryProxy) -> some View {
+        let horizontalSafeArea = proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing
+        let compactDisplay = IPhoneDeckLayout.usesCompactDisplay(
+            availableSize: proxy.size, horizontalSafeArea: horizontalSafeArea,
             accessibilityText: dynamicTypeSize.isAccessibilitySize
         )
         let height = IPhoneDeckLayout.displayHeight(
-            availableSize: proxy.size, controlsHeight: compactControlsHeight,
-            horizontalSafeArea: proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing,
-            accessibilityText: dynamicTypeSize.isAccessibilitySize
+            availableSize: proxy.size, controlsHeight: measuredControlsHeight,
+            horizontalSafeArea: horizontalSafeArea, accessibilityText: dynamicTypeSize.isAccessibilitySize
         )
         return ScrollView {
-            VStack(spacing: compactControls ? IPhoneDeckLayout.compactSpacing : IPhoneDeckLayout.spacing) {
-                display(height, compactControls)
+            VStack(spacing: IPhoneDeckLayout.groupSpacing) {
+                display(height, compactDisplay)
                     #if DEBUG
                     .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckCompactDisplay"))
                     #endif
-                controls(compactControls)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { compactControlsHeight = $0 }
+                controls()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measuredControlsHeight = $0 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, compactControls ? IPhoneDeckLayout.compactBottomPadding : IPhoneDeckLayout.bottomPadding)
+            .padding(.horizontal, IPhoneDeckLayout.gutter)
+            .padding(.bottom, IPhoneDeckLayout.groupSpacing)
+            .frame(minHeight: proxy.size.height, alignment: .bottom)
         }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    /// A compact landscape deck places the controls on the left and the LED on the right.
+    private func sideBySideContent(in proxy: GeometryProxy) -> some View {
+        let widths = IPhoneDeckLayout.sideBySideWidths(availableWidth: proxy.size.width)
+        let height = IPhoneDeckLayout.sideBySideDisplayHeight(availableHeight: proxy.size.height)
+        return HStack(alignment: .bottom, spacing: IPhoneDeckLayout.groupSpacing) {
+            ViewThatFits(in: .vertical) {
+                controls()
+                ScrollView { controls() }
+            }
+            .frame(width: widths.controls)
+            display(height, height < IPhoneDeckLayout.regularDisplayHeight)
+                .frame(width: widths.display)
+                #if DEBUG
+                .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckCompactDisplay"))
+                #endif
+        }
+        .padding(.horizontal, IPhoneDeckLayout.gutter)
+        .padding(.bottom, IPhoneDeckLayout.groupSpacing)
+        .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
     }
 
     private func shouldArrange(in proxy: GeometryProxy) -> Bool {
@@ -63,16 +89,17 @@ struct IPhoneDeckArrangementView<Display: View, Controls: View>: View {
     private var arrangedContent: some View {
         ArrangementView {
             DeckSafeContentRegion { size in
-                display(min(300, max(1, size.height - 10)), false)
-                    .padding(.horizontal, 16)
+                display(min(IPhoneDeckLayout.maximumDisplayHeight,
+                            max(1, size.height - IPhoneDeckLayout.displayBezelHeight)), false)
+                    .padding(.horizontal, IPhoneDeckLayout.gutter)
             }
             .splitArrangementLayoutSize(minWidth: 220, minHeight: 90)
             .accessibilityIdentifier("phoneDeckDisplayRegion")
         } secondary: {
             DeckSafeContentRegion { size in
                 ScrollView([.horizontal, .vertical]) {
-                    controls(false)
-                        .padding(.horizontal, 16).padding(.bottom, 12)
+                    controls()
+                        .padding(.horizontal, IPhoneDeckLayout.gutter).padding(.bottom, 12)
                         .frame(width: max(324, size.width))
                 }
             }
@@ -112,7 +139,8 @@ struct DeckSafeControlsOverlay<Content: View>: View {
     }
 }
 
-private struct DeckSafeContentRegion<Content: View>: View {
+/// Draws the content in the largest part of its frame that avoids active divisions and occlusions.
+struct DeckSafeContentRegion<Content: View>: View {
     @ViewBuilder let content: (CGSize) -> Content
 
     var body: some View {

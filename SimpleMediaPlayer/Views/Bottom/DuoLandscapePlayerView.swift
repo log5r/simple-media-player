@@ -63,56 +63,34 @@ struct DuoLandscapePlayerView: View {
                 cornerShape: shape, layout: height >= 230 ? .phoneDeck : .standard
             )
         }
-        .padding(7)
+        // The plate's trailing edge meets the page switcher's 16 pt edge below it.
+        .padding(.vertical, 7)
+        .padding(.leading, IPhoneDeckLayout.gutter / 2).padding(.trailing, IPhoneDeckLayout.gutter)
     }
 
+    /// The column's leading edge matches the page switcher; half a gutter on each side separates it from the LED.
     private func controls(size: CGSize) -> some View {
-        let contentWidth = max(AdaptiveBottomPanelMetrics.minimumControlWidth, size.width)
+        let inset = IPhoneDeckLayout.gutter + IPhoneDeckLayout.gutter / 2
+        let contentWidth = max(AdaptiveBottomPanelMetrics.minimumControlWidth, size.width - inset)
         return ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: 12) {
-                SeekBarView(player: player).padding(.horizontal, 12)
+            VStack(spacing: IPhoneDeckLayout.rowSpacing) {
+                SeekBarView(player: player, drawsOnPanel: true)
                 AdaptiveBottomControlsView(
                     player: player, selectedItem: selectedItem, queue: queue, palette: palette,
-                    width: contentWidth,
-                    layout: .ledHalf, playItem: playItem, requestSaveCopy: requestSaveCopy, showsOutputControls: true
+                    width: contentWidth, layout: .ledHalf, playItem: playItem, requestSaveCopy: requestSaveCopy,
+                    showsOutputControls: true, usesDeckVolumeRow: true
                 )
-                actions.padding(.horizontal, 12)
+                DuoNavigationButtons(
+                    isVideoMode: player.isVideoMode, showLibrary: showLibrary, showEqualizer: showEqualizer,
+                    showDetails: showDetails, showVideoFullScreen: showVideoFullScreen, showSettings: showSettings
+                )
             }
-            .padding(.vertical, 12)
             .frame(width: contentWidth)
+            .padding(.vertical, IPhoneDeckLayout.gutter)
+            .padding(.leading, IPhoneDeckLayout.gutter).padding(.trailing, IPhoneDeckLayout.gutter / 2)
             .frame(minHeight: size.height)
         }
         .scrollIndicators(.hidden)
-    }
-
-    private var actions: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                action("Library", symbol: "music.note.list", identifier: "duoShowLibrary", perform: showLibrary)
-                action("Settings", symbol: "gearshape", identifier: "settingsButton", perform: showSettings)
-            }
-            HStack(spacing: 8) {
-                action("Equalizer", symbol: "slider.horizontal.3", identifier: "equalizerButton",
-                       perform: showEqualizer)
-                action("Details", symbol: "info.circle", identifier: "lyricsButton", perform: showDetails)
-            }
-            if player.isVideoMode {
-                action("Show Video", symbol: "play.rectangle", identifier: "showVideoButton",
-                       perform: showVideoFullScreen)
-            }
-        }
-    }
-
-    private func action(
-        _ title: LocalizedStringKey, symbol: String, identifier: String, perform: @escaping () -> Void
-    ) -> some View {
-        Button(action: perform) {
-            Label(title, systemImage: symbol)
-                .font(.callout.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain).accessibilityIdentifier(identifier)
     }
 }
 #endif

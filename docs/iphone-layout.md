@@ -58,22 +58,41 @@ Following [Adopting Liquid Glass](https://developer.apple.com/documentation/tech
 The deck is a full-screen cover (`fullScreenCover`) that shows, from top to bottom:
 
 1. A close button, the name of the playing list, and a More menu
-2. The LED display (full width, about 300 pt tall): track number, file format, title, artist and album, elapsed time, KEY, BPM, song structure with the playback position, and the spectrum
+2. The LED display (300 pt tall, up to 340 pt when height is left over): track number, file format, title, artist and album, elapsed time, KEY, BPM, song structure with the playback position, and the spectrum
 3. A seek bar with elapsed and remaining time
 4. The EQ, KEY, and SPEED indicator lamps. They are display-only on macOS; on iPhone they become buttons that open the adjustment sheet
-5. Transport controls: Stop (small), Previous Track, Play/Pause (large), Next Track, and output device
-6. Volume: the ribbed volume display turned into a horizontal slider
+5. Transport controls: Stop, Previous Track, Play/Pause, and Next Track in one bar
+6. Volume: Mute, the ribbed volume display turned into a horizontal slider, and output device (AirPlay)
 7. Page switcher: Display, Lyrics, Info, and Up Next
 
 The More menu holds Save adjusted copy, Create AAC Version, and Edit Information….
+
+Every row, including the LED, shares one content column 16 pt inside the safe area.
+The LED plate keeps its size at accessibility text sizes, so its text stops growing at `.xxxLarge` and stays inside the column; the lamps shrink their values to one line.
+The control rows other than the LED (seek, lamps, transport, volume, and page switcher) are 44 pt tall, 8 pt apart, with 16 pt between the groups: the LED, seek and lamps, transport and volume, and the page switcher.
+The transport bar spans the column and divides it into Stop, Previous Track, Play/Pause, and Next Track cells at a 1:1:2:1 width ratio.
+Play/Pause keeps the row height and stands out through its cell width and a 24 pt symbol.
+The volume number is not part of the row; it appears over the slider only while dragging, and its accessibility value always reports it.
+The deck uses two shapes. The LED plate has 14 pt corners; controls use the macOS bottom panel's 3 pt corners, outline, and shadow.
+The lamps, page switcher, Mute, and output device share that style, and the output device icon uses the palette's icon colors.
+The seek bar sits directly on the panel, without a white background.
+
+On ordinary iPhones, the height left below the controls goes to the LED, up to 340 pt, so the volume row sits 16 pt above the page switcher.
+Any height beyond that cap stays above the LED.
+When side safe areas leave a short portrait deck, as on iPhone Duo's Closed outer screen, the LED shrinks to 254 pt and the deck scrolls only below that.
+A compact landscape deck wide enough for 332 pt of controls, a 220 pt LED, and 16 pt margins places the controls on the left and the LED on the right, so the transport controls show without scrolling.
+Narrower decks stack vertically and scroll.
 
 ### Lyrics Page (Mockup B-3)
 
 On the Lyrics page, the LED display shrinks to a strip about 90 pt tall, and the lyrics fill the space it frees.
 The strip retains the title, elapsed time, and key-change indicator and omits the visualizer, whose normal layout does not fit the compact area.
 Time-tagged lyrics highlight the current line and scroll it to the center.
-Compact transport controls stay at the bottom, and Edit Lyrics at the top right opens the existing editor.
-The Info page uses the same arrangement and reuses the existing information view (enlarged artwork, Edit Information).
+The page body sits in a card with 10 pt corners inside the 16 pt margins, and the LED strip has 14 pt corners.
+Below it are the seek bar and the same 44 pt transport bar as the Display page.
+Edit Lyrics at the top right opens the existing editor; the page does not repeat it in a bar under the body.
+The Info page uses the same arrangement and reuses the existing information view (enlarged artwork); Edit Information… in the More menu opens the editor.
+The information reloads when the editor closes.
 
 ### Adjustment Sheet
 

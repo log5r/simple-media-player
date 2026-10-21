@@ -16,21 +16,26 @@ struct DuoPortraitPlayerView: View {
     var showsControls = true
 
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage(AppSettingsKey.ledPanelCorner) private var cornerRaw = AppSettingsDefault.ledPanelCorner
+    @State private var controlsContentHeight: CGFloat = 0
 
     private var palette: BottomPanelPalette { BottomPanelPalette(colorScheme: colorScheme) }
     private var corner: LEDPanelCorner { LEDPanelCorner(rawValue: cornerRaw) ?? .adaptive }
 
     var body: some View {
         GeometryReader { proxy in
+            let bounds = CGRect(origin: .zero, size: proxy.size)
+            // A partially folded display keeps the visuals above the fold; a flat one gives them the spare height.
+            let isFolded = DuoPortraitPlayerLayout.foldBottom(
+                in: bounds, divisionFrames: DeckReservedRegions.activeDivisionFrames(in: proxy)
+            ) != nil
             let placement = DuoPortraitPlayerPlacement.make(
-                in: CGRect(origin: .zero, size: proxy.size),
-                occlusionFrames: DeckReservedRegions.activeFrames(in: proxy, includesDivisions: false)
+                in: bounds,
+                occlusionFrames: DeckReservedRegions.activeFrames(in: proxy, includesDivisions: false),
+                controlsHeight: showsControls && !isFolded && controlsContentHeight > 0 ? controlsContentHeight : nil
             )
             ZStack(alignment: .topLeading) {
                 meters
-                    .padding(10)
                     .frame(width: placement.meters.width, height: placement.meters.height)
                     .clipped()
                     #if DEBUG
@@ -79,6 +84,7 @@ struct DuoPortraitPlayerView: View {
             VUMeterView(player: player, channel: .right)
                 .accessibilityIdentifier("duoPortraitMeterR")
         }
+        .padding(.vertical, 10).padding(.horizontal, IPhoneDeckLayout.gutter)
     }
 
     private func display(size: CGSize) -> some View {
@@ -90,53 +96,38 @@ struct DuoPortraitPlayerView: View {
                 informationScale: 1.2, emphasizesTitle: true, auxiliaryInformationScale: 1
             )
         }
-        .padding(7)
+        #if DEBUG
+        .modifier(DuoPanelRegionDiagnostics(regionID: "duoPortraitLEDPlate"))
+        #endif
+        .padding(.vertical, 7).padding(.horizontal, IPhoneDeckLayout.gutter)
     }
 
+    /// The seek row starts 16 pt below the controls' top edge and the rows follow 8 pt apart.
     private func controls(size: CGSize) -> some View {
-        ScrollView([.horizontal, .vertical]) {
-            VStack(spacing: 14) {
-                SeekBarView(player: player, avoidsDisplayDivision: false)
+        let width = max(AdaptiveBottomPanelMetrics.minimumControlWidth + 2 * IPhoneDeckLayout.gutter, size.width)
+        return ScrollView([.horizontal, .vertical]) {
+            VStack(spacing: IPhoneDeckLayout.rowSpacing) {
+                SeekBarView(player: player, avoidsDisplayDivision: false, drawsOnPanel: true)
+                    #if DEBUG
+                    .modifier(DuoPanelRegionDiagnostics(regionID: "duoPortraitSeek"))
+                    #endif
                 AdaptiveBottomControlsView(
                     player: player, selectedItem: selectedItem, queue: queue, palette: palette,
-                    width: max(AdaptiveBottomPanelMetrics.minimumControlWidth, size.width - 24),
+                    width: width - 2 * IPhoneDeckLayout.gutter,
                     layout: .ledHalf, playItem: playItem, requestSaveCopy: requestSaveCopy, showsMeters: false,
-                    showsOutputControls: true
+                    showsOutputControls: true, usesDeckVolumeRow: true
                 )
-                actions
+                DuoNavigationButtons(
+                    isVideoMode: player.isVideoMode, showLibrary: showLibrary, showEqualizer: showEqualizer,
+                    showDetails: showDetails, showVideoFullScreen: showVideoFullScreen, showSettings: showSettings
+                )
             }
-            .padding(12)
-            .frame(width: max(356, size.width))
-            .frame(minHeight: size.height)
+            .padding(IPhoneDeckLayout.gutter)
+            .frame(width: width)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlsContentHeight = $0 }
+            .frame(minHeight: size.height, alignment: .top)
         }
         .scrollIndicators(.hidden)
-    }
-
-    private var actions: some View {
-        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) :
-            AnyLayout(HStackLayout(spacing: 8))
-        return layout {
-            action("Library", symbol: "music.note.list", identifier: "duoShowLibrary", perform: showLibrary)
-            action("Equalizer", symbol: "slider.horizontal.3", identifier: "equalizerButton", perform: showEqualizer)
-            action("Details", symbol: "info.circle", identifier: "lyricsButton", perform: showDetails)
-            if player.isVideoMode {
-                action("Show Video", symbol: "play.rectangle", identifier: "showVideoButton",
-                       perform: showVideoFullScreen)
-            }
-            action("Settings", symbol: "gearshape", identifier: "settingsButton", perform: showSettings)
-        }
-    }
-
-    private func action(
-        _ title: LocalizedStringKey, symbol: String, identifier: String, perform: @escaping () -> Void
-    ) -> some View {
-        Button(action: perform) {
-            Label(title, systemImage: symbol)
-                .font(.callout.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(palette.normalButtonFill, in: RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain).accessibilityIdentifier(identifier)
     }
 }
 #endif
