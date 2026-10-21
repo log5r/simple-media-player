@@ -17,15 +17,23 @@ struct LibraryScrollAnchorTests {
         // Row 0 spans -10..<34 and row 1 spans 34..<78; a 44-point header covers 0..<44.
         let rowFrames = frames(scrolledBy: 10)
 
-        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, within: 0..<400) == ids[0])
-        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, within: 44..<400) == ids[1])
+        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 0, to: 400) == ids[0])
+        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 44, to: 400) == ids[1])
     }
 
     @Test func rowEndingAtTheHeaderIsNotVisible() {
         // Row 0 spans 0..<44, entirely behind the header.
         let rowFrames = frames(scrolledBy: 0)
 
-        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, within: 44..<400) == ids[1])
-        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, within: 44..<44) == nil)
+        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 44, to: 400) == ids[1])
+        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 44, to: 44) == nil)
+    }
+
+    @Test func viewportShorterThanTheHeaderHasNoVisibleRow() {
+        // A squeezed or not-yet-measured viewport ends above the header's bottom edge.
+        let rowFrames = frames(scrolledBy: 10)
+
+        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 44, to: 30) == nil)
+        #expect(LibraryScrollAnchor.firstVisibleItemID(in: rowFrames, from: 44, to: 0) == nil)
     }
 }

@@ -54,18 +54,19 @@ struct LibraryScrollAnchor: ViewModifier {
                 }
                 .onScrollPhaseChange { _, phase in
                     guard phase == .idle, hasRestored, destination == Destination(browsingState) else { return }
-                    let bounds = pinnedHeaderHeight..<viewportHeight
-                    if let first = Self.firstVisibleItemID(in: rowFrames, within: bounds) {
+                    let first = Self.firstVisibleItemID(in: rowFrames, from: pinnedHeaderHeight, to: viewportHeight)
+                    if let first {
                         browsingState.scrollItemID = first
                     }
                 }
         }
     }
 
-    /// The topmost row with any part inside the vertical `bounds` of the viewport.
-    static func firstVisibleItemID(in rowFrames: [UUID: CGRect], within bounds: Range<CGFloat>) -> UUID? {
+    /// The topmost row with any part between `top` and `bottom` of the viewport.
+    /// An empty or inverted interval, such as a viewport shorter than the header, has no visible row.
+    static func firstVisibleItemID(in rowFrames: [UUID: CGRect], from top: CGFloat, to bottom: CGFloat) -> UUID? {
         rowFrames
-            .filter { $0.value.maxY > bounds.lowerBound && $0.value.minY < bounds.upperBound }
+            .filter { $0.value.maxY > top && $0.value.minY < bottom }
             .min { $0.value.minY < $1.value.minY }?
             .key
     }
