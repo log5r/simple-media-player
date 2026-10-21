@@ -137,21 +137,26 @@ struct MediaListView: View {
                             .modifier(LibraryScrollAnchorRow(id: row.id))
                     }
                 } header: {
-                    #if os(iOS)
-                    Button(group.title) {
-                        if let section { browsingState.openGroup(section: section, name: group.title) }
+                    Group {
+                        #if os(iOS)
+                        Button(group.title) {
+                            if let section { browsingState.openGroup(section: section, name: group.title) }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("libraryGroup.\(section?.rawValue ?? "").\(group.title)")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        #else
+                        Text(group.title)
+                        #endif
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("libraryGroup.\(section?.rawValue ?? "").\(group.title)")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    #else
-                    Text(group.title)
-                    #endif
+                    .modifier(LibraryScrollAnchorSectionHeader())
                 }
             }
         }
         .listStyle(.inset)
-        .modifier(LibraryScrollAnchor(itemIDs: listRows.map(\.id), browsingState: browsingState))
+        .modifier(LibraryScrollAnchor(
+            itemIDs: listRows.map(\.id), browsingState: browsingState, coversRowsUnderTopInset: true
+        ))
     }
 
     var rows: [MediaTableRow] {

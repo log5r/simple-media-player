@@ -46,6 +46,41 @@ final class LibraryContentTopUITests: XCTestCase {
         )
     }
 
+    /// The list's coordinate space includes rows hidden under the navigation bar and the pinned section header.
+    @MainActor func testGroupedListSavesFirstRowBelowSectionHeader() throws {
+        let app = launch()
+        open(section: "artists", in: app)
+        let header = app.buttons["libraryGroup.artists.UI Test Artist"]
+        XCTAssertTrue(header.waitForExistence(timeout: 10))
+        let rows = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "libraryGroupedTrack.")
+        )
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10))
+
+        // Drag about six rows up, using window points as `LibraryTableHeaderUITests` does.
+        let rowHeight = rows.firstMatch.frame.height
+        let startY = header.frame.maxY + rowHeight * 7
+        let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+        origin.withOffset(CGVector(dx: header.frame.midX, dy: startY)).press(
+            forDuration: 0.05,
+            thenDragTo: origin.withOffset(CGVector(dx: header.frame.midX, dy: startY - rowHeight * 6))
+        )
+        let saved = savedScrollItemID(in: app, prefix: "libraryGroupedTrack.")
+        let visible = rows.allElementsBoundByIndex
+            .filter { $0.frame.maxY > header.frame.maxY + 0.5 }
+            .min { $0.frame.minY < $1.frame.minY }
+        XCTAssertEqual(
+            saved, visible?.identifier, "The saved row must be the first one visible below the section header"
+        )
+
+        recreateLibraryList(in: app, rows: rows)
+        let restored = rows.matching(identifier: saved).firstMatch
+        XCTAssertTrue(restored.waitForExistence(timeout: 10))
+        XCTAssertEqual(
+            restored.frame.minY, header.frame.maxY, accuracy: 1, "The restored row must sit below the section header"
+        )
+    }
+
     @MainActor private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
