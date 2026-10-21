@@ -126,9 +126,10 @@ struct MediaListView: View {
     }
 
     var groupedList: some View {
-        let listRows = rows
+        // The anchor treats the first ID as the content top, so it needs the IDs in their rendered order.
+        let sections = groupedSections(rows)
         return List(selection: tableInteractionSelection) {
-            ForEach(groupedSections(listRows)) { group in
+            ForEach(sections) { group in
                 Section {
                     ForEach(group.rows) { row in
                         groupedRow(row)
@@ -155,7 +156,8 @@ struct MediaListView: View {
         }
         .listStyle(.inset)
         .modifier(LibraryScrollAnchor(
-            itemIDs: listRows.map(\.id), browsingState: browsingState, coversRowsUnderTopInset: true
+            itemIDs: sections.flatMap { $0.rows.map(\.id) }, browsingState: browsingState,
+            coversRowsUnderTopInset: true
         ))
     }
 
