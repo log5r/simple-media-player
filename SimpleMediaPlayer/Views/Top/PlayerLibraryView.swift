@@ -208,9 +208,9 @@ struct MainView: View {
 }
 
 extension MainView {
-    func desktopView(availableWidth: CGFloat) -> some View {
+    func desktopView(availableWidth: CGFloat, detailSearchPlacement: SearchFieldPlacement? = nil) -> some View {
         VStack(spacing: 0) {
-            libraryNavigation()
+            libraryNavigation(detailSearchPlacement: detailSearchPlacement)
                 #if os(iOS)
                 // Keep the floating vertical toolbar in front of the playback panel.
                 .zIndex(1)
@@ -245,8 +245,9 @@ extension MainView {
         )
     }
 
-    /// Portrait hides the sidebar column, so search there must belong to the detail column to stay visible.
-    func libraryNavigation(searchesInDetail: Bool = false) -> some View {
+    /// A placement attaches search to the detail column: portrait hides the sidebar column,
+    /// and the phone's vertical toolbar has no room for a search field.
+    func libraryNavigation(detailSearchPlacement: SearchFieldPlacement? = nil) -> some View {
             NavigationSplitView {
                 SidebarView(
                     selection: Binding(get: { selection }, set: { browsingState.select($0) }),
@@ -260,9 +261,9 @@ extension MainView {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
                 #endif
             } detail: {
-                if searchesInDetail {
+                if let detailSearchPlacement {
                     libraryDetail
-                        .searchable(text: $browsingState.searchText, placement: .toolbar, prompt: "Search")
+                        .searchable(text: $browsingState.searchText, placement: detailSearchPlacement, prompt: "Search")
                 } else {
                     libraryDetail
                 }
