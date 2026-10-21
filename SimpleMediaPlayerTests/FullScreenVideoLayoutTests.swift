@@ -9,9 +9,14 @@ struct FullScreenVideoLayoutTests {
 
     @Test func partiallyFoldedPortraitUsesTheAreaAboveTheDivision() {
         let frame = FullScreenVideoLayout.videoFrame(in: portrait, activeDivisionFrames: [fold])
+        let controls = FullScreenVideoLayout.controlsFrame(in: portrait, activeDivisionFrames: [fold])
         #expect(frame == CGRect(x: 0, y: 0, width: 700, height: 430))
         #expect(frame.maxY == fold.minY)
         #expect(frame.midY < portrait.midY)
+        #expect(controls == CGRect(x: 0, y: 470, width: 700, height: 430))
+        #expect(controls.minY == fold.maxY)
+        #expect(!frame.intersects(controls))
+        #expect(!fold.intersects(controls))
     }
 
     @Test func divisionCoordinatesAndMarginsDetermineTheUpperArea() {
@@ -19,17 +24,22 @@ struct FullScreenVideoLayoutTests {
         let division = CGRect(x: 0, y: 460, width: 740, height: 50)
         #expect(FullScreenVideoLayout.videoFrame(in: bounds, activeDivisionFrames: [division]) ==
             CGRect(x: 20, y: 30, width: 700, height: 430))
+        #expect(FullScreenVideoLayout.controlsFrame(in: bounds, activeDivisionFrames: [division]) ==
+            CGRect(x: 20, y: 510, width: 700, height: 420))
     }
 
     @Test func unfoldingRestoresTheEntireVideoArea() {
         #expect(FullScreenVideoLayout.videoFrame(in: portrait, activeDivisionFrames: [fold]) != portrait)
         #expect(FullScreenVideoLayout.videoFrame(in: portrait, activeDivisionFrames: []) == portrait)
+        #expect(FullScreenVideoLayout.controlsFrame(in: portrait, activeDivisionFrames: [fold]) != portrait)
+        #expect(FullScreenVideoLayout.controlsFrame(in: portrait, activeDivisionFrames: []) == portrait)
     }
 
     @Test func landscapeKeepsTheEntireVideoArea() {
         let bounds = CGRect(x: 0, y: 0, width: 900, height: 700)
         let division = CGRect(x: 430, y: 0, width: 40, height: 700)
         #expect(FullScreenVideoLayout.videoFrame(in: bounds, activeDivisionFrames: [division]) == bounds)
+        #expect(FullScreenVideoLayout.controlsFrame(in: bounds, activeDivisionFrames: [division]) == bounds)
     }
 
     @Test(arguments: [
@@ -43,6 +53,7 @@ struct FullScreenVideoLayoutTests {
     ])
     func nonSplittingRegionsDoNotMoveVideo(division: CGRect) {
         #expect(FullScreenVideoLayout.videoFrame(in: portrait, activeDivisionFrames: [division]) == portrait)
+        #expect(FullScreenVideoLayout.controlsFrame(in: portrait, activeDivisionFrames: [division]) == portrait)
     }
 
     @Test func upperDivisionIsChosenRegardlessOfRegionOrder() {
@@ -50,6 +61,8 @@ struct FullScreenVideoLayoutTests {
         let expected = CGRect(x: 0, y: 0, width: 700, height: 430)
         for divisions in [[fold, lowerFold], [lowerFold, fold]] {
             #expect(FullScreenVideoLayout.videoFrame(in: portrait, activeDivisionFrames: divisions) == expected)
+            #expect(FullScreenVideoLayout.controlsFrame(in: portrait, activeDivisionFrames: divisions) ==
+                CGRect(x: 0, y: 470, width: 700, height: 430))
         }
     }
 }

@@ -10,10 +10,11 @@ final class DuoFullScreenVideoUITests: XCTestCase {
     }
 
     @MainActor func testPartiallyFoldedPortraitVideoStaysAboveTheFold() async throws {
+        let language = ProcessInfo.processInfo.environment["DUO_FULL_SCREEN_TEST_LANGUAGE"] == "ja" ? "ja" : "en"
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-duo-autoplay-probe",
-            "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
+            "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ja" ? "ja_JP" : "en_US"
         ]
         app.launchEnvironment["PHONE_LAYOUT_VIDEO_BASE64"] = try await makeVideo().base64EncodedString()
         app.launch()
@@ -35,7 +36,8 @@ final class DuoFullScreenVideoUITests: XCTestCase {
         XCTAssertTrue(video.waitForExistence(timeout: 5))
         let frame = try metrics(video)
         try assertUpperVideoArea(frame, screen: app.frame, geometry: geometry)
-        assertTransportAndClosing(in: app, showVideo: showVideo)
+        try assertLowerControls(in: app, video: frame, geometry: geometry)
+        assertTransportAndClosing(in: app, showVideo: showVideo, language: language)
     }
 
     private func verifyScreenCoordinates(_ screen: CGRect, geometry: [String: Any]) throws {
@@ -54,29 +56,61 @@ final class DuoFullScreenVideoUITests: XCTestCase {
         let height = try number("height", in: frame)
         XCTAssertGreaterThan(height, 0)
         XCTAssertLessThan(height, screen.height / 2)
+        XCTAssertEqual(height, try activeDivisionFrame(screen: screen, geometry: geometry).minY - screen.minY,
+                       accuracy: 2)
+    }
+
+    @MainActor private func assertLowerControls(
+        in app: XCUIApplication, video: [String: Any], geometry: [String: Any]
+    ) throws {
+        let division = try activeDivisionFrame(screen: app.frame, geometry: geometry)
+        let videoFrame = CGRect(x: try number("x", in: video), y: try number("y", in: video),
+                               width: try number("width", in: video), height: try number("height", in: video))
+        for identifier in ["videoFullScreenPlayPauseButton", "videoFullScreenCloseButton"] {
+            let button = app.buttons[identifier]
+            XCTAssertTrue(button.isHittable, identifier)
+            let frame = button.frame
+            XCTAssertTrue(app.frame.contains(frame), identifier)
+            XCTAssertGreaterThanOrEqual(frame.minY, division.maxY, identifier)
+            XCTAssertGreaterThanOrEqual(frame.width, 44, identifier)
+            XCTAssertGreaterThanOrEqual(frame.height, 44, identifier)
+            XCTAssertFalse(frame.intersects(videoFrame), identifier)
+        }
+    }
+
+    private func activeDivisionFrame(screen: CGRect, geometry: [String: Any]) throws -> CGRect {
         let divisions = try XCTUnwrap(geometry["division"] as? [[String: Any]])
         let division = try XCTUnwrap(divisions.first { $0["active"] as? Bool == true })
         let safeArea = try XCTUnwrap(geometry["safeArea"] as? [String: Any])
-        let foldTop = try number("y", in: division) + number("top", in: safeArea)
-        XCTAssertEqual(height, foldTop, accuracy: 2)
+        return CGRect(
+            x: try screen.minX + number("leading", in: safeArea) + number("x", in: division),
+            y: try screen.minY + number("top", in: safeArea) + number("y", in: division),
+            width: try number("width", in: division), height: try number("height", in: division)
+        )
     }
 
-    @MainActor private func assertTransportAndClosing(in app: XCUIApplication, showVideo: XCUIElement) {
+    @MainActor private func assertTransportAndClosing(
+        in app: XCUIApplication, showVideo: XCUIElement, language: String
+    ) {
+        let pauseLabel = language == "ja" ? "一時停止" : "Pause"
+        let playLabel = language == "ja" ? "再生" : "Play"
         let playback = app.buttons["videoFullScreenPlayPauseButton"]
         XCTAssertTrue(playback.isHittable)
-        XCTAssertTrue(playback.label.contains("Pause"))
+        XCTAssertTrue(playback.label.contains(pauseLabel))
         playback.tap()
-        XCTAssertTrue(playback.label.contains("Play"))
+        XCTAssertTrue(playback.label.contains(playLabel))
         playback.tap()
-        XCTAssertTrue(playback.label.contains("Pause"))
+        XCTAssertTrue(playback.label.contains(pauseLabel))
         let image = XCTAttachment(screenshot: app.screenshot())
-        image.name = "Duo partially folded portrait full-screen video"
+        image.name = "Duo partially folded portrait full-screen video \(language)"
         image.lifetime = .keepAlways
         add(image)
-        app.buttons["videoFullScreenCloseButton"].tap()
+        let close = app.buttons["videoFullScreenCloseButton"]
+        XCTAssertTrue(close.label.contains(language == "ja" ? "閉じる" : "Close"))
+        close.tap()
         XCTAssertTrue(showVideo.waitForExistence(timeout: 5))
         showVideo.tap()
-        let videoSurface = app.buttons["Video"]
+        let videoSurface = app.buttons[language == "ja" ? "ビデオ" : "Video"]
         XCTAssertTrue(videoSurface.waitForExistence(timeout: 5))
         videoSurface.doubleTap()
         XCTAssertTrue(showVideo.waitForExistence(timeout: 5))

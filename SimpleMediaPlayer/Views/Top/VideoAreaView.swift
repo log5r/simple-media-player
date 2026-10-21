@@ -120,6 +120,20 @@ struct FullScreenVideoView: View {
                 .gesture(videoTapGesture)
 
             #if os(iOS)
+            fullScreenControls
+            #else
+            closeButton.padding(18)
+            #endif
+        }
+    }
+
+    #if os(iOS)
+    private var fullScreenControls: some View {
+        GeometryReader { proxy in
+            let frame = FullScreenVideoLayout.controlsFrame(
+                in: CGRect(origin: .zero, size: proxy.size),
+                activeDivisionFrames: DeckReservedRegions.activeDivisionFrames(in: proxy)
+            )
             DeckSafeControlsOverlay {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) { playbackButton; closeButton }
@@ -127,11 +141,11 @@ struct FullScreenVideoView: View {
                 }
                 .padding(18)
             }
-            #else
-            closeButton.padding(18)
-            #endif
+            .frame(width: frame.width, height: frame.height)
+            .offset(x: frame.minX, y: frame.minY)
         }
     }
+    #endif
 
     @ViewBuilder private var fullScreenVideo: some View {
         #if os(iOS)
