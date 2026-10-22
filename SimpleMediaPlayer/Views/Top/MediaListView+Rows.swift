@@ -17,6 +17,7 @@ extension MediaListView {
             }
             #endif
             .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("libraryGroupedTrack.\(row.id)")
             .accessibilityAddTraits(isBulkSelected ? .isSelected : [])
             .accessibilityAction { selectGroupedRow(row) }
     }

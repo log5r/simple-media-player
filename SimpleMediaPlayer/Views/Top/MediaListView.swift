@@ -126,9 +126,10 @@ struct MediaListView: View {
     }
 
     var groupedList: some View {
-        let listRows = rows
+        // The anchor treats the first ID as the content top, so it needs the IDs in their rendered order.
+        let sections = groupedSections(rows)
         return List(selection: tableInteractionSelection) {
-            ForEach(groupedSections(listRows)) { group in
+            ForEach(sections) { group in
                 Section {
                     ForEach(group.rows) { row in
                         groupedRow(row)
@@ -137,21 +138,27 @@ struct MediaListView: View {
                             .modifier(LibraryScrollAnchorRow(id: row.id))
                     }
                 } header: {
-                    #if os(iOS)
-                    Button(group.title) {
-                        if let section { browsingState.openGroup(section: section, name: group.title) }
+                    Group {
+                        #if os(iOS)
+                        Button(group.title) {
+                            if let section { browsingState.openGroup(section: section, name: group.title) }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("libraryGroup.\(section?.rawValue ?? "").\(group.title)")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        #else
+                        Text(group.title)
+                        #endif
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("libraryGroup.\(section?.rawValue ?? "").\(group.title)")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    #else
-                    Text(group.title)
-                    #endif
+                    .modifier(LibraryScrollAnchorSectionHeader())
                 }
             }
         }
         .listStyle(.inset)
-        .modifier(LibraryScrollAnchor(itemIDs: listRows.map(\.id), browsingState: browsingState))
+        .modifier(LibraryScrollAnchor(
+            itemIDs: sections.flatMap { $0.rows.map(\.id) }, browsingState: browsingState,
+            coversRowsUnderTopInset: true
+        ))
     }
 
     var rows: [MediaTableRow] {

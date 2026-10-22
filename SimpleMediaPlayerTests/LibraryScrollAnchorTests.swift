@@ -41,4 +41,34 @@ struct LibraryScrollAnchorTests {
 
         #expect(LibraryScrollAnchor.firstVisibleItemID(in: straddling, from: 44, to: 30) == nil)
     }
+
+    @Test func sectionHeaderPinnedBelowTheInsetHidesRows() {
+        // A navigation bar covers 0..<86, and a header's content sits in its cell's padding at 96..<140.
+        let pinned = CGRect(x: 0, y: 96, width: 320, height: 44)
+
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [pinned]) == 140)
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: []) == 86)
+    }
+
+    @Test func outgoingHeaderAndLowerHeadersDoNotRaiseTheTop() {
+        // The next section's header pushes the pinned one up, and a later header is further down.
+        let outgoing = CGRect(x: 0, y: 70, width: 320, height: 44)
+        let incoming = CGRect(x: 0, y: 114, width: 320, height: 44)
+        let later = CGRect(x: 0, y: 400, width: 320, height: 44)
+
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [outgoing, later]) == 114)
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [later]) == 86)
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [outgoing, incoming]) == 158)
+    }
+
+    @Test func tallUpcomingHeaderIsNotPinnedUntilItPushes() {
+        // A wrapped title makes the next header taller than the pinned one, with part of a row between them.
+        let pinned = CGRect(x: 0, y: 96, width: 320, height: 44)
+        let upcoming = CGRect(x: 0, y: 160, width: 320, height: 88)
+        let outgoing = CGRect(x: 0, y: 70, width: 320, height: 44)
+        let incoming = CGRect(x: 0, y: 114, width: 320, height: 88)
+
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [pinned, upcoming]) == 140)
+        #expect(LibraryScrollAnchor.visibleTop(belowInset: 86, sectionHeaders: [outgoing, incoming]) == 202)
+    }
 }
