@@ -195,18 +195,41 @@ struct MediaImportDeduplicationTests {
     }
 
     @Test func overlappingImportRequestsShareTheUpdatedDuplicateIndex() async throws {
-        let fixture = try ImportFixture()
+        let gate = ImportRegistrationGate()
+        var requestCount = 0
+        let fixture = try ImportFixture(
+            beforeImportRegistration: gate.hold, importRequestStarted: { requestCount += 1 }
+        )
         defer { fixture.remove() }
+        defer { gate.release() }
         let source = try fixture.makeAudio(named: "song.wav")
+        var firstCompleted = false
         let first = Task { @MainActor in
-            await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [])
+            let result = await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [])
+            firstCompleted = true
+            return result
         }
+        try await gate.waitUntilBlocked()
+        #expect(try fixture.items().isEmpty)
+        #expect(try fixture.managedFiles().count == 1)
         let second = Task { @MainActor in
             await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [])
         }
-        await first.value
-        await second.value
+        let deadline = ContinuousClock.now + .seconds(5)
+        while requestCount < 2, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        // Both request workers reached the serialization boundary while the first registration was held.
+        try #require(requestCount == 2)
+        #expect(!firstCompleted)
+        #expect(fixture.service.isImporting)
+        gate.release()
+        let firstResult = await first.value
+        let secondResult = await second.value
 
+        #expect(firstResult.createdCount == 1 && firstResult.duplicateCount == 0)
+        #expect(secondResult.createdCount == 0 && secondResult.duplicateCount == 1)
+        #expect(gate.sourceURLs == [source])
         #expect(try fixture.items().count == 1)
         #expect(try fixture.managedFiles().count == 1)
         #expect(fixture.service.lastImportErrors.isEmpty)
@@ -254,7 +277,11 @@ private struct ImportFixture {
     let service: LibraryService
     var context: ModelContext { container.mainContext }
 
-    init(useDiskStore: Bool = false) throws {
+    init(
+        useDiskStore: Bool = false,
+        beforeImportRegistration: @escaping @MainActor (URL) async -> Void = { _ in },
+        importRequestStarted: @escaping @MainActor () -> Void = {}
+    ) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         mediaDirectory = directory.appendingPathComponent("Media")
         try FileManager.default.createDirectory(at: mediaDirectory, withIntermediateDirectories: true)
@@ -265,7 +292,10 @@ private struct ImportFixture {
             )
             : ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         container = try ModelContainer(for: schema, configurations: [configuration])
-        service = LibraryService(mediaDirectoryURL: mediaDirectory)
+        service = LibraryService(
+            mediaDirectoryURL: mediaDirectory, beforeImportRegistration: beforeImportRegistration,
+            importRequestStarted: importRequestStarted
+        )
     }
 
     func remove() { try? FileManager.default.removeItem(at: directory) }

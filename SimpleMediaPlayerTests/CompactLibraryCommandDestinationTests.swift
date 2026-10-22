@@ -56,8 +56,8 @@ struct CompactLibraryCommandDestinationTests {
     }
 
     @Test(arguments: [false, true])
-    func backToListDismissesInheritedFullScreenVideoAndRetainsPlayback(_ showsDeck: Bool) async {
-        let fixture = await makePlayingMovieFixture()
+    func backToListDismissesInheritedFullScreenVideoAndRetainsPlayback(_ showsDeck: Bool) async throws {
+        let fixture = try await makePlayingMovieFixture()
         let state = LibraryBrowsingState()
         state.selectPhoneTab(2)
         state.showsVideoFullScreen = true
@@ -91,8 +91,8 @@ struct CompactLibraryCommandDestinationTests {
         #expect(fixture.video.closeCallCount == 0)
     }
 
-    @Test func inheritedFullScreenVideoDisablesOtherPresentationCommands() async {
-        let fixture = await makePlayingMovieFixture()
+    @Test func inheritedFullScreenVideoDisablesOtherPresentationCommands() async throws {
+        let fixture = try await makePlayingMovieFixture()
         let state = LibraryBrowsingState()
         let playlist = Playlist(name: "Playlist")
         state.navigatePlaylists(to: [playlist.id])
@@ -140,8 +140,8 @@ struct CompactLibraryCommandDestinationTests {
         #expect(state.bulkSelection.contains(fixture.queue[0].id))
     }
 
-    @Test func commandsCapturedBeforeChangingTabsCannotDismissOrPauseTheNewDestination() async {
-        let fixture = await makePlayingMovieFixture()
+    @Test func commandsCapturedBeforeChangingTabsCannotDismissOrPauseTheNewDestination() async throws {
+        let fixture = try await makePlayingMovieFixture()
         let state = LibraryBrowsingState()
         state.selectPhoneTab(2)
         state.showsVideoFullScreen = true
@@ -164,7 +164,7 @@ struct CompactLibraryCommandDestinationTests {
         #expect(fixture.video.pauseCallCount == 0)
     }
 
-    private func makePlayingMovieFixture() async -> CompactPlayingMovieFixture {
+    private func makePlayingMovieFixture() async throws -> CompactPlayingMovieFixture {
         let movie = MediaItem(title: "Movie", duration: 30, isVideo: true, bookmarkData: Data([1]), fileName: "Movie")
         let next = MediaItem(
             title: "Next movie", duration: 30, isVideo: true, bookmarkData: Data([2]), fileName: "Next"
@@ -172,11 +172,7 @@ struct CompactLibraryCommandDestinationTests {
         let fixture = makePlayerFixture(urlsByID: [movie.id: URL(fileURLWithPath: "/tmp/compact-command-movie.mov")])
         let queue = [movie, next]
         fixture.player.play(item: movie, in: queue)
-        for _ in 0..<20 {
-            await Task.yield()
-            if fixture.player.isPlaying { break }
-        }
-        #expect(fixture.player.isPlaying)
+        try await waitForPlaybackToStart(fixture.player)
         return CompactPlayingMovieFixture(player: fixture.player, video: fixture.video, queue: queue)
     }
 

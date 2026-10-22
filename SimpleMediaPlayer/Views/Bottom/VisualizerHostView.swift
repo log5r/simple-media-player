@@ -3,11 +3,18 @@ import SwiftUI
 struct VisualizerHostView: View {
     let player: PlayerViewModel
     let palette: LEDDisplayPalette
+    let reduceMotionOverride: Bool?
     @AppStorage("ledVisualizerID") private var visualizerID = "spectrum.stereo"
     @AppStorage(AppSettingsKey.visualizerResponseMode)
     private var responseModeRaw = AppSettingsDefault.visualizerResponseMode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let registry = VisualizerRegistry.shared
+
+    init(player: PlayerViewModel, palette: LEDDisplayPalette, reduceMotionOverride: Bool? = nil) {
+        self.player = player
+        self.palette = palette
+        self.reduceMotionOverride = reduceMotionOverride
+    }
     private var style: LEDStyle {
         LEDStyle(palette: palette)
     }
@@ -15,36 +22,9 @@ struct VisualizerHostView: View {
     var body: some View {
         let visualizer = registry.visualizer(for: visualizerID)
         let responseMode = VisualizerResponseMode(rawValue: responseModeRaw) ?? .normal
+        let reduceMotion = reduceMotionOverride ?? self.reduceMotion
 
-        Group {
-            if reduceMotion {
-                Canvas { context, size in
-                    draw(
-                        visualizer: visualizer,
-                        context: context,
-                        size: size,
-                        frame: .silent()
-                    )
-                }
-            } else {
-                // The body reads only the idle flag. Per-frame values are read inside the Canvas, so new
-                // analysis frames redraw the Canvas without re-evaluating this view.
-                TimelineView(.animation(
-                    minimumInterval: 1.0 / responseMode.framesPerSecond,
-                    paused: player.isVisualizerIdle
-                )) { _ in
-                    Canvas { context, size in
-                        draw(
-                            visualizer: visualizer,
-                            context: context,
-                            size: size,
-                            frame: player.audioFrame
-                        )
-                    }
-                }
-                .modifier(VisualizationConsumer(player: player))
-            }
-        }
+        visualizationContent(visualizer: visualizer, responseMode: responseMode, reduceMotion: reduceMotion)
         .contentShape(Rectangle())
         .onTapGesture {
             visualizerID = registry.next(after: visualizerID).id
@@ -77,11 +57,39 @@ struct VisualizerHostView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: visualizerID)
     }
 
+    func visualizationContent(
+        visualizer: any LEDVisualizer, responseMode: VisualizerResponseMode, reduceMotion: Bool
+    ) -> some View {
+        Group {
+            if reduceMotion {
+                Canvas { context, size in
+                    draw(visualizer: visualizer, context: context, size: size, frame: .silent(), reduceMotion: true)
+                }
+            } else {
+                // Read only the idle flag here. Canvas reads per-frame values while drawing,
+                // so analysis frames do not invalidate the enclosing view.
+                TimelineView(.animation(
+                    minimumInterval: 1.0 / responseMode.framesPerSecond,
+                    paused: player.isVisualizerIdle
+                )) { _ in
+                    Canvas { context, size in
+                        draw(
+                            visualizer: visualizer, context: context, size: size,
+                            frame: player.audioFrame, reduceMotion: false
+                        )
+                    }
+                }
+                .modifier(VisualizationConsumer(player: player))
+            }
+        }
+    }
+
     private func draw(
         visualizer: any LEDVisualizer,
         context: GraphicsContext,
         size: CGSize,
-        frame: AudioFrameData
+        frame: AudioFrameData,
+        reduceMotion: Bool
     ) {
         var drawingContext = context
         visualizer.draw(

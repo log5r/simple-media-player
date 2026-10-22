@@ -10,6 +10,17 @@ import os
 /// into a bare MPEG stream, AAC and Apple Lossless go into M4A, and PCM goes into AIFF or WAV. Any other
 /// encoding is converted to AAC and reported as transcoded.
 nonisolated enum MusicLibraryTrackExporter {
+    enum Event: Equatable, Sendable {
+        case sessionExporting
+        case sessionCancelled
+        case mpegPacketWritten
+        case validationStarted
+        case validationFinished
+    }
+
+    // Task-scoped seams keep concurrent exports independent while allowing tests to observe actual I/O.
+    @TaskLocal static var observeExport: (@Sendable (Event, URL) -> Void)?
+    @TaskLocal static var passthroughFileTypes: [AVFileType]?
     enum OutputFormat: String, Sendable {
         case mp3
         case m4a
@@ -93,7 +104,12 @@ nonisolated enum MusicLibraryTrackExporter {
         }
         // `supportedFileTypes` lists containers the preset can write for any asset; only
         // `compatibleFileTypes` reflects this asset's encoding.
-        let compatible = Set(await session.compatibleFileTypes)
+        let compatible: Set<AVFileType>
+        if let passthroughFileTypes {
+            compatible = Set(passthroughFileTypes)
+        } else {
+            compatible = Set(await session.compatibleFileTypes)
+        }
         let preferred: [(AVFileType, OutputFormat)]
         if formatID == kAudioFormatLinearPCM {
             let prefersAIFF = ["aif", "aiff", "aifc"].contains(sourceExtension.lowercased())
@@ -126,11 +142,26 @@ nonisolated enum MusicLibraryTrackExporter {
         }
         // `cancelExport()` may be called from any thread; the session is used by no other task.
         nonisolated(unsafe) let cancellableSession = session
+        let observer = observeExport
+        let observation = observer.map { observer in
+            let states = cancellableSession.states()
+            return Task {
+                for await state in states {
+                    if Task.isCancelled { return }
+                    if case .exporting = state {
+                        observer(.sessionExporting, outputURL)
+                        return
+                    }
+                }
+            }
+        }
+        defer { observation?.cancel() }
         do {
             try await withTaskCancellationHandler {
                 try await session.export(to: outputURL, as: fileType)
             } onCancel: {
                 cancellableSession.cancelExport()
+                observer?(.sessionCancelled, outputURL)
             }
         } catch {
             try Task.checkCancellation()
@@ -143,8 +174,11 @@ nonisolated enum MusicLibraryTrackExporter {
     /// container the reader took them from. Runs off the caller's actor because the reader blocks.
     private static func copyMPEGFrames(assetURL: URL, to outputURL: URL) async throws {
         let readerHandle = ReaderHandle()
-        let copy = Task.detached(priority: .userInitiated) {
-            try await readMPEGFrames(assetURL: assetURL, to: outputURL, readerHandle: readerHandle)
+        let observer = observeExport
+        let copy = Task.detached(executorPreference: BlockingWorkExecutor.shared, priority: .userInitiated) {
+            try await readMPEGFrames(
+                assetURL: assetURL, to: outputURL, readerHandle: readerHandle, observer: observer
+            )
         }
         try await withTaskCancellationHandler {
             try await copy.value
@@ -156,7 +190,8 @@ nonisolated enum MusicLibraryTrackExporter {
     }
 
     private static func readMPEGFrames(
-        assetURL: URL, to outputURL: URL, readerHandle: ReaderHandle
+        assetURL: URL, to outputURL: URL, readerHandle: ReaderHandle,
+        observer: (@Sendable (Event, URL) -> Void)?
     ) async throws {
         let asset = AVURLAsset(url: assetURL)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
@@ -182,6 +217,7 @@ nonisolated enum MusicLibraryTrackExporter {
                 throw CancellationError()
             }
             try handle.write(contentsOf: packetData(of: sampleBuffer))
+            observer?(.mpegPacketWritten, outputURL)
         }
         switch reader.status {
         case .completed:
@@ -214,10 +250,13 @@ nonisolated enum MusicLibraryTrackExporter {
     /// The open cannot be interrupted, so a cancelled caller stops waiting and the queued open finishes
     /// on its own with its result discarded, holding its `validationLimiter` slot until then.
     private static func validateOutput(at url: URL) async throws -> TimeInterval {
+        let observer = observeExport
         let result = try await FileSystemWorkQueue.runCancellable(
             qos: .userInitiated, limiter: validationLimiter
         ) {
-            Result { () throws -> TimeInterval in
+            observer?(.validationStarted, url)
+            defer { observer?(.validationFinished, url) }
+            return Result { () throws -> TimeInterval in
                 let file = try AVAudioFile(forReading: url)
                 let sampleRate = file.fileFormat.sampleRate
                 guard file.length > 0, sampleRate > 0 else { throw MusicLibraryTrackError.outputNotDecodable }

@@ -3,51 +3,6 @@ import Foundation
 import Observation
 
 @MainActor
-protocol MediaURLResolving: AnyObject {
-    func resolvedURL(for item: MediaItem) -> URL?
-}
-
-@MainActor
-protocol AudioPlaybackControlling: AnyObject {
-    var currentTime: TimeInterval { get }
-    var duration: TimeInterval { get }
-    var onFinished: (@MainActor () -> Void)? { get set }
-    var onError: (@MainActor (String) -> Void)? { get set }
-    var onFormatLoaded: (@MainActor (_ duration: TimeInterval, _ formatInfo: MediaFormatInfo) -> Void)? { get set }
-
-    func setVolume(_ volume: Float)
-    func setPitchCents(_ cents: Float)
-    func setPlaybackRate(_ rate: Float)
-    func setVolumeNormalizationEnabled(_ enabled: Bool)
-    func setEqualizer(_ settings: EqualizerSettings)
-    func load(url: URL)
-    func play()
-    func pause()
-    func stop(reset: Bool)
-    func suspend()
-    func seek(to time: TimeInterval, autoPlay: Bool)
-    func resetEngine()
-}
-
-@MainActor
-protocol VideoPlaybackControlling: AnyObject {
-    var player: AVPlayer { get }
-    var currentTime: TimeInterval { get }
-    var duration: TimeInterval { get }
-    var onFinished: (() -> Void)? { get set }
-    var onFormatLoaded: (@MainActor (MediaFormatInfo) -> Void)? { get set }
-
-    func load(url: URL) async
-    func play()
-    func pause()
-    func setVolume(_ volume: Float)
-    func setEqualizer(_ settings: EqualizerSettings)
-    func stop()
-    func close()
-    func seek(to time: TimeInterval)
-}
-
-@MainActor
 @Observable
 final class PlayerViewModel {
     var currentItem: MediaItem?
@@ -82,7 +37,7 @@ final class PlayerViewModel {
     var audioFrame = AudioFrameData.silent()
     /// True while nothing plays and the last frame is silent. It is assigned only when it changes, so a view
     /// that pauses its timeline with it is not invalidated by every analysis frame.
-    private(set) var isVisualizerIdle = true
+    var isVisualizerIdle = true
     var isVideoMode = false
     var showVideoArea = false
     var errorMessage: String?
@@ -101,64 +56,28 @@ final class PlayerViewModel {
     static let playbackRateRange = 0.5...2.0
     static let playbackRateStep = 0.05
 
-    var canResume: Bool {
-        currentItem != nil && isPlaying == false
-    }
-
-    var hasPitchOrRateAdjustment: Bool {
-        pitchSemitones != 0 || abs(playbackRate - 1.0) > 0.001
-    }
-
-    var activeEqualizerPresetName: String {
-        guard equalizer.isEnabled else { return L10n.string("Off") }
-        if let preset = BuiltInEqualizerPreset.allCases.first(where: { $0.settings == equalizer }) {
-            return preset.name
-        }
-        if let preset = userEqualizerPresets.first(where: { $0.settings == equalizer }) {
-            return preset.name
-        }
-        return L10n.string("Custom")
-    }
-
-    var canPause: Bool {
-        currentItem != nil && isPlaying
-    }
-
-    var canStop: Bool {
-        currentItem != nil
-    }
-
-    var canSkipToNext: Bool {
-        guard let currentItem, let index = queue.firstIndex(where: { $0.id == currentItem.id }) else {
-            return false
-        }
-        return queue.indices.contains(queue.index(after: index))
-    }
-
-    var canSkipToPrevious: Bool {
-        guard let currentItem, let index = queue.firstIndex(where: { $0.id == currentItem.id }) else {
-            return false
-        }
-        return index > queue.startIndex
-    }
+    @ObservationIgnored let audioSession: PlaybackAudioSession
+    var isPreparingPlayback = false
+    @ObservationIgnored var pendingPlaybackStart: Task<Void, Never>?
+    @ObservationIgnored var pendingVideoLoad: Task<Void, Never>?
 
     @ObservationIgnored private let libraryService: any MediaURLResolving
-    @ObservationIgnored private let analyzer: SpectrumAnalyzer
-    @ObservationIgnored private let audioEngine: any AudioPlaybackControlling
+    @ObservationIgnored let analyzer: SpectrumAnalyzer
+    @ObservationIgnored let audioEngine: any AudioPlaybackControlling
     @ObservationIgnored let videoService: any VideoPlaybackControlling
-    @ObservationIgnored private let equalizerDefaults: UserDefaults
-    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored let equalizerDefaults: UserDefaults
+    @ObservationIgnored var timer: Timer?
     /// The repeating interval of the playback clock, or nil while it rests or is disabled.
-    @ObservationIgnored private(set) var playbackClockInterval: TimeInterval?
+    @ObservationIgnored var playbackClockInterval: TimeInterval?
     /// Views on screen that draw `audioFrame`. Analysis stops while there are none or the app is in the background.
-    @ObservationIgnored private var visualizationConsumers: Set<UUID> = []
-    @ObservationIgnored private(set) var isInBackground = false
-    @ObservationIgnored private(set) var isVisualizationSuspended = false
-    @ObservationIgnored private let clockEnabled: Bool
+    @ObservationIgnored var visualizationConsumers: Set<UUID> = []
+    @ObservationIgnored var isInBackground = false
+    @ObservationIgnored var isVisualizationSuspended = false
+    @ObservationIgnored let clockEnabled: Bool
     /// Alive while a transient item is current or queued; see `TransientPlaybackSession`.
     @ObservationIgnored private(set) var transientSession: TransientPlaybackSession?
-    private var lastAudibleVolume = 0.75
-    @ObservationIgnored private var spectrumFrameRateCounter = SpectrumFrameRateCounter()
+    var lastAudibleVolume = 0.75
+    @ObservationIgnored var spectrumFrameRateCounter = SpectrumFrameRateCounter()
 
     convenience init(libraryService: LibraryService) {
         let analyzer = SpectrumAnalyzer()
@@ -170,7 +89,8 @@ final class PlayerViewModel {
             volumeNormalizationEnabled: UserDefaults.standard.object(
                 forKey: AppSettingsKey.volumeNormalizationEnabled
             ) as? Bool ?? AppSettingsDefault.volumeNormalizationEnabled,
-            equalizer: EqualizerSettings.load()
+            equalizer: EqualizerSettings.load(),
+            audioSession: .system()
         )
     }
 
@@ -183,7 +103,8 @@ final class PlayerViewModel {
         volumeNormalizationEnabled: Bool = AppSettingsDefault.volumeNormalizationEnabled,
         equalizer: EqualizerSettings = .flat,
         equalizerDefaults: UserDefaults = .standard,
-        musicAnalysis: MusicAnalysisController = MusicAnalysisController()
+        musicAnalysis: MusicAnalysisController = MusicAnalysisController(),
+        audioSession: PlaybackAudioSession = PlaybackAudioSession()
     ) {
         self.libraryService = libraryService
         self.analyzer = analyzer
@@ -193,6 +114,7 @@ final class PlayerViewModel {
         self.equalizer = equalizer
         self.equalizerDefaults = equalizerDefaults
         self.musicAnalysis = musicAnalysis
+        self.audioSession = audioSession
         self.clockEnabled = startsClock
         self.userEqualizerPresets = UserEqualizerPreset.load(from: equalizerDefaults)
         analyzer.onFrame = { [weak self] frame in
@@ -211,6 +133,7 @@ final class PlayerViewModel {
         }
         audioEngine.onError = { [weak self] message in
             guard let self, !self.isVideoMode else { return }
+            self.cancelPendingPlaybackStart()
             self.playbackGeneration &+= 1
             self.errorMessage = message
             self.isPaused = false
@@ -222,105 +145,12 @@ final class PlayerViewModel {
             self?.duration = duration
             self?.formatInfo = formatInfo
         }
-        configureAudioSession()
         updateVisualizationSuspension()
         audioEngine.setVolumeNormalizationEnabled(volumeNormalizationEnabled)
         audioEngine.setEqualizer(equalizer)
         videoService.setEqualizer(equalizer)
         applyVolume()
     }
-}
-
-extension PlayerViewModel {
-    func setVisualizerBandCount(_ count: Int?) {
-        analyzer.setBandCount(count)
-    }
-
-    func setVisualizerResponseMode(_ mode: VisualizerResponseMode) {
-        analyzer.setResponseMode(mode)
-    }
-
-    func setVolumeNormalizationEnabled(_ enabled: Bool) {
-        volumeNormalizationEnabled = enabled
-        audioEngine.setVolumeNormalizationEnabled(enabled)
-    }
-
-    func setEqualizerEnabled(_ enabled: Bool) {
-        updateEqualizer { settings in
-            settings.isEnabled = enabled
-        }
-    }
-
-    func setEqualizerBandGain(index: Int, decibels: Float) {
-        guard equalizer.bandGains.indices.contains(index) else { return }
-        updateEqualizer { settings in
-            settings.bandGains[index] = EqualizerSettings.clampedGain(decibels)
-        }
-    }
-
-    func setEqualizerPreamp(decibels: Float) {
-        updateEqualizer { settings in
-            settings.preampDecibels = EqualizerSettings.clampedGain(decibels)
-        }
-    }
-
-    func setEqualizerReverbPreset(_ preset: EqualizerReverbPreset) {
-        updateEqualizer { settings in
-            settings.reverbPreset = preset
-        }
-    }
-
-    func setEqualizerReverbWetDryMix(_ mix: Float) {
-        updateEqualizer { settings in
-            settings.reverbWetDryMix = EqualizerSettings.clampedReverbWetDryMix(mix)
-        }
-    }
-
-    func applyEqualizerPreset(_ preset: BuiltInEqualizerPreset) {
-        replaceEqualizer(with: preset.settings)
-    }
-
-    func applyUserEqualizerPreset(id: UUID) {
-        guard let preset = userEqualizerPresets.first(where: { $0.id == id }) else { return }
-        var settings = preset.settings
-        settings.isEnabled = true
-        replaceEqualizer(with: settings)
-    }
-
-    func saveCurrentEqualizerPreset(named name: String) {
-        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalizedName.isEmpty == false else { return }
-        var settings = equalizer
-        settings.isEnabled = true
-        if let index = userEqualizerPresets.firstIndex(where: {
-            $0.name.caseInsensitiveCompare(normalizedName) == .orderedSame
-        }) {
-            userEqualizerPresets[index].name = normalizedName
-            userEqualizerPresets[index].settings = settings
-        } else {
-            userEqualizerPresets.append(UserEqualizerPreset(name: normalizedName, settings: settings))
-        }
-        UserEqualizerPreset.save(userEqualizerPresets, to: equalizerDefaults)
-    }
-
-    func deleteUserEqualizerPreset(id: UUID) {
-        userEqualizerPresets.removeAll { $0.id == id }
-        UserEqualizerPreset.save(userEqualizerPresets, to: equalizerDefaults)
-    }
-
-    func flattenEqualizer() {
-        updateEqualizer { settings in
-            settings.preampDecibels = 0
-            settings.bandGains = Array(repeating: 0, count: EqualizerSettings.bandCount)
-            settings.reverbPreset = .mediumRoom
-            settings.reverbWetDryMix = 0
-        }
-    }
-}
-
-struct DeferredPlaybackRequest: Equatable {
-    let id: UUID
-    let transportGeneration: UInt64
 }
 
 extension PlayerViewModel {
@@ -367,6 +197,8 @@ extension PlayerViewModel {
     }
 
     func play(item: MediaItem, in queue: [MediaItem]) {
+        cancelPendingPlaybackStart()
+        pendingVideoLoad = nil
         playbackGeneration &+= 1
         transportGeneration &+= 1
         // Selecting a track supersedes a pending deferred request, including its failure report.
@@ -397,25 +229,25 @@ extension PlayerViewModel {
         if item.isVideo {
             audioEngine.suspend()
             let generation = playbackGeneration
-            Task {
+            let videoService = videoService
+            pendingVideoLoad = Task { [weak self] in
                 await videoService.load(url: url)
-                guard playbackGeneration == generation, currentItem?.id == item.id, isVideoMode else { return }
+                guard let self, playbackGeneration == generation,
+                      currentItem?.id == item.id, isVideoMode else { return }
                 duration = videoService.duration > 0 ? videoService.duration : item.duration
-                videoService.play()
-                isPlaying = true
+                pendingVideoLoad = nil
             }
         } else {
             videoService.close()
             audioEngine.load(url: url)
-            audioEngine.play()
-            isPlaying = true
             isVideoMode = false
             showVideoArea = false
         }
+        requestPlaybackStart()
     }
 
     func togglePlayPause() {
-        if isPlaying {
+        if canPause {
             pause()
         } else {
             resume()
@@ -426,17 +258,13 @@ extension PlayerViewModel {
         guard currentItem != nil, isPlaying == false else { return }
         transportGeneration &+= 1
         resetSpectrumFrameRate()
-        if isVideoMode {
-            videoService.play()
-        } else {
-            audioEngine.play()
-        }
-        isPlaying = true
+        requestPlaybackStart()
     }
 
     func pause() {
-        guard currentItem != nil, isPlaying else { return }
+        guard canPause else { return }
         transportGeneration &+= 1
+        cancelPendingPlaybackStart()
         if isVideoMode {
             videoService.pause()
         } else {
@@ -448,6 +276,7 @@ extension PlayerViewModel {
     }
 
     func stop() {
+        cancelPendingPlaybackStart()
         playbackGeneration &+= 1
         transportGeneration &+= 1
         isPaused = false
@@ -493,54 +322,14 @@ extension PlayerViewModel {
         }
     }
 
-    func setVolume(_ value: Double) {
-        let clamped = max(0, min(1, value))
-        volume = clamped
-        if clamped > 0 {
-            lastAudibleVolume = clamped
-            isMuted = false
-        }
-        applyVolume()
-    }
-
-    func toggleMuted() {
-        if isMuted {
-            isMuted = false
-            if volume == 0 {
-                volume = lastAudibleVolume
-            }
-        } else {
-            if volume > 0 {
-                lastAudibleVolume = volume
-            }
-            isMuted = true
-        }
-        applyVolume()
-    }
-
-    func setPitchSemitones(_ value: Int) {
-        let clamped = max(Self.pitchSemitoneRange.lowerBound, min(Self.pitchSemitoneRange.upperBound, value))
-        pitchSemitones = clamped
-        audioEngine.setPitchCents(Float(clamped * 100))
-    }
-
-    func setPlaybackRate(_ value: Double) {
-        let clamped = max(Self.playbackRateRange.lowerBound, min(Self.playbackRateRange.upperBound, value))
-        let quantized = (clamped / Self.playbackRateStep).rounded() * Self.playbackRateStep
-        playbackRate = quantized
-        audioEngine.setPlaybackRate(Float(quantized))
-    }
-
-    func resetPitchAndRate() {
-        setPitchSemitones(0)
-        setPlaybackRate(1.0)
-    }
-
     // 再生速度変更に起因する周波数欠落バグの切り分け用。エンジンを丸ごと
     // 作り直すが、再生位置・再生状態・各種設定はエンジン側が引き継ぐので
     // ViewModel の公開状態はそのままでよい
     func resetAudioEngine() {
-        if !isVideoMode { playbackGeneration &+= 1 }
+        if !isVideoMode {
+            cancelPendingPlaybackStart()
+            playbackGeneration &+= 1
+        }
         audioEngine.resetEngine()
     }
 
@@ -588,95 +377,8 @@ extension PlayerViewModel {
         analyzer.setPlaybackActive(isPlaying, currentTime: target)
     }
 
-    private func updateClock() {
-        timer?.invalidate()
-        timer = nil
-        playbackClockInterval = nil
-        guard clockEnabled else { return }
-        // .common モードで登録しないと、マウストラッキング中（ボタン長押しなど）に
-        // RunLoop が .eventTracking モードになりタイマーが発火しない
-        // After the engine's asynchronous pause, synchronize the clock once, then rest.
-        // In the background only the position is kept roughly current; track ends arrive through onFinished.
-        let interval = isPlaying ? (isInBackground ? 1.0 : 1.0 / 30) : 0.5
-        if isPlaying { playbackClockInterval = interval }
-        let timer = Timer(timeInterval: interval, repeats: isPlaying) { [weak self] timer in
-            guard let self else {
-                timer.invalidate()
-                return
-            }
-            MainActor.assumeIsolated {
-                self.synchronizePlaybackClock()
-            }
-        }
-        timer.tolerance = 0.003
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-    }
-
-    func synchronizePlaybackClock() {
-        guard isPlaying || currentItem != nil else { return }
-        if isVideoMode {
-            currentTime = videoService.currentTime
-            if duration <= 0, videoService.duration > 0 { duration = videoService.duration }
-        } else {
-            currentTime = audioEngine.currentTime
-            if duration <= 0, audioEngine.duration > 0 { duration = audioEngine.duration }
-        }
-    }
-
-    private func configureAudioSession() {
-        #if os(iOS)
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        #endif
-    }
-
-    private func applyVolume() {
-        let effectiveVolume = isMuted ? Float(0) : Float(volume)
-        audioEngine.setVolume(effectiveVolume)
-        videoService.setVolume(effectiveVolume)
-    }
-
-    private func updateEqualizer(_ update: (inout EqualizerSettings) -> Void) {
-        var settings = equalizer
-        update(&settings)
-        replaceEqualizer(with: settings)
-    }
-
-    private func replaceEqualizer(with settings: EqualizerSettings) {
-        equalizer = settings
-        audioEngine.setEqualizer(settings)
-        videoService.setEqualizer(settings)
-        settings.save(to: equalizerDefaults)
-    }
-
-    private func acceptAudioFrame(_ frame: AudioFrameData) {
-        audioFrame = frame
-        updateVisualizerIdle()
-        guard frame.isPlaying else {
-            resetSpectrumFrameRate()
-            return
-        }
-        if let frameRate = spectrumFrameRateCounter.recordFrame(at: ProcessInfo.processInfo.systemUptime) {
-            spectrumFrameRate = frameRate
-        }
-    }
-
-    private func resetSpectrumFrameRate() {
-        spectrumFrameRate = 0
-        spectrumFrameRateCounter.reset()
-    }
-
-    private func updateVisualizerIdle() {
-        let idle = isPlaying == false && audioFrame.isSilent
-        if isVisualizerIdle != idle { isVisualizerIdle = idle }
-    }
-
     private func closeVideoSession() {
+        pendingVideoLoad = nil
         playbackGeneration &+= 1
         musicAnalysis.reset()
         videoService.close()
@@ -689,48 +391,6 @@ extension PlayerViewModel {
         isVideoMode = false
         showVideoArea = false
         analyzer.setPlaybackActive(false, currentTime: 0)
-        resetSpectrumFrameRate()
-    }
-}
-
-// MARK: - Visualization suppression
-
-extension PlayerViewModel {
-    /// Registers a view on screen that draws `audioFrame`. Registering the same ID again has no effect.
-    func addVisualizationConsumer(_ id: UUID) {
-        visualizationConsumers.insert(id)
-        updateVisualizationSuspension()
-    }
-
-    func removeVisualizationConsumer(_ id: UUID) {
-        visualizationConsumers.remove(id)
-        updateVisualizationSuspension()
-    }
-
-    /// Only the background phase counts: on iOS a locked device or another app in front, on macOS a hidden
-    /// app. Inactive scenes can still be seen, such as an iPhone app behind Control Center or in the app
-    /// switcher.
-    func setInBackground(_ background: Bool) {
-        guard isInBackground != background else { return }
-        isInBackground = background
-        updateVisualizationSuspension()
-        guard isPlaying else { return }
-        updateClock()
-        // The 1 Hz clock may be up to a second behind; show the current position at once.
-        if background == false { synchronizePlaybackClock() }
-    }
-
-    private func updateVisualizationSuspension() {
-        let suspended = isInBackground || visualizationConsumers.isEmpty
-        guard isVisualizationSuspended != suspended else { return }
-        isVisualizationSuspended = suspended
-        analyzer.setAnalysisEnabled(suspended == false)
-        guard suspended else { return }
-        // No frames arrive while suspended. Drop the last one so a returning display does not freeze on it.
-        audioFrame = .silent(
-            bandCount: audioFrame.bandsL.count, currentTime: audioFrame.currentTime, isPlaying: isPlaying
-        )
-        updateVisualizerIdle()
         resetSpectrumFrameRate()
     }
 }

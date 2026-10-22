@@ -55,50 +55,59 @@ nonisolated enum WAVMetadataWriter {
                 for: draft, existingTagData: existingTag, requiresExistingTag: existingTag != nil
             )
             let updatedID3 = try makeChunk(id: Data("id3 ".utf8), payload: updatedTag)
-            var contentsSize: UInt64 = 4
-            var didWriteID3 = false
-            var didWriteINFO = false
-            var pieces: [(Range<UInt64>?, Data?)] = []
-            for chunk in chunks {
-                let isInfo = try isInfoChunk(chunk, source: source)
-                if id3IDs.contains(chunk.id) {
-                    if didWriteID3 == false {
-                        pieces.append((nil, updatedID3))
-                        contentsSize += UInt64(updatedID3.count)
-                        didWriteID3 = true
-                    }
-                } else if editsINFO(draft) && isInfo {
-                    let payload = try infoPayload(
-                        draft, preserving: read(chunk.content, source: source),
-                        includeEditableFields: didWriteINFO == false
-                    )
-                    let updated = try makeChunk(id: infoID, payload: payload)
-                    pieces.append((nil, updated))
-                    contentsSize += UInt64(updated.count)
-                    didWriteINFO = true
-                } else {
-                    pieces.append((chunk.range, nil))
-                    contentsSize += chunk.range.upperBound - chunk.range.lowerBound
-                }
-            }
-            if didWriteID3 == false {
-                pieces.append((nil, updatedID3))
-                contentsSize += UInt64(updatedID3.count)
-            }
-            if editsINFO(draft) && didWriteINFO == false {
-                let updatedINFO = try makeChunk(id: infoID, payload: infoPayload(draft))
-                pieces.append((nil, updatedINFO))
-                contentsSize += UInt64(updatedINFO.count)
+            let pieces = try rewrittenPieces(chunks, draft: draft, source: source, updatedID3: updatedID3)
+            let contentsSize = pieces.reduce(UInt64(4)) { size, piece in
+                size + (piece.data.map { UInt64($0.count) } ?? piece.range.map { $0.upperBound - $0.lowerBound } ?? 0)
             }
             guard contentsSize <= UInt32.max else { throw MediaMetadataEditError.invalidAudioMetadata }
-            try output.write(contentsOf: Data("RIFF".utf8) + XiphMetadata.little32(UInt32(contentsSize)) + Data("WAVE".utf8))
+            let header = Data("RIFF".utf8) + XiphMetadata.little32(UInt32(contentsSize)) + Data("WAVE".utf8)
+            try output.write(contentsOf: header)
             for (range, data) in pieces {
-                if let range { try MediaFileRewriter.copy(from: source, range: range, to: output) }
-                else if let data { try output.write(contentsOf: data) }
+                if let range {
+                    try MediaFileRewriter.copy(from: source, range: range, to: output)
+                } else if let data {
+                    try output.write(contentsOf: data)
+                }
             }
-            let originalEnd = 8 + UInt64(XiphMetadata.uint32(try MediaFileRewriter.read(from: source, at: 4, count: 4), at: 0, little: true))
+            let originalSize = try MediaFileRewriter.read(from: source, at: 4, count: 4)
+            let originalEnd = 8 + UInt64(XiphMetadata.uint32(originalSize, at: 0, little: true))
             try MediaFileRewriter.copy(from: source, range: originalEnd..<size, to: output)
         }
+    }
+
+    private static func rewrittenPieces(
+        _ chunks: [Chunk], draft: MediaMetadataEditDraft, source: FileHandle, updatedID3: Data
+    ) throws -> [(range: Range<UInt64>?, data: Data?)] {
+        var didWriteID3 = false
+        var didWriteINFO = false
+        var pieces: [(range: Range<UInt64>?, data: Data?)] = []
+        for chunk in chunks {
+            let isInfo = try isInfoChunk(chunk, source: source)
+            if id3IDs.contains(chunk.id) {
+                if didWriteID3 == false {
+                    pieces.append((nil, updatedID3))
+                    didWriteID3 = true
+                }
+            } else if editsINFO(draft) && isInfo {
+                let payload = try infoPayload(
+                    draft, preserving: read(chunk.content, source: source),
+                    includeEditableFields: didWriteINFO == false
+                )
+                let updated = try makeChunk(id: infoID, payload: payload)
+                pieces.append((nil, updated))
+                didWriteINFO = true
+            } else {
+                pieces.append((chunk.range, nil))
+            }
+        }
+        if didWriteID3 == false {
+            pieces.append((nil, updatedID3))
+        }
+        if editsINFO(draft) && didWriteINFO == false {
+            let updatedINFO = try makeChunk(id: infoID, payload: infoPayload(draft))
+            pieces.append((nil, updatedINFO))
+        }
+        return pieces
     }
 
     private static func parse(_ source: FileHandle, size: UInt64) throws -> [Chunk] {
@@ -207,7 +216,9 @@ nonisolated enum WAVMetadataWriter {
         }
     }
 
-    private static func combine(primary: MediaMetadataEmbeddedValues, fallback: MediaMetadataEmbeddedValues) -> MediaMetadataEmbeddedValues {
+    private static func combine(
+        primary: MediaMetadataEmbeddedValues, fallback: MediaMetadataEmbeddedValues
+    ) -> MediaMetadataEmbeddedValues {
         MediaMetadataEmbeddedValues(
             title: firstNonblank(primary.title, fallback.title),
             artist: firstNonblank(primary.artist, fallback.artist),

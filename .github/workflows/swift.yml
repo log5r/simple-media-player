@@ -19,6 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Verify xcsift availability
+        run: |
+          command -v xcsift >/dev/null 2>&1 || {
+            echo "::error::xcsift must be preinstalled on the xcode-27 runner."
+            exit 1
+          }
+
       - name: Restore Swift package checkouts
         uses: actions/cache@v6
         with:
@@ -43,7 +50,7 @@ jobs:
       - name: Build for macOS (arm64 and x86_64)
         if: ${{ env.UNIVERSAL_BUILD == 'true' }}
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-universal-build \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'generic/platform=macOS' \
@@ -55,36 +62,45 @@ jobs:
       # Builds the app and test targets for arm64 once. The test steps reuse these products.
       - name: Build for macOS testing
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-build-for-testing \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/DerivedData \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
+            -enableCodeCoverage YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
 
-      - name: Build for iOS Simulator
+      - name: Select iPhone simulator
+        id: ios_simulator
+        run: |
+          simulator_id=$(xcrun simctl list devices --json | python3 scripts/select-ios-test-device.py) || exit "$?"
+          printf 'udid=%s\n' "$simulator_id" >> "$GITHUB_OUTPUT"
+
+      - name: Build for iOS Simulator testing
+        id: ios_build
         run: |
           arch_settings=()
           if [[ "${UNIVERSAL_BUILD}" != true ]]; then
             arch_settings=(ARCHS=arm64)
           fi
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh iOS-build-for-testing \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath .build/DerivedData \
+            -derivedDataPath .build/DerivedData-ios \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
             "${arch_settings[@]}" \
-            CODE_SIGNING_ALLOWED=NO build
+            -enableCodeCoverage YES \
+            CODE_SIGNING_ALLOWED=NO build-for-testing
 
       - name: Run macOS unit tests
         id: unit_tests
         run: |
           mkdir -p "${RUNNER_TEMP}/TestResults"
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-unit-tests \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
@@ -94,6 +110,25 @@ jobs:
             -only-testing:SimpleMediaPlayerTests \
             -parallel-testing-enabled NO \
             -resultBundlePath "${RUNNER_TEMP}/TestResults/AllUnitTests.xcresult" \
+            -enableCodeCoverage YES \
+            CODE_SIGNING_ALLOWED=NO test-without-building
+
+      - name: Run iOS Simulator unit tests
+        id: ios_unit_tests
+        if: ${{ always() && steps.ios_build.outcome == 'success' && steps.ios_simulator.outcome == 'success' }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/TestResults"
+          ./scripts/ci-xcodebuild.sh iOS-unit-tests \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination "platform=iOS Simulator,id=${{ steps.ios_simulator.outputs.udid }}" \
+            -derivedDataPath .build/DerivedData-ios \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            -only-testing:SimpleMediaPlayerTests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "${RUNNER_TEMP}/TestResults/iOSUnitTests.xcresult" \
+            -enableCodeCoverage YES \
             CODE_SIGNING_ALLOWED=NO test-without-building
 
       # Diagnostic runs retain the original failure and isolate each suite from the others.
@@ -102,7 +137,7 @@ jobs:
         if: ${{ failure() && steps.unit_tests.outcome == 'failure' }}
         timeout-minutes: 10
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-lyrics-diagnostic \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
@@ -118,7 +153,7 @@ jobs:
         if: ${{ failure() && steps.unit_tests.outcome == 'failure' }}
         timeout-minutes: 10
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-loudness-diagnostic \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
@@ -129,31 +164,51 @@ jobs:
             -resultBundlePath "${RUNNER_TEMP}/TestResults/AudioLoudnessNormalizationTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO test-without-building
 
-      - name: Summarize macOS test outcomes
-        if: ${{ always() && steps.unit_tests.outcome != 'skipped' }}
+      - name: Summarize unit test outcomes
+        if: ${{ always() }}
         env:
           ALL_TESTS_OUTCOME: ${{ steps.unit_tests.outcome }}
+          IOS_TESTS_OUTCOME: ${{ steps.ios_unit_tests.outcome }}
           LYRICS_TESTS_OUTCOME: ${{ steps.lyrics_tests.outcome }}
           LOUDNESS_TESTS_OUTCOME: ${{ steps.loudness_tests.outcome }}
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          | macOS unit tests | Outcome |
+          | Test run | Outcome |
           | --- | --- |
-          | All suites | ${ALL_TESTS_OUTCOME} |
+          | macOS unit tests | ${ALL_TESTS_OUTCOME} |
+          | iOS Simulator unit tests | ${IOS_TESTS_OUTCOME} |
           | LazyLyricsLoadingTests in isolation | ${LYRICS_TESTS_OUTCOME} |
           | AudioLoudnessNormalizationTests in isolation | ${LOUDNESS_TESTS_OUTCOME} |
 
           Isolated runs execute only after the full test run fails. They do not clear its failure.
           Each isolated run preserves parallel execution within the suite.
-          Download macOS-test-results and open the .xcresult bundles in Xcode to inspect failures.
+          Download ci-logs-coverage-test-results and open the .xcresult bundles in Xcode to inspect failures.
           EOF
 
-      - name: Upload macOS test results
-        if: ${{ always() && steps.unit_tests.outcome != 'skipped' }}
+      - name: Export test coverage
+        if: ${{ always() }}
+        run: |
+          mkdir -p .build-logs/coverage
+          for result_name in AllUnitTests iOSUnitTests; do
+            result_bundle="${RUNNER_TEMP}/TestResults/${result_name}.xcresult"
+            if [[ -d "${result_bundle}" ]]; then
+              xcrun xccov view --report --json "${result_bundle}" \
+                > ".build-logs/coverage/${result_name}.json"
+              xcrun xcresulttool export coverage \
+                --path "${result_bundle}" \
+                --output-path ".build-logs/coverage/${result_name}"
+            fi
+          done
+
+      - name: Upload CI logs, coverage, and test results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: macOS-test-results
-          path: ${{ runner.temp }}/TestResults/*.xcresult
+          name: ci-logs-coverage-test-results
+          path: |
+            .build-logs/**/*.log
+            .build-logs/coverage/**
+            ${{ runner.temp }}/TestResults/*.xcresult
           retention-days: 14
           if-no-files-found: warn
 

@@ -161,12 +161,9 @@ struct PlaybackClockObservationTests {
         #expect(fixture.player.currentItem?.id == first.id)
     }
 
-    @Test func videoClockRetainsSubsecondPrecision() async {
+    @Test func videoClockRetainsSubsecondPrecision() async throws {
         let fixture = playingFixture(isVideo: true)
-        for _ in 0..<20 {
-            await Task.yield()
-            if fixture.player.isPlaying { break }
-        }
+        try await waitForPlaybackToStart(fixture.player)
         fixture.video.currentTime = 0.125
         fixture.player.synchronizePlaybackClock()
         #expect(fixture.player.currentTime == 0.125)

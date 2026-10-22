@@ -48,12 +48,13 @@ struct PlaylistAddCandidateProjectionTests {
         projection.update(searchText: "alpha")
         projection.update(items: [alpha, beta], playlist: playlist)
         try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
         projection.update(searchText: "beta")
         try await waitUntil { probe.count == 2 }
         probe.finish(1)
         try await waitUntil { projection.items.map(\.id) == [beta.id] }
         probe.finish(0, identifiers: [alpha.id])
-        try await Task.sleep(for: .milliseconds(10))
+        await oldCompletion.value
         #expect(projection.items.map(\.id) == [beta.id])
         projection.update(searchText: "")
         try await waitUntil { probe.count == 3 }
@@ -71,9 +72,11 @@ struct PlaylistAddCandidateProjectionTests {
         projection.update(searchText: "alpha")
         projection.update(items: [item], playlist: playlist)
         try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
         probe.finish(0, identifiers: [item.id])
         item.title = "Beta"
         projection.update(searchText: "beta")
+        await oldCompletion.value
         try await waitUntil { probe.count == 2 }
         #expect(projection.items.isEmpty)
         #expect(probe.query(at: 1) == "beta")
@@ -110,17 +113,20 @@ struct PlaylistAddCandidateProjectionTests {
         defer { projection.cancel(); probe.finishAll() }
         projection.update(items: [alpha, beta], playlist: playlist)
         try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
         switch change {
         case .insert: playlist.entries.append(PlaylistEntry(sortIndex: 1, playlist: playlist, item: beta))
         case .remove: playlist.entries.removeAll()
         case .relationship: entry.item = beta
         }
         try await waitUntil { probe.count == 2 }
+        let newCompletion = try #require(projection.pendingCompletion)
         probe.finish(1)
+        await newCompletion.value
         let expected = change == .insert ? [] : change == .remove ? [alpha.id, beta.id] : [alpha.id]
-        try await waitUntil { projection.items.map(\.id) == expected }
+        #expect(projection.items.map(\.id) == expected)
         probe.finish(0, identifiers: [beta.id])
-        try await Task.sleep(for: .milliseconds(10))
+        await oldCompletion.value
         #expect(projection.items.map(\.id) == expected)
     }
 
@@ -135,8 +141,10 @@ struct PlaylistAddCandidateProjectionTests {
         defer { projection.cancel(); probe.finishAll() }
         projection.update(items: [alpha], playlist: first)
         try await waitUntil { probe.count == 1 }
+        let firstCompletion = try #require(projection.pendingCompletion)
         projection.update(items: [replacement], playlist: first)
         try await waitUntil { probe.count == 2 }
+        let secondCompletion = try #require(projection.pendingCompletion)
         #expect(probe.snapshot(at: 1).items.first?.title == "Replacement")
         projection.update(items: [replacement], playlist: second)
         try await waitUntil { probe.count == 3 }
@@ -145,7 +153,8 @@ struct PlaylistAddCandidateProjectionTests {
         try await waitUntil { projection.items.first === replacement }
         probe.finish(0)
         probe.finish(1)
-        try await Task.sleep(for: .milliseconds(10))
+        await firstCompletion.value
+        await secondCompletion.value
         #expect(projection.items.first === replacement)
     }
 
@@ -190,10 +199,11 @@ struct PlaylistAddCandidateProjectionTests {
         projection.update(searchText: "beta")
         projection.update(items: [alpha, beta], playlist: playlist)
         try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
         projection.cancel()
         probe.finish(0)
         alpha.title = "Changed after closing"
-        try await Task.sleep(for: .milliseconds(10))
+        await oldCompletion.value
         #expect(projection.items.isEmpty && probe.count == 1)
         #expect(projection.selectedItems(ids: [beta.id], for: playlist) == nil)
         projection.update(items: [alpha, beta], playlist: playlist)

@@ -168,12 +168,14 @@ struct PlayerVisualizationSuppressionTests {
         #expect(idle.count == 0)
     }
 
-    @Test func visualizerHostBodyDoesNotObserveAnalysisFrames() {
+    @Test func visualizerContentDoesNotObserveAnalysisFrames() {
         let fixture = SuppressionFixture()
         let player = fixture.player
         fixture.play()
+        let host = VisualizerHostView(player: player, palette: palette)
+        let visualizer = VisualizerRegistry.shared.visualizer(for: "spectrum.stereo")
         let playing = observe {
-            _ = VisualizerHostView(player: player, palette: palette).body
+            _ = host.visualizationContent(visualizer: visualizer, responseMode: .normal, reduceMotion: false)
         }
         for level in 1...10 { fixture.deliver(loudFrame(level: Float(level) / 10, isPlaying: true)) }
         fixture.deliver(.silent(isPlaying: true))
@@ -183,7 +185,7 @@ struct PlayerVisualizationSuppressionTests {
         // After a pause the analyzer publishes decay frames at the drawing rate until they are silent.
         player.pause()
         let decaying = observe {
-            _ = VisualizerHostView(player: player, palette: palette).body
+            _ = host.visualizationContent(visualizer: visualizer, responseMode: .normal, reduceMotion: false)
         }
         for level in stride(from: Float(0.8), to: 0, by: -0.1) {
             fixture.deliver(loudFrame(level: level, isPlaying: false))

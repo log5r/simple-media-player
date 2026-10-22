@@ -104,32 +104,30 @@ struct ExtendedAudioSourceTests {
     }
 
     @Test func decodesMusepack() throws {
-        let source = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString).appendingPathExtension("mpc")
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mpc")
         defer {
             ExtendedAudioSource.removeCache(for: source)
             try? FileManager.default.removeItem(at: source)
         }
-        let wav = fixture("wav", baseName: "tag-test")
-        try AudioConverter.convert(wav, to: source)
+        try FileManager.default.copyItem(at: fixture("mpc", baseName: "known-stereo"), to: source)
         #expect(try ExtendedAudioSource.kind(for: source) == .musepack)
         let info = try ExtendedAudioSource.info(for: source, kind: .musepack)
-        #expect(info.duration > 0)
+        #expect(info.sampleRate == 44_100)
+        #expect(info.duration > 1)
         let cached = try ExtendedAudioSource.readableFile(for: source)
         defer { cached.release() }
         let audio = try AVAudioFile(forReading: cached.url)
-        #expect(audio.length > 0)
+        #expect(audio.length == 44_137)
     }
 
     @Test func decodesAPEAndMusepackWithLeadingID3v2Tag() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let musepack = directory.appendingPathComponent("original.mpc")
-        try AudioConverter.convert(fixture("wav", baseName: "tag-test"), to: musepack)
         let sources: [ExtendedAudioSource.Kind: URL] = [
             .monkeysAudio: fixture("ape"),
-            .musepack: musepack
+            .musepack: fixture("mpc", baseName: "known-stereo")
         ]
         let id3v2Tag = Data([0x49, 0x44, 0x33, 0x03, 0, 0, 0, 0, 1, 2])
             + Data(repeating: 0, count: 130)
@@ -142,7 +140,12 @@ struct ExtendedAudioSourceTests {
             #expect(info.duration > 0)
             let cached = try ExtendedAudioSource.readableFile(for: source)
             defer { cached.release() }
-            #expect(try AVAudioFile(forReading: cached.url).length > 0)
+            let audio = try AVAudioFile(forReading: cached.url)
+            if kind == .musepack {
+                #expect(audio.length == 44_137)
+            } else {
+                #expect(audio.length > 0)
+            }
         }
     }
 

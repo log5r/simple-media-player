@@ -61,48 +61,84 @@ struct BookmarkFixture {
 /// Blocked resolutions occupy cooperative threads, so tests wait for them with continuations resumed by the
 /// resolving thread instead of `Task.sleep`, whose wake-up needs a free cooperative thread.
 nonisolated final class BookmarkResolutionRecorder: @unchecked Sendable {
-    private static let blockTimeout: DispatchTimeInterval = .seconds(30)
+    struct WaitTimeout: Error {}
+    private struct Waiter {
+        let id: UUID
+        let count: Int
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+    private struct Resolution {
+        let call: Int
+        let gate: DispatchSemaphore?
+        let ready: [Waiter]
+    }
+
+    private let blockTimeout: DispatchTimeInterval
+    private let reportTimeout: @Sendable () -> Void
     private let lock = NSLock()
     private let blocks: @Sendable (Int) -> Bool
     private var counts = (mainThread: 0, worker: 0)
     private var gates: [Int: DispatchSemaphore] = [:]
     private var releasedCalls: Set<Int> = []
     private var isReleased = false
-    private var waiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var waiters: [Waiter] = []
 
     /// Blocks each resolution whose 1-based call number satisfies `blocks` until it is released.
-    init(blocking blocks: @escaping @Sendable (Int) -> Bool = { _ in false }) {
+    init(
+        blockTimeout: DispatchTimeInterval = .seconds(30),
+        reportTimeout: @escaping @Sendable () -> Void = { Issue.record("A blocked bookmark resolution timed out") },
+        blocking blocks: @escaping @Sendable (Int) -> Bool = { _ in false }
+    ) {
+        self.blockTimeout = blockTimeout
+        self.reportTimeout = reportTimeout
         self.blocks = blocks
     }
 
     var mainThreadCount: Int { lock.withLock { counts.mainThread } }
     var workerCount: Int { lock.withLock { counts.worker } }
+    var blockedCallCount: Int { lock.withLock { gates.count } }
 
-    func waitForCalls(_ count: Int) async {
-        await withCheckedContinuation { continuation in
+    func waitForCalls(_ count: Int, timeout: DispatchTimeInterval = .seconds(10)) async throws {
+        let id = UUID()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             let isReady = lock.withLock {
                 guard counts.mainThread + counts.worker < count else { return true }
-                waiters.append((count, continuation))
+                waiters.append(Waiter(id: id, count: count, continuation: continuation))
                 return false
             }
-            if isReady { continuation.resume() }
+            if isReady {
+                continuation.resume()
+            } else {
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [self] in
+                    let expired = lock.withLock {
+                        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return nil as Waiter? }
+                        return waiters.remove(at: index)
+                    }
+                    expired?.continuation.resume(throwing: WaitTimeout())
+                }
+            }
         }
     }
 
     func resolve(_ bookmarkData: Data, _ fallbackURL: URL) -> URL {
-        let (gate, ready) = lock.withLock { () -> (DispatchSemaphore?, [CheckedContinuation<Void, Never>]) in
+        let resolution = lock.withLock { () -> Resolution in
             if Thread.isMainThread { counts.mainThread += 1 } else { counts.worker += 1 }
             let call = counts.mainThread + counts.worker
-            let ready = waiters.filter { $0.count <= call }.map(\.continuation)
+            let ready = waiters.filter { $0.count <= call }
             waiters.removeAll { $0.count <= call }
-            guard blocks(call), isReleased == false, releasedCalls.contains(call) == false else { return (nil, ready) }
+            guard blocks(call), isReleased == false, releasedCalls.contains(call) == false else {
+                return Resolution(call: call, gate: nil, ready: ready)
+            }
             let gate = DispatchSemaphore(value: 0)
             gates[call] = gate
-            return (gate, ready)
+            return Resolution(call: call, gate: gate, ready: ready)
         }
-        ready.forEach { $0.resume() }
-        // The timeout turns a test that never releases into a failure instead of a hang.
-        _ = gate?.wait(timeout: .now() + Self.blockTimeout)
+        resolution.ready.forEach { $0.continuation.resume() }
+        if let gate = resolution.gate {
+            let result = gate.wait(timeout: .now() + blockTimeout)
+            _ = lock.withLock { gates.removeValue(forKey: resolution.call) }
+            if result == .timedOut { reportTimeout() }
+        }
         return fallbackURL
     }
 

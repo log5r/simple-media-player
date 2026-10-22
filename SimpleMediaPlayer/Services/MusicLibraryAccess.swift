@@ -13,14 +13,20 @@ enum MusicLibraryAccess {
         case restricted
     }
 
-    static func requestAuthorization() async -> Availability {
-        if let availability = availability(for: MPMediaLibrary.authorizationStatus()) {
+    static func requestAuthorization(
+        currentStatus: () -> MPMediaLibraryAuthorizationStatus = MPMediaLibrary.authorizationStatus,
+        request: () async -> MPMediaLibraryAuthorizationStatus = requestSystemAuthorization
+    ) async -> Availability {
+        if let availability = availability(for: currentStatus()) {
             return availability
         }
-        let status = await withCheckedContinuation { continuation in
+        return availability(for: await request()) ?? .denied
+    }
+
+    private static func requestSystemAuthorization() async -> MPMediaLibraryAuthorizationStatus {
+        await withCheckedContinuation { continuation in
             MPMediaLibrary.requestAuthorization { continuation.resume(returning: $0) }
         }
-        return availability(for: status) ?? .denied
     }
 
     static var settingsURL: URL? {

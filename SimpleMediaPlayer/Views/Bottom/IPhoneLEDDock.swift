@@ -12,8 +12,8 @@ struct IPhoneLEDDock: View {
             IPhoneNowPlayingButton(player: player, openDeck: openDeck, showsTime: placement != .inline)
 
             playbackButton(
-                player.isPlaying ? "Pause" : "Play",
-                symbol: player.isPlaying ? "pause.fill" : "play.fill", identifier: "phoneDockPlayPause"
+                player.canPause ? "Pause" : "Play",
+                symbol: player.canPause ? "pause.fill" : "play.fill", identifier: "phoneDockPlayPause"
             ) { player.togglePlayPause() }
             if placement != .inline {
                 playbackButton("Next Track", symbol: "forward.end.fill", identifier: "phoneDockNext") {

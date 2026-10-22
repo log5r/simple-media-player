@@ -22,7 +22,10 @@ struct AdditionalAudioMetadataTests {
 
         let originalSamples = try decodableSamples(at: target)
         let original = try Data(contentsOf: target)
-        let artwork = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lF0AAAAASUVORK5CYII=")!
+        let artwork = Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8" +
+            "/x8AAwMCAO+/lF0AAAAASUVORK5CYII="
+        )!
         let draft = MediaMetadataEditDraft(
             title: "Edited title", artist: "Edited artist", album: "Edited album", genre: "Jazz",
             year: "2026", trackNumber: "2/10", comment: "A comment", albumArtist: "Album artist",
@@ -32,19 +35,7 @@ struct AdditionalAudioMetadataTests {
         #expect(AdditionalAudioMetadata.canWrite(to: target))
         try AdditionalAudioMetadata.write(draft, to: target)
         let read = try AdditionalAudioMetadata.read(from: target)
-        #expect(read.values.title == draft.title)
-        #expect(read.values.artist == draft.artist)
-        #expect(read.values.album == draft.album)
-        #expect(read.values.genre == draft.genre)
-        #expect(read.values.year == draft.year)
-        #expect(read.values.trackNumber == draft.trackNumber)
-        #expect(read.values.comment == draft.comment)
-        #expect(read.values.albumArtist == draft.albumArtist)
-        #expect(read.values.composer == draft.composer)
-        #expect(read.values.discNumber == draft.discNumber)
-        #expect(read.values.isCompilation == true)
-        #expect(read.artworkData == artwork)
-        #expect(read.lyrics == draft.lyrics)
+        expect(read, toMatch: draft, artwork: artwork)
         #expect(try decodableSamples(at: target) == originalSamples)
         if fileExtension != "wav" {
             #expect(try Data(contentsOf: target).range(of: Data("FOO=Keep".utf8)) != nil)
@@ -84,7 +75,9 @@ struct AdditionalAudioMetadataTests {
         try original.write(to: target)
         #expect(AdditionalAudioMetadata.canWrite(to: target) == false)
         #expect(throws: (any Error).self) {
-            try AdditionalAudioMetadata.write(MediaMetadataEditDraft(title: "X", artist: "", album: "", genre: ""), to: target)
+            try AdditionalAudioMetadata.write(
+                MediaMetadataEditDraft(title: "X", artist: "", album: "", genre: ""), to: target
+            )
         }
         #expect(try Data(contentsOf: target) == original)
     }
@@ -131,7 +124,10 @@ struct AdditionalAudioMetadataTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appendingPathComponent("source.\(fileExtension)")
         try FileManager.default.copyItem(at: fixture(fileExtension), to: source)
-        let artwork = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lF0AAAAASUVORK5CYII=")!
+        let artwork = Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8" +
+            "/x8AAwMCAO+/lF0AAAAASUVORK5CYII="
+        )!
         let draft = MediaMetadataEditDraft(
             title: "Imported title", artist: "Imported artist", album: "Imported album", genre: "Classical",
             artworkData: artwork, lyrics: "Imported lyrics", editsArtwork: true, editsLyrics: true
@@ -170,6 +166,10 @@ struct AdditionalAudioMetadataTests {
         #expect(try await EmbeddedLyricsReader().read(from: managedURL) == nil)
     }
 
+}
+
+@MainActor
+extension AdditionalAudioMetadataTests {
     @Test(arguments: [TransformedExportFormat.flac, .wav])
     func transformedCopyEmbedsArtworkAndLyrics(format: TransformedExportFormat) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -177,7 +177,10 @@ struct AdditionalAudioMetadataTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = directory.appendingPathComponent("source.wav")
         try FileManager.default.copyItem(at: fixture("wav"), to: source)
-        let artwork = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lF0AAAAASUVORK5CYII=")!
+        let artwork = Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8" +
+            "/x8AAwMCAO+/lF0AAAAASUVORK5CYII="
+        )!
         try AdditionalAudioMetadata.write(
             MediaMetadataEditDraft(title: "Source", artist: "Artist", album: "Album", genre: "",
                                    artworkData: artwork, lyrics: "Song lyrics", editsArtwork: true, editsLyrics: true),
@@ -259,7 +262,10 @@ struct AdditionalAudioMetadataTests {
     }
 
     @Test func editingFrontArtworkKeepsOtherPicturesAndCommentTrailer() throws {
-        let artwork = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lF0AAAAASUVORK5CYII=")!
+        let artwork = Data(
+            base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8" +
+            "/x8AAwMCAO+/lF0AAAAASUVORK5CYII="
+        )!
         var backCover = try XiphMetadata.pictureBlock(artwork)
         backCover[3] = 4
         let frontCover = try XiphMetadata.pictureBlock(Data([0xff, 0xd8, 0xff, 0xd9]))
@@ -297,13 +303,40 @@ struct AdditionalAudioMetadataTests {
         #expect(try AdditionalAudioMetadata.read(from: target).values.title == "Alias title")
     }
 
-    private func library(in mediaDirectory: URL) throws -> (
-        service: LibraryService, container: ModelContainer, context: ModelContext
-    ) {
+}
+
+extension AdditionalAudioMetadataTests {
+    private func expect(_ read: AudioTagReadResult, toMatch draft: MediaMetadataEditDraft, artwork: Data) {
+        #expect(read.values.title == draft.title)
+        #expect(read.values.artist == draft.artist)
+        #expect(read.values.album == draft.album)
+        #expect(read.values.genre == draft.genre)
+        #expect(read.values.year == draft.year)
+        #expect(read.values.trackNumber == draft.trackNumber)
+        #expect(read.values.comment == draft.comment)
+        #expect(read.values.albumArtist == draft.albumArtist)
+        #expect(read.values.composer == draft.composer)
+        #expect(read.values.discNumber == draft.discNumber)
+        #expect(read.values.isCompilation == true)
+        #expect(read.artworkData == artwork)
+        #expect(read.lyrics == draft.lyrics)
+    }
+
+    private struct LibraryFixture {
+        let service: LibraryService
+        let container: ModelContainer
+        let context: ModelContext
+    }
+
+    private func library(in mediaDirectory: URL) throws -> LibraryFixture {
         let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
-        return (LibraryService(mediaDirectoryURL: mediaDirectory), container, container.mainContext)
+        return LibraryFixture(
+            service: LibraryService(mediaDirectoryURL: mediaDirectory),
+            container: container,
+            context: container.mainContext
+        )
     }
 
     private func fixture(_ ext: String) -> URL {

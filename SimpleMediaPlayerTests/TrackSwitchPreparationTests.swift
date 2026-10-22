@@ -49,8 +49,8 @@ struct BlockingWorkExecutorTests {
         #expect(observedCancellation)
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func musicAnalysisOpensTheSourceOnTheBlockingQueue() async throws {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let labels = LabelRecorder()
         let service = MusicAnalysisService(cacheDirectory: nil, readableFile: { _ in
             labels.record()

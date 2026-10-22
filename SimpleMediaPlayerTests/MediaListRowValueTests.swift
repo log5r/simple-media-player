@@ -13,7 +13,8 @@ struct MediaListRowValueTests {
     ) {
         let item = MediaItem(title: "Song", duration: 1, isVideo: false, bookmarkData: Data(), fileName: fileName)
         #expect(item.displayContentType == expected)
-        let formerExtension = URL(fileURLWithPath: fileName).pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        let formerExtension = URL(fileURLWithPath: fileName).pathExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         #expect(item.displayContentType == (formerExtension.isEmpty ? "-" : formerExtension.uppercased()))
     }
 

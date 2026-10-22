@@ -291,3 +291,8 @@ final class LibraryListProjection {
         }
     }
 }
+
+extension LibraryListProjection {
+    /// Includes result validation and publication, even when a replaced worker ignores cancellation.
+    var pendingCompletion: Task<Void, Never>? { completion }
+}

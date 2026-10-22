@@ -40,7 +40,7 @@ struct ExportPlanPreparationTests {
             items.append(try fixture.insertItem(copying: source))
         }
         let preparation = fixture.service.beginExportPlanPreparation(for: items)
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
 
         fixture.service.cancelExportPlanPreparation()
 
@@ -77,7 +77,7 @@ struct ExportPlanPreparationTests {
         let first = [try fixture.insertItem(copying: source)]
         let second = [try fixture.insertItem(copying: source)]
         let old = fixture.service.beginExportPlanPreparation(for: first)
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
 
         let new = fixture.service.beginExportPlanPreparation(for: second)
 
@@ -98,11 +98,12 @@ struct ExportPlanPreparationTests {
         let items = [try fixture.insertItem(copying: source)]
         let preparation = fixture.service.beginExportPlanPreparation(for: items)
         let waiter = Task { await fixture.service.exportPlan(from: preparation) }
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
 
         waiter.cancel()
 
         #expect(await waiter.value == nil)
+        #expect(recorder.blockedCallCount > 0)
         #expect(fixture.service.exportPlanPreparation == nil)
     }
 
@@ -117,7 +118,7 @@ struct ExportPlanPreparationTests {
         for _ in 0..<limit { first.append(try fixture.insertItem(copying: source)) }
         let retried = [try fixture.insertItem(copying: source)]
         let old = fixture.service.beginExportPlanPreparation(for: first)
-        await recorder.waitForCalls(limit)
+        try await recorder.waitForCalls(limit)
         fixture.service.cancelExportPlanPreparation()
         #expect(await fixture.service.exportPlan(from: old) == nil)
 
