@@ -19,12 +19,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Verify xcsift availability
+      - name: Install pinned xcsift
         run: |
-          command -v xcsift >/dev/null 2>&1 || {
-            echo "::error::xcsift must be preinstalled on the xcode-27 runner."
+          set -euo pipefail
+
+          xcsift_version="1.5.2"
+          xcsift_sha256="7cdf9ffa0e08531213f175209f980a4ce94ac71a913291c8e7294efa9a9a5bbe"
+          xcsift_archive="${RUNNER_TEMP}/xcsift-v${xcsift_version}-macos-arm64.tar.gz"
+          xcsift_bin_dir="${RUNNER_TEMP}/xcsift-bin"
+
+          curl --fail --location --retry 3 \
+            "https://github.com/ldomaradzki/xcsift/releases/download/v${xcsift_version}/xcsift-v${xcsift_version}-macos-arm64.tar.gz" \
+            --output "${xcsift_archive}"
+          printf '%s  %s\n' "${xcsift_sha256}" "${xcsift_archive}" \
+            | shasum -a 256 --check
+
+          mkdir -p "${xcsift_bin_dir}"
+          tar -xzf "${xcsift_archive}" -C "${xcsift_bin_dir}"
+          chmod +x "${xcsift_bin_dir}/xcsift"
+          version_output="$("${xcsift_bin_dir}/xcsift" --version)"
+          if [[ "${version_output}" != "${xcsift_version}" ]]; then
+            echo "::error::Expected xcsift ${xcsift_version}, got: ${version_output}"
             exit 1
-          }
+          fi
+          printf 'Installed xcsift %s\n' "${version_output}"
+          printf '%s\n' "${xcsift_bin_dir}" >> "${GITHUB_PATH}"
 
       - name: Restore Swift package checkouts
         uses: actions/cache@v6
@@ -205,6 +224,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ci-logs-coverage-test-results
+          include-hidden-files: true
           path: |
             .build-logs/**/*.log
             .build-logs/coverage/**
