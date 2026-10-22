@@ -45,6 +45,9 @@ jobs:
           printf 'Installed xcsift %s\n' "${version_output}"
           printf '%s\n' "${xcsift_bin_dir}" >> "${GITHUB_PATH}"
 
+      - name: Test iOS simulator selector
+        run: python3 scripts/test_select_ios_test_device.py
+
       - name: Restore Swift package checkouts
         uses: actions/cache@v6
         with:
@@ -52,17 +55,23 @@ jobs:
           key: spm-${{ runner.os }}-${{ hashFiles('SimpleMediaPlayer.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
-      - name: Select Xcode with an iOS 27.1 or newer SDK
+      - name: Select Xcode 27.1 GA
         run: |
+          set -euo pipefail
+
           for app in /Applications/Xcode*.app; do
             candidate="${app}/Contents/Developer"
+            version_output=$(DEVELOPER_DIR="${candidate}" xcodebuild -version 2>/dev/null) || continue
+            [[ "${version_output}" == *$'Xcode 27.1\nBuild version 27A9275'* ]] || continue
             sdk_version=$(DEVELOPER_DIR="${candidate}" xcrun --sdk iphonesimulator --show-sdk-version 2>/dev/null) || continue
-            if [[ "${sdk_version}" == 27.[1-9]* ]] || (( ${sdk_version%%.*} > 27 )); then
-              printf 'DEVELOPER_DIR=%s\n' "${candidate}" >> "$GITHUB_ENV"
-              exit 0
-            fi
+            [[ "${sdk_version}" == "27.1" ]] || continue
+
+            printf '%s\n' "${version_output}"
+            printf 'Selected Xcode: %s (iOS Simulator SDK %s)\n' "${candidate}" "${sdk_version}"
+            printf 'DEVELOPER_DIR=%s\n' "${candidate}" >> "$GITHUB_ENV"
+            exit 0
           done
-          echo "::error::Install Xcode 27.1 (Beta is supported) on the xcode-27 runner."
+          echo "::error::Xcode 27.1 build 27A9275 with the iOS 27.1 SDK is required on the xcode-27 runner."
           exit 1
 
       # Runs before build-for-testing so that the test steps use the arm64 products.
@@ -91,11 +100,47 @@ jobs:
             -enableCodeCoverage YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
 
-      - name: Select iPhone simulator
+      - name: Prepare iOS 27.1 iPhone simulator
         id: ios_simulator
+        timeout-minutes: 30
         run: |
-          simulator_id=$(xcrun simctl list devices --json | python3 scripts/select-ios-test-device.py) || exit "$?"
+          set -euo pipefail
+
+          runtime_json="$(xcrun simctl list runtimes --json)"
+          if runtime_identifier="$(printf '%s' "${runtime_json}" | python3 scripts/select-ios-test-device.py --mode runtime --version 27.1)"; then
+            :
+          else
+            runtime_status=$?
+            if [[ "${runtime_status}" -ne 2 ]]; then
+              exit "${runtime_status}"
+            fi
+            ./scripts/ci-xcodebuild.sh ios-27.1-runtime-download \
+              -downloadPlatform iOS \
+              -buildVersion 27.1 \
+              -architectureVariant arm64
+            runtime_json="$(xcrun simctl list runtimes --json)"
+            runtime_identifier="$(printf '%s' "${runtime_json}" | python3 scripts/select-ios-test-device.py --mode runtime --version 27.1)"
+          fi
+
+          devices_json="$(xcrun simctl list devices --json)"
+          if simulator_id="$(printf '%s' "${devices_json}" | python3 scripts/select-ios-test-device.py --mode device --version 27.1)"; then
+            echo "Using existing iOS 27.1 simulator ${simulator_id}."
+          else
+            selection_status=$?
+            if [[ "${selection_status}" -ne 2 ]]; then
+              exit "${selection_status}"
+            fi
+            device_type="$(printf '%s' "${runtime_json}" | python3 scripts/select-ios-test-device.py --mode device-type --version 27.1)"
+            simulator_id="$(xcrun simctl create 'CI iPhone iOS 27.1' "${device_type}" "${runtime_identifier}")"
+            echo "Created iOS 27.1 simulator ${simulator_id} (${device_type})."
+          fi
           printf 'udid=%s\n' "$simulator_id" >> "$GITHUB_OUTPUT"
+
+      - name: Boot iPhone simulator
+        id: ios_simulator_boot
+        timeout-minutes: 10
+        run: |
+          xcrun simctl bootstatus "${{ steps.ios_simulator.outputs.udid }}" -b
 
       - name: Build for iOS Simulator testing
         id: ios_build
@@ -117,6 +162,7 @@ jobs:
 
       - name: Run macOS unit tests
         id: unit_tests
+        timeout-minutes: 20
         run: |
           mkdir -p "${RUNNER_TEMP}/TestResults"
           ./scripts/ci-xcodebuild.sh macOS-unit-tests \
@@ -134,7 +180,8 @@ jobs:
 
       - name: Run iOS Simulator unit tests
         id: ios_unit_tests
-        if: ${{ always() && steps.ios_build.outcome == 'success' && steps.ios_simulator.outcome == 'success' }}
+        if: ${{ always() && steps.ios_build.outcome == 'success' && steps.ios_simulator.outcome == 'success' && steps.ios_simulator_boot.outcome == 'success' }}
+        timeout-minutes: 20
         run: |
           mkdir -p "${RUNNER_TEMP}/TestResults"
           ./scripts/ci-xcodebuild.sh iOS-unit-tests \
