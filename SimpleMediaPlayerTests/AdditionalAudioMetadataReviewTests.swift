@@ -59,7 +59,8 @@ struct AdditionalAudioMetadataReviewTests {
         var backBlock = backCover
         backBlock[3] = 4
         let backField = Data("METADATA_BLOCK_PICTURE=\(backBlock.base64EncodedString())".utf8)
-        let frontField = Data("METADATA_BLOCK_PICTURE=\(try XiphMetadata.pictureBlock(Data([4, 5, 6])).base64EncodedString())".utf8)
+        let frontBlock = try XiphMetadata.pictureBlock(Data([4, 5, 6]))
+        let frontField = Data("METADATA_BLOCK_PICTURE=\(frontBlock.base64EncodedString())".utf8)
         var comment = try flacComment(in: source)
         comment.fields += [backField, frontField]
         try replaceFlacComment(in: &source, with: comment)
@@ -79,7 +80,9 @@ struct AdditionalAudioMetadataReviewTests {
     }
 
     @Test(arguments: [("flac", ""), ("flac", " \t "), ("wav", ""), ("wav", " \t ")])
-    func importFallsBackWhenEmbeddedCoreFieldsAreBlank(fileExtension: String, embeddedTitle: String) async throws {
+    func importFallsBackWhenEmbeddedCoreFieldsAreBlank(
+        fileExtension: String, embeddedTitle: String
+    ) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -115,9 +118,7 @@ struct AdditionalAudioMetadataReviewTests {
         }
         try data.write(to: source)
         let embedded = try AdditionalAudioMetadata.read(from: source).values
-        #expect(embedded.title == nil)
-        #expect(embedded.artist == nil)
-        #expect(embedded.album == nil)
+        expectBlankFallback(embedded)
 
         let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -131,9 +132,19 @@ struct AdditionalAudioMetadataReviewTests {
         #expect(item.artist == "Unknown Artist")
         #expect(item.album == "Unknown Album")
         let editable = try await service.editableMetadataDraft(for: item)
-        #expect(editable.title == item.title)
-        #expect(editable.artist == "")
-        #expect(editable.album == "")
+        expectEditableFallback(editable, item: item)
+    }
+
+    private func expectBlankFallback(_ embedded: MediaMetadataEmbeddedValues) {
+        #expect(embedded.title == nil)
+        #expect(embedded.artist == nil)
+        #expect(embedded.album == nil)
+    }
+
+    private func expectEditableFallback(_ draft: MediaMetadataEditDraft, item: MediaItem) {
+        #expect(draft.title == item.title)
+        #expect(draft.artist == "")
+        #expect(draft.album == "")
     }
 
     @Test func blankPrimaryXiphLyricsUseFallbackTag() {

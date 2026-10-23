@@ -149,7 +149,7 @@ struct AppMenuCommands: Commands {
         }
 
         CommandMenu("Controls") {
-            Button(player.isPlaying ? L10n.string("Pause") : L10n.string("Play")) {
+            Button(player.canPause ? L10n.string("Pause") : L10n.string("Play")) {
                 if let actions {
                     actions.playPause()
                 } else if usesDirectPlayback {

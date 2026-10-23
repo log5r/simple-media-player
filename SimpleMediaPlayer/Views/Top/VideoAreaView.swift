@@ -186,8 +186,8 @@ struct FullScreenVideoView: View {
     #if os(iOS)
     private var playbackButton: some View {
         Button { player.togglePlayPause() } label: {
-            Label(player.isPlaying ? L10n.string("Pause") : L10n.string("Play"),
-                  systemImage: player.isPlaying ? "pause.fill" : "play.fill")
+            Label(player.canPause ? L10n.string("Pause") : L10n.string("Play"),
+                  systemImage: player.canPause ? "pause.fill" : "play.fill")
                 .padding(.horizontal, 10).padding(.vertical, 6)
         }
         .buttonStyle(.borderedProminent)

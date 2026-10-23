@@ -4,6 +4,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class AVAudioFormat;
 
+typedef NS_ENUM(NSInteger, SMPAudioDecodeStage) {
+    SMPAudioDecodeStageFrames,
+    SMPAudioDecodeStageDecoderDrain,
+    SMPAudioDecodeStageResamplerDrain,
+    SMPAudioDecodeStageComplete
+};
+
+typedef void (^SMPAudioDecodeObserver)(SMPAudioDecodeStage stage, int64_t decodedFrames);
+
 @interface SMPAudioCacheSizeLimit : NSObject
 + (nullable NSNumber *)maximumFramesForFormat:(AVAudioFormat *)format
                                  maxFileBytes:(int64_t)maxFileBytes
@@ -31,6 +40,17 @@ NS_ASSUME_NONNULL_BEGIN
              toCAF:(NSURL *)destinationURL
           maxBytes:(int64_t)maxBytes
       shouldCancel:(BOOL (^)(void))shouldCancel
+             error:(NSError **)error;
++ (BOOL)validateURL:(NSURL *)url
+          maxBytes:(int64_t)maxBytes
+      shouldCancel:(BOOL (^)(void))shouldCancel
+          observer:(nullable SMPAudioDecodeObserver)observer
+             error:(NSError **)error;
++ (BOOL)decodeURL:(NSURL *)url
+             toCAF:(NSURL *)destinationURL
+          maxBytes:(int64_t)maxBytes
+      shouldCancel:(BOOL (^)(void))shouldCancel
+          observer:(nullable SMPAudioDecodeObserver)observer
              error:(NSError **)error;
 @end
 

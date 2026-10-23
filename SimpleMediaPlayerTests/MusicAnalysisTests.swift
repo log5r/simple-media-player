@@ -336,8 +336,8 @@ struct MusicAnalysisTests {
 
 @MainActor
 struct MusicAnalysisControllerTests {
+    @available(macOS 27, iOS 27, *)
     @Test func publishesSettledFeaturesBeforeLocalRhythmFinishes() async {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let gate = AnalysisGate()
         let controller = MusicAnalysisController(analyzeWithProgress: { url, progress in
             await progress(MusicAnalysis(duration: 64, sections: [.init(start: 0, end: 16)],
@@ -357,8 +357,8 @@ struct MusicAnalysisControllerTests {
         #expect(controller.result?.bpm == 148)
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func lateProgressCannotReplaceAnotherTrackOrReappearAfterReset() async {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let gate = AnalysisGate()
         let controller = MusicAnalysisController(analyzeWithProgress: { url, progress in
             let result = await gate.analyze(url)
@@ -384,8 +384,8 @@ struct MusicAnalysisControllerTests {
         #expect(controller.status == .idle)
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func preparesLocalTempoAndClearsItOnReset() async {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let controller = MusicAnalysisController { _ in
             MusicAnalysis(duration: 4, beats: [0, 0.5, 1, 1.5, 2])
         }
@@ -395,8 +395,8 @@ struct MusicAnalysisControllerTests {
         #expect(controller.tempoByBeat.isEmpty)
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func switchingTracksDiscardsLateResults() async {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let gate = AnalysisGate()
         let controller = MusicAnalysisController { url in await gate.analyze(url) }
         let first = controller.load(url: URL(fileURLWithPath: "/first"))
@@ -413,8 +413,8 @@ struct MusicAnalysisControllerTests {
         #expect(controller.status == .ready)
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func resetPreventsInFlightAnalysisFromReappearing() async {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let gate = AnalysisGate()
         let controller = MusicAnalysisController { url in await gate.analyze(url) }
         let task = controller.load(url: URL(fileURLWithPath: "/first"))
@@ -426,8 +426,8 @@ struct MusicAnalysisControllerTests {
         #expect(controller.status == .idle)
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func failureProducesFallbackState() async {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let controller = MusicAnalysisController { _ in throw CocoaError(.fileReadUnknown) }
         await controller.load(url: URL(fileURLWithPath: "/missing"))?.value
         #expect(controller.result == nil)

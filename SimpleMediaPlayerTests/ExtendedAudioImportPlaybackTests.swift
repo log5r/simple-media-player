@@ -19,7 +19,11 @@ struct ExtendedAudioImportPlaybackTests {
         cached.release()
         defer { ExtendedAudioSource.removeCache(for: playbackSource) }
         let container = try makeModelContainer()
-        let service = LibraryService(mediaDirectoryURL: directory.appendingPathComponent("Managed"))
+        let gate = ImportRegistrationGate()
+        defer { gate.release() }
+        let service = LibraryService(
+            mediaDirectoryURL: directory.appendingPathComponent("Managed"), beforeImportRegistration: gate.hold
+        )
         let analyzer = SpectrumAnalyzer()
         let engine = try await makePlaybackEngine(analyzer: analyzer)
         defer { engine.suspend() }
@@ -35,25 +39,23 @@ struct ExtendedAudioImportPlaybackTests {
         let importing = Task {
             await service.importFiles(from: sources, into: container.mainContext, existingItems: [])
         }
-        let clock = ContinuousClock()
-        let startDeadline = clock.now.advanced(by: .seconds(5))
-        while service.importCompletedFileCount == 0 && clock.now < startDeadline {
-            try? await Task.sleep(for: .milliseconds(1))
-        }
+        try await gate.waitUntilBlocked()
+        // A real source has been copied and validated; registration stays suspended throughout playback.
+        #expect(gate.sourceURLs == [sources[0]])
         #expect(service.isImporting && service.importProgress < 1)
         engine.load(url: playbackSource)
         analyzer.setPlaybackActive(true, currentTime: 0)
         engine.play()
-        let playbackDeadline = clock.now.advanced(by: .seconds(5))
+        let playbackDeadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !playedDuringImport && playbackErrors.isEmpty && service.isImporting
-            && clock.now < playbackDeadline {
-            try? await Task.sleep(for: .milliseconds(5))
+            && ContinuousClock.now < playbackDeadline {
+            try await Task.sleep(for: .milliseconds(5))
         }
-        #expect(loadedDuringImport)
-        #expect(playedDuringImport)
+        #expect(loadedDuringImport && playedDuringImport)
         #expect(playbackErrors.isEmpty)
         engine.suspend()
         analyzer.setPlaybackActive(false, currentTime: 0)
+        gate.release()
         await importing.value
         #expect(service.lastImportErrors.isEmpty)
         #expect(try container.mainContext.fetchCount(FetchDescriptor<MediaItem>()) == sources.count)
@@ -97,7 +99,7 @@ struct ExtendedAudioImportPlaybackTests {
     }
 
     private func makeUniqueSources(in directory: URL) throws -> [URL] {
-        try (0..<256).map { index in
+        try (0..<8).map { index in
             let source = directory.appendingPathComponent("import-\(index).wv")
             try FileManager.default.copyItem(at: fixture("wv"), to: source)
             let audio = try AudioFile(readingPropertiesAndMetadataFrom: source)

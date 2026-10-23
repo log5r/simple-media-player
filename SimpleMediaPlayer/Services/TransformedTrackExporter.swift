@@ -5,6 +5,41 @@ import SwiftData
 @MainActor
 @Observable
 final class TransformedTrackExporter {
+    private struct PreparedCopy {
+        let snapshot: TransformedTrackSourceSnapshot
+        let draft: MediaMetadataEditDraft
+    }
+
+    private struct RenderRequest: Sendable {
+        let sourceURL: URL
+        let outputURL: URL
+        let format: TransformedExportFormat
+        let pitchSemitones: Int
+        let rate: Double
+        let draft: MediaMetadataEditDraft
+        let exportID: UUID
+    }
+
+    private struct ExportRequest {
+        let item: MediaItem
+        let sourceContext: ModelContext?
+        let sourceURL: URL
+        let outputURL: URL
+        let title: String
+        let format: TransformedExportFormat
+        let pitchSemitones: Int
+        let rate: Double
+        let exportID: UUID
+        let libraryService: LibraryService
+        let context: ModelContext
+    }
+
+    private struct ExportSource {
+        let context: ModelContext?
+        let title: String
+        let url: URL
+    }
+
     var isExporting = false
     var progress = 0.0
     var errorMessage: String?
@@ -34,14 +69,9 @@ final class TransformedTrackExporter {
         context: ModelContext
     ) async throws -> MediaItem {
         try Task.checkCancellation()
-        let sourceContext = item.modelContext
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmedTitle.isEmpty == false else {
-            throw TransformedAudioExportError.emptyTitle
-        }
-        guard let sourceURL = libraryService.resolvedURL(for: item) else {
-            throw TransformedAudioExportError.cannotResolveFile
-        }
+        let source = try resolveExportSource(
+            item: item, title: title, libraryService: libraryService
+        )
 
         isExporting = true
         progress = 0
@@ -51,77 +81,33 @@ final class TransformedTrackExporter {
         let outputURL = temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(format.fileExtension)
-        let didAccess = sourceURL.startAccessingSecurityScopedResource()
+        let didAccess = source.url.startAccessingSecurityScopedResource()
 
         defer {
             if didAccess {
-                sourceURL.stopAccessingSecurityScopedResource()
+                source.url.stopAccessingSecurityScopedResource()
             }
             try? FileManager.default.removeItem(at: outputURL)
             self.exportID = nil
             isExporting = false
         }
 
-        let pitchCents = Float(pitchSemitones * 100)
-        let renderRate = Float(rate)
-        let renderer = renderer
-        let reportProgress = makeProgressHandler(for: exportID)
-
         do {
-            // Only the title replaces the source's text, so an unedited `Unknown Artist` or `Unknown Album` is
-            // written only when the source file holds that text.
-            let textDraft = try await libraryService.itemDraftResolvingPlaceholders(for: item, patching: [.title])
-            // Taken with the draft's text values, so the copy's tags and library values agree.
-            var sourceSnapshot = TransformedTrackSourceSnapshot(item: item)
-            let draft = try await metadataDraft(
-                from: textDraft, for: item, title: trimmedTitle, libraryService: libraryService
+            return try await performExport(
+                ExportRequest(
+                    item: item,
+                    sourceContext: source.context,
+                    sourceURL: source.url,
+                    outputURL: outputURL,
+                    title: source.title,
+                    format: format,
+                    pitchSemitones: pitchSemitones,
+                    rate: rate,
+                    exportID: exportID,
+                    libraryService: libraryService,
+                    context: context
+                )
             )
-            try libraryService.validateCopySource(item, in: sourceContext)
-            sourceSnapshot.artworkData = draft.artworkData
-            let renderTask = Task.detached(executorPreference: BlockingWorkExecutor.shared, priority: .userInitiated) {
-                try Task.checkCancellation()
-                let result = try await ExtendedAudioSource.withCancellableCacheWaits {
-                    try renderer.render(
-                        sourceURL: sourceURL,
-                        pitchCents: pitchCents,
-                        rate: renderRate,
-                        maxSampleRate: format.maxSampleRate,
-                        makeEncoder: { processingFormat in
-                            if format == .mp3 {
-                                try MP3Encoder(outputURL: outputURL, processingFormat: processingFormat)
-                            } else {
-                                try CoreAudioFileEncoder(
-                                    outputURL: outputURL,
-                                    format: format,
-                                    processingFormat: processingFormat
-                                )
-                            }
-                        },
-                        progress: reportProgress
-                    )
-                }
-                try Task.checkCancellation()
-                try format.writeMetadata(draft, to: outputURL)
-                try Task.checkCancellation()
-                return result
-            }
-            let renderResult = try await withTaskCancellationHandler {
-                try await renderTask.value
-            } onCancel: {
-                renderTask.cancel()
-            }
-
-            try libraryService.validateCopySource(item, in: sourceContext)
-            progress = 0.98
-            let newItem = try await libraryService.registerTransformedCopy(
-                of: sourceSnapshot,
-                renderedFileURL: outputURL,
-                title: trimmedTitle,
-                duration: renderResult.duration,
-                in: context
-            )
-            progress = 1
-            return newItem
         } catch {
             if error is CancellationError || Task.isCancelled {
                 progress = 0
@@ -130,6 +116,98 @@ final class TransformedTrackExporter {
             }
             errorMessage = error.localizedDescription
             throw error
+        }
+    }
+
+    private func resolveExportSource(
+        item: MediaItem, title: String, libraryService: LibraryService
+    ) throws -> ExportSource {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedTitle.isEmpty == false else {
+            throw TransformedAudioExportError.emptyTitle
+        }
+        guard let sourceURL = libraryService.resolvedURL(for: item) else {
+            throw TransformedAudioExportError.cannotResolveFile
+        }
+        return ExportSource(context: item.modelContext, title: trimmedTitle, url: sourceURL)
+    }
+
+    private func performExport(_ request: ExportRequest) async throws -> MediaItem {
+        let prepared = try await prepareCopy(
+            item: request.item, title: request.title, libraryService: request.libraryService
+        )
+        try request.libraryService.validateCopySource(request.item, in: request.sourceContext)
+        let renderResult = try await render(
+            RenderRequest(
+                sourceURL: request.sourceURL,
+                outputURL: request.outputURL,
+                format: request.format,
+                pitchSemitones: request.pitchSemitones,
+                rate: request.rate,
+                draft: prepared.draft,
+                exportID: request.exportID
+            )
+        )
+
+        try request.libraryService.validateCopySource(request.item, in: request.sourceContext)
+        progress = 0.98
+        let newItem = try await request.libraryService.registerTransformedCopy(
+            of: prepared.snapshot,
+            renderedFileURL: request.outputURL,
+            title: request.title,
+            duration: renderResult.duration,
+            in: request.context
+        )
+        progress = 1
+        return newItem
+    }
+
+    private func prepareCopy(
+        item: MediaItem, title: String, libraryService: LibraryService
+    ) async throws -> PreparedCopy {
+        // Only the title replaces source text, so untouched placeholder values remain from the source file.
+        let textDraft = try await libraryService.itemDraftResolvingPlaceholders(for: item, patching: [.title])
+        var snapshot = TransformedTrackSourceSnapshot(item: item)
+        let draft = try await metadataDraft(from: textDraft, for: item, title: title, libraryService: libraryService)
+        snapshot.artworkData = draft.artworkData
+        return PreparedCopy(snapshot: snapshot, draft: draft)
+    }
+
+    private func render(_ request: RenderRequest) async throws -> TransformedAudioRenderer.Result {
+        let pitchCents = Float(request.pitchSemitones * 100)
+        let renderer = renderer
+        let reportProgress = makeProgressHandler(for: request.exportID)
+        let renderTask = Task.detached(executorPreference: BlockingWorkExecutor.shared, priority: .userInitiated) {
+            try Task.checkCancellation()
+            let result = try await ExtendedAudioSource.withCancellableCacheWaits {
+                try renderer.render(
+                    sourceURL: request.sourceURL,
+                    pitchCents: pitchCents,
+                    rate: Float(request.rate),
+                    maxSampleRate: request.format.maxSampleRate,
+                    makeEncoder: { processingFormat in
+                        if request.format == .mp3 {
+                            try MP3Encoder(outputURL: request.outputURL, processingFormat: processingFormat)
+                        } else {
+                            try CoreAudioFileEncoder(
+                                outputURL: request.outputURL,
+                                format: request.format,
+                                processingFormat: processingFormat
+                            )
+                        }
+                    },
+                    progress: reportProgress
+                )
+            }
+            try Task.checkCancellation()
+            try request.format.writeMetadata(request.draft, to: request.outputURL)
+            try Task.checkCancellation()
+            return result
+        }
+        return try await withTaskCancellationHandler {
+            try await renderTask.value
+        } onCancel: {
+            renderTask.cancel()
         }
     }
 

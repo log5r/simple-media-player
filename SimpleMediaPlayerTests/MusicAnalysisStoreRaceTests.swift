@@ -5,9 +5,9 @@ import Testing
 /// A tag save or a removal that finishes while a file is analyzed must not leave the analysis at the old key,
 /// where no lookup could find it again.
 struct MusicAnalysisStoreRaceTests {
+    @available(macOS 27, iOS 27, *)
     @Test(arguments: FileChange.allCases, ChangeMoment.allCases)
     func changeBeforeTheWriteLeavesNoUnreachableEntry(change: FileChange, moment: ChangeMoment) async throws {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let cache = directory.appendingPathComponent("cache", isDirectory: true)
@@ -35,9 +35,9 @@ struct MusicAnalysisStoreRaceTests {
     }
 
     /// A save that runs after the write moves the entry, so the analysis still matches the saved file.
+    @available(macOS 27, iOS 27, *)
     @Test(arguments: [FileChange.inPlaceSave, .replacingSave])
     func saveAfterTheWriteCarriesTheEntry(change: FileChange) async throws {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let cache = directory.appendingPathComponent("cache", isDirectory: true)

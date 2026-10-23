@@ -19,6 +19,12 @@ nonisolated enum OggMetadataWriter {
         let nextSequence: UInt32
     }
     private enum Codec { case vorbis, opus }
+    private struct PageHeader {
+        let flags: UInt8
+        let granule: UInt64
+        let serial: UInt32
+        let sequence: UInt32
+    }
     private static let maxHeaderSize = 64 * 1024 * 1024
 
     static func canWriteMetadata(to url: URL) -> Bool {
@@ -77,8 +83,8 @@ nonisolated enum OggMetadataWriter {
                         | (laceIndex > 0 ? 1 : 0)
                     let granule: UInt64 = isLastPage ? 0 : UInt64.max
                     let body = Data(packet[bodyOffset..<(bodyOffset + bodySize)])
-                    let page = makePage(flags: flags, granule: granule, serial: prefix.serial,
-                                        sequence: sequence, laces: pageLaces, body: body)
+                    let header = PageHeader(flags: flags, granule: granule, serial: prefix.serial, sequence: sequence)
+                    let page = makePage(header: header, laces: pageLaces, body: body)
                     try output.write(contentsOf: page)
                     sequence = sequence &+ 1
                     bodyOffset += bodySize
@@ -102,17 +108,12 @@ nonisolated enum OggMetadataWriter {
         var completedCommentPage = false
         while offset < size {
             let page = try readPage(source, at: offset, size: size)
-            guard page.sequence == expectedSequence,
-                  serial == nil || page.serial == serial,
-                  page.flags & 4 == 0,
-                  page.flags & 1 == (partial.isEmpty ? 0 : 1),
-                  page.granule == 0 || page.granule == UInt64.max else {
+            guard isValidHeaderPage(
+                page, expectedSequence: expectedSequence, serial: serial, hasPartialPacket: partial.isEmpty == false
+            ) else {
                 throw MediaMetadataEditError.invalidAudioMetadata
             }
-            if serial == nil {
-                guard page.flags & 2 != 0 else { throw MediaMetadataEditError.invalidAudioMetadata }
-                serial = page.serial
-            }
+            serial = try validatedSerial(for: page, existingSerial: serial)
             var bodyOffset = 27 + page.segments.count
             for lace in page.segments {
                 let length = Int(lace)
@@ -127,27 +128,48 @@ nonisolated enum OggMetadataWriter {
             }
             offset = page.end
             expectedSequence = expectedSequence &+ 1
-            if completedCommentPage && partial.isEmpty {
+            if shouldFinishHeader(completedCommentPage: completedCommentPage, partialPacket: partial) {
                 break
             }
         }
         guard packets.count >= 2 else { throw MediaMetadataEditError.invalidAudioMetadata }
-        let codec: Codec
-        let commentData: Data
+        let (codec, commentData) = try commentPacket(in: packets)
+        return Prefix(codec: codec, comment: try XiphMetadata.parse(commentData), packets: packets,
+                      nextOffset: offset, serial: serial!, nextSequence: expectedSequence)
+    }
+
+    private static func shouldFinishHeader(completedCommentPage: Bool, partialPacket: Data) -> Bool {
+        completedCommentPage && partialPacket.isEmpty
+    }
+
+    private static func isValidHeaderPage(
+        _ page: Page, expectedSequence: UInt32, serial: UInt32?, hasPartialPacket: Bool
+    ) -> Bool {
+        page.sequence == expectedSequence
+            && (serial == nil || page.serial == serial)
+            && page.flags & 4 == 0
+            && page.flags & 1 == (hasPartialPacket ? 1 : 0)
+            && (page.granule == 0 || page.granule == UInt64.max)
+    }
+
+    private static func validatedSerial(for page: Page, existingSerial: UInt32?) throws -> UInt32 {
+        guard existingSerial != nil || page.flags & 2 != 0 else {
+            throw MediaMetadataEditError.invalidAudioMetadata
+        }
+        return existingSerial ?? page.serial
+    }
+
+    private static func commentPacket(in packets: [Data]) throws -> (Codec, Data) {
         if packets[0].starts(with: Data([1]) + Data("vorbis".utf8)),
            packets[1].starts(with: Data([3]) + Data("vorbis".utf8)),
            packets[1].last == 1 {
-            codec = .vorbis
-            commentData = Data(packets[1].dropFirst(7).dropLast())
+            return (.vorbis, Data(packets[1].dropFirst(7).dropLast()))
         } else if packets[0].starts(with: Data("OpusHead".utf8)),
                   packets[1].starts(with: Data("OpusTags".utf8)) {
-            codec = .opus
-            commentData = Data(packets[1].dropFirst(8))
+            return (.opus, Data(packets[1].dropFirst(8)))
         } else {
             throw MediaMetadataEditError.unsupportedFileFormat
         }
-        return Prefix(codec: codec, comment: try XiphMetadata.parse(commentData), packets: packets,
-                      nextOffset: offset, serial: serial!, nextSequence: expectedSequence)
     }
 
     private static func readPage(_ source: FileHandle, at offset: UInt64, size: UInt64) throws -> Page {
@@ -182,11 +204,10 @@ nonisolated enum OggMetadataWriter {
         return laces
     }
 
-    private static func makePage(flags: UInt8, granule: UInt64, serial: UInt32,
-                                 sequence: UInt32, laces: [UInt8], body: Data) -> Data {
-        var page = Data("OggS".utf8) + Data([0, flags])
-        for index in 0..<8 { page.append(UInt8((granule >> (index * 8)) & 0xff)) }
-        page += XiphMetadata.little32(serial) + XiphMetadata.little32(sequence)
+    private static func makePage(header: PageHeader, laces: [UInt8], body: Data) -> Data {
+        var page = Data("OggS".utf8) + Data([0, header.flags])
+        for index in 0..<8 { page.append(UInt8((header.granule >> (index * 8)) & 0xff)) }
+        page += XiphMetadata.little32(header.serial) + XiphMetadata.little32(header.sequence)
         page += Data(repeating: 0, count: 4)
         page.append(UInt8(laces.count))
         page.append(contentsOf: laces)

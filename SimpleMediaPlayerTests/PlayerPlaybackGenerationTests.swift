@@ -72,12 +72,11 @@ struct PlayerPlaybackGenerationTests {
         ))
     }
 
-    @Test func stoppingVideoInvalidatesItsSeekTarget() async {
+    @Test func stoppingVideoInvalidatesItsSeekTarget() async throws {
         let item = makeItem(title: "Video", isVideo: true)
         let fixture = makePlayerFixture(urlsByID: [item.id: URL(fileURLWithPath: "/tmp/generation-video.mov")])
         fixture.player.play(item: item, in: [item])
-        await Task.yield()
-        await Task.yield()
+        try await waitForPlaybackToStart(fixture.player)
         let target = captureSeekTarget(from: fixture.player)
 
         fixture.player.stop()
@@ -90,17 +89,14 @@ struct PlayerPlaybackGenerationTests {
         ))
     }
 
-    @Test func resettingTheAudioEngineWhileVideoIsLoadingDoesNotDiscardItsCompletion() async {
+    @Test func resettingTheAudioEngineWhileVideoIsLoadingDoesNotDiscardItsCompletion() async throws {
         let item = makeItem(title: "Loading video", isVideo: true)
         let fixture = makePlayerFixture(urlsByID: [item.id: URL(fileURLWithPath: "/tmp/loading-video.mov")])
         fixture.player.play(item: item, in: [item])
         let generation = fixture.player.playbackGeneration
 
         fixture.player.resetAudioEngine()
-        for _ in 0..<20 {
-            await Task.yield()
-            if fixture.video.playCallCount > 0 { break }
-        }
+        try await waitForPlaybackToStart(fixture.player)
 
         #expect(fixture.audio.resetEngineCallCount == 1)
         #expect(fixture.video.loadedURLs.count == 1)
@@ -109,7 +105,7 @@ struct PlayerPlaybackGenerationTests {
         #expect(fixture.player.playbackGeneration == generation)
     }
 
-    @Test func delayedAudioFailureDoesNotInvalidateTheCurrentVideoLoad() async {
+    @Test func delayedAudioFailureDoesNotInvalidateTheCurrentVideoLoad() async throws {
         let audioItem = makeItem(title: "Previous audio")
         let videoItem = makeItem(title: "Current video", isVideo: true)
         let videoURL = URL(fileURLWithPath: "/tmp/current-video.mov")
@@ -134,10 +130,7 @@ struct PlayerPlaybackGenerationTests {
         #expect(player.currentItem?.id == videoItem.id)
         #expect(player.errorMessage == nil)
         video.completeLoading()
-        for _ in 0..<20 {
-            await Task.yield()
-            if video.playCallCount > 0 { break }
-        }
+        try await waitForPlaybackToStart(player)
 
         #expect(video.playCallCount == 1)
         #expect(player.isPlaying)

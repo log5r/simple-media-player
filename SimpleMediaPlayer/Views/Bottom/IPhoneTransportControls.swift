@@ -94,7 +94,7 @@ struct IPhoneTransportBar: View {
             cell("Previous Track", symbol: "backward.end.fill", identifier: "phonePrevious") { player.previous() }
                 .disabled(!player.canPlayPrevious)
             cell(
-                player.isPlaying ? "Pause" : "Play", symbol: player.isPlaying ? "pause.fill" : "play.fill",
+                player.canPause ? "Pause" : "Play", symbol: player.canPause ? "pause.fill" : "play.fill",
                 identifier: "phonePlayPause", symbolSize: 24
             ) { player.togglePlayPause() }
             cell("Next Track", symbol: "forward.end.fill", identifier: "phoneNext") { player.next() }

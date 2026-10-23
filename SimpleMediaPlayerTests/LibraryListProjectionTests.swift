@@ -40,13 +40,14 @@ struct LibraryListProjectionTests {
         defer { projection.cancel(); probe.finishAll() }
         projection.update(items: [alpha, beta], playlist: nil, request: LibraryListRequest(searchText: "alpha"))
         try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
         projection.update(request: LibraryListRequest(searchText: "beta"))
         try await waitUntil { probe.count == 2 }
 
         probe.finish(1)
         try await waitUntil { projection.items.map(\.id) == [beta.id] }
         probe.finish(0, identifiers: [alpha.id])
-        try await Task.sleep(for: .milliseconds(10))
+        await oldCompletion.value
         #expect(projection.items.map(\.id) == [beta.id])
         #expect(projection.selectedItem(id: alpha.id) == nil)
     }
@@ -58,16 +59,19 @@ struct LibraryListProjectionTests {
         defer { projection.cancel(); probe.finishAll() }
         projection.update(items: [item], playlist: nil, request: LibraryListRequest(searchText: "alpha"))
         try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
 
         // Both operations happen in one MainActor turn: the old completion may already be
         // queued when Observation's willSet callback schedules the replacement snapshot.
         probe.finish(0, identifiers: [item.id])
         item.title = "Beta"
+        await oldCompletion.value
         try await waitUntil { probe.count == 2 }
         #expect(projection.items.isEmpty)
         #expect(probe.snapshot(at: 1).items.first?.title == "Beta")
+        let newCompletion = try #require(projection.pendingCompletion)
         probe.finish(1)
-        try await Task.sleep(for: .milliseconds(10))
+        await newCompletion.value
         #expect(projection.items.isEmpty)
     }
 
@@ -175,9 +179,10 @@ struct LibraryListProjectionTests {
         let request = LibraryListRequest()
         projection.update(items: [item], playlist: nil, request: request)
         try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
         projection.cancel()
         probe.finish(0, identifiers: [item.id])
-        try await Task.sleep(for: .milliseconds(10))
+        await oldCompletion.value
         #expect(projection.items.isEmpty)
 
         projection.update(items: [item], playlist: nil, request: request)
@@ -229,6 +234,9 @@ struct LibraryListProjectionTests {
         try await waitUntil { projection.items.map(\.id) == [video.id] }
     }
 
+}
+
+extension LibraryListProjectionTests {
     @Test func consecutiveInsertionsShareOneDeferredSourceCapture() async throws {
         let alpha = makeItem("Alpha")
         let beta = makeItem("Beta")
@@ -317,107 +325,5 @@ struct LibraryListProjectionTests {
 
     private func makeItem(_ title: String, isVideo: Bool = false) -> MediaItem {
         MediaItem(title: title, duration: 120, isVideo: isVideo, bookmarkData: Data(), fileName: "\(title).mp3")
-    }
-}
-
-nonisolated private enum LibraryListPlaylistChange: CaseIterable {
-    case entries, order, relationship
-}
-
-nonisolated private enum LibraryListObservedField: CaseIterable {
-    case title, artist, album, genre, albumArtist, composer, year, trackNumber, discNumber
-    case duration, isVideo, addedAt, fileName
-
-    @MainActor func change(_ item: MediaItem) {
-        switch self {
-        case .duration: item.duration = 200
-        case .isVideo: item.isVideo = true
-        case .addedAt: item.addedAt = .distantPast
-        case .fileName: item.fileName = "Changed.wav"
-        default: changeText(item)
-        }
-    }
-
-    @MainActor private func changeText(_ item: MediaItem) {
-        switch self {
-        case .title: item.title = "Changed"
-        case .artist: item.artist = "Changed"
-        case .album: item.album = "Changed"
-        case .genre: item.genre = "Changed"
-        case .albumArtist: item.albumArtist = "Changed"
-        case .composer: item.composer = "Changed"
-        case .year: item.year = "2000"
-        case .trackNumber: item.trackNumber = "2"
-        case .discNumber: item.discNumber = "2"
-        default: break
-        }
-    }
-
-    func value(_ item: LibraryListItemSnapshot) -> String {
-        switch self {
-        case .title: item.title
-        case .artist: item.artist
-        case .album: item.album
-        case .genre: item.genre ?? ""
-        case .albumArtist: item.albumArtist ?? ""
-        case .composer: item.composer ?? ""
-        case .year: item.year ?? ""
-        case .trackNumber: item.trackNumber ?? ""
-        case .discNumber: item.discNumber ?? ""
-        default: nonTextValue(item)
-        }
-    }
-
-    private func nonTextValue(_ item: LibraryListItemSnapshot) -> String {
-        switch self {
-        case .duration: String(item.duration)
-        case .isVideo: String(item.isVideo)
-        case .addedAt: String(item.addedAt.timeIntervalSince1970)
-        case .fileName: item.fileName
-        default: ""
-        }
-    }
-}
-
-nonisolated final class LibraryListComputationProbe: @unchecked Sendable {
-    private struct Call {
-        let snapshot: LibraryListSnapshot
-        var continuation: CheckedContinuation<[UUID], Never>?
-    }
-
-    private let lock = NSLock()
-    private var calls: [Call] = []
-    private var mainThread = false
-
-    var count: Int { lock.withLock { calls.count } }
-    var wasMainThread: Bool { lock.withLock { mainThread } }
-
-    func compute(_ snapshot: LibraryListSnapshot) async -> [UUID] {
-        await withCheckedContinuation { continuation in
-            lock.withLock {
-                mainThread = mainThread || Thread.isMainThread
-                calls.append(Call(snapshot: snapshot, continuation: continuation))
-            }
-        }
-    }
-
-    func snapshot(at index: Int) -> LibraryListSnapshot { lock.withLock { calls[index].snapshot } }
-
-    func finish(_ index: Int, identifiers: [UUID]? = nil) {
-        let call = lock.withLock {
-            let call = calls[index]
-            calls[index].continuation = nil
-            return call
-        }
-        call.continuation?.resume(returning: identifiers ?? call.snapshot.identifiers())
-    }
-
-    func finishAll() {
-        let pending = lock.withLock {
-            let pending = calls
-            for index in calls.indices { calls[index].continuation = nil }
-            return pending
-        }
-        for call in pending { call.continuation?.resume(returning: []) }
     }
 }

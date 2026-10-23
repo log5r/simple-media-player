@@ -19,6 +19,35 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install pinned xcsift
+        run: |
+          set -euo pipefail
+
+          xcsift_version="1.5.2"
+          xcsift_sha256="7cdf9ffa0e08531213f175209f980a4ce94ac71a913291c8e7294efa9a9a5bbe"
+          xcsift_archive="${RUNNER_TEMP}/xcsift-v${xcsift_version}-macos-arm64.tar.gz"
+          xcsift_bin_dir="${RUNNER_TEMP}/xcsift-bin"
+
+          curl --fail --location --retry 3 \
+            "https://github.com/ldomaradzki/xcsift/releases/download/v${xcsift_version}/xcsift-v${xcsift_version}-macos-arm64.tar.gz" \
+            --output "${xcsift_archive}"
+          printf '%s  %s\n' "${xcsift_sha256}" "${xcsift_archive}" \
+            | shasum -a 256 --check
+
+          mkdir -p "${xcsift_bin_dir}"
+          tar -xzf "${xcsift_archive}" -C "${xcsift_bin_dir}"
+          chmod +x "${xcsift_bin_dir}/xcsift"
+          version_output="$("${xcsift_bin_dir}/xcsift" --version)"
+          if [[ "${version_output}" != "${xcsift_version}" ]]; then
+            echo "::error::Expected xcsift ${xcsift_version}, got: ${version_output}"
+            exit 1
+          fi
+          printf 'Installed xcsift %s\n' "${version_output}"
+          printf '%s\n' "${xcsift_bin_dir}" >> "${GITHUB_PATH}"
+
+      - name: Test iOS simulator selector
+        run: python3 scripts/test_select_ios_test_device.py
+
       - name: Restore Swift package checkouts
         uses: actions/cache@v6
         with:
@@ -26,24 +55,30 @@ jobs:
           key: spm-${{ runner.os }}-${{ hashFiles('SimpleMediaPlayer.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
-      - name: Select Xcode with an iOS 27.1 or newer SDK
+      - name: Select Xcode 27.1 GA
         run: |
+          set -euo pipefail
+
           for app in /Applications/Xcode*.app; do
             candidate="${app}/Contents/Developer"
+            version_output=$(DEVELOPER_DIR="${candidate}" xcodebuild -version 2>/dev/null) || continue
+            [[ "${version_output}" == *$'Xcode 27.1\nBuild version 27A9275'* ]] || continue
             sdk_version=$(DEVELOPER_DIR="${candidate}" xcrun --sdk iphonesimulator --show-sdk-version 2>/dev/null) || continue
-            if [[ "${sdk_version}" == 27.[1-9]* ]] || (( ${sdk_version%%.*} > 27 )); then
-              printf 'DEVELOPER_DIR=%s\n' "${candidate}" >> "$GITHUB_ENV"
-              exit 0
-            fi
+            [[ "${sdk_version}" == "27.1" ]] || continue
+
+            printf '%s\n' "${version_output}"
+            printf 'Selected Xcode: %s (iOS Simulator SDK %s)\n' "${candidate}" "${sdk_version}"
+            printf 'DEVELOPER_DIR=%s\n' "${candidate}" >> "$GITHUB_ENV"
+            exit 0
           done
-          echo "::error::Install Xcode 27.1 (Beta is supported) on the xcode-27 runner."
+          echo "::error::Xcode 27.1 build 27A9275 with the iOS 27.1 SDK is required on the xcode-27 runner."
           exit 1
 
       # Runs before build-for-testing so that the test steps use the arm64 products.
       - name: Build for macOS (arm64 and x86_64)
         if: ${{ env.UNIVERSAL_BUILD == 'true' }}
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-universal-build \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'generic/platform=macOS' \
@@ -55,36 +90,82 @@ jobs:
       # Builds the app and test targets for arm64 once. The test steps reuse these products.
       - name: Build for macOS testing
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-build-for-testing \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .build/DerivedData \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
+            -enableCodeCoverage YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
 
-      - name: Build for iOS Simulator
+      - name: Prepare iOS 27.1 iPhone simulator
+        id: ios_simulator
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+
+          runtime_json="$(xcrun simctl list runtimes --json)"
+          if runtime_identifier="$(printf '%s' "${runtime_json}" | python3 scripts/select-ios-test-device.py --mode runtime --version 27.1)"; then
+            :
+          else
+            runtime_status=$?
+            if [[ "${runtime_status}" -ne 2 ]]; then
+              exit "${runtime_status}"
+            fi
+            ./scripts/ci-xcodebuild.sh ios-27.1-runtime-download \
+              -downloadPlatform iOS \
+              -buildVersion 27.1 \
+              -architectureVariant arm64
+            runtime_json="$(xcrun simctl list runtimes --json)"
+            runtime_identifier="$(printf '%s' "${runtime_json}" | python3 scripts/select-ios-test-device.py --mode runtime --version 27.1)"
+          fi
+
+          devices_json="$(xcrun simctl list devices --json)"
+          if simulator_id="$(printf '%s' "${devices_json}" | python3 scripts/select-ios-test-device.py --mode device --version 27.1)"; then
+            echo "Using existing iOS 27.1 simulator ${simulator_id}."
+          else
+            selection_status=$?
+            if [[ "${selection_status}" -ne 2 ]]; then
+              exit "${selection_status}"
+            fi
+            device_type="$(printf '%s' "${runtime_json}" | python3 scripts/select-ios-test-device.py --mode device-type --version 27.1)"
+            simulator_id="$(xcrun simctl create 'CI iPhone iOS 27.1' "${device_type}" "${runtime_identifier}")"
+            echo "Created iOS 27.1 simulator ${simulator_id} (${device_type})."
+          fi
+          printf 'udid=%s\n' "$simulator_id" >> "$GITHUB_OUTPUT"
+
+      - name: Boot iPhone simulator
+        id: ios_simulator_boot
+        timeout-minutes: 10
+        run: |
+          xcrun simctl bootstatus "${{ steps.ios_simulator.outputs.udid }}" -b
+
+      - name: Build for iOS Simulator testing
+        id: ios_build
         run: |
           arch_settings=()
           if [[ "${UNIVERSAL_BUILD}" != true ]]; then
             arch_settings=(ARCHS=arm64)
           fi
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh iOS-build-for-testing \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath .build/DerivedData \
+            -derivedDataPath .build/DerivedData-ios \
             -clonedSourcePackagesDirPath .build/SourcePackages \
             -skipPackagePluginValidation \
             "${arch_settings[@]}" \
-            CODE_SIGNING_ALLOWED=NO build
+            -enableCodeCoverage YES \
+            CODE_SIGNING_ALLOWED=NO build-for-testing
 
       - name: Run macOS unit tests
         id: unit_tests
+        timeout-minutes: 20
         run: |
           mkdir -p "${RUNNER_TEMP}/TestResults"
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-unit-tests \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
@@ -94,6 +175,26 @@ jobs:
             -only-testing:SimpleMediaPlayerTests \
             -parallel-testing-enabled NO \
             -resultBundlePath "${RUNNER_TEMP}/TestResults/AllUnitTests.xcresult" \
+            -enableCodeCoverage YES \
+            CODE_SIGNING_ALLOWED=NO test-without-building
+
+      - name: Run iOS Simulator unit tests
+        id: ios_unit_tests
+        if: ${{ always() && steps.ios_build.outcome == 'success' && steps.ios_simulator.outcome == 'success' && steps.ios_simulator_boot.outcome == 'success' }}
+        timeout-minutes: 20
+        run: |
+          mkdir -p "${RUNNER_TEMP}/TestResults"
+          ./scripts/ci-xcodebuild.sh iOS-unit-tests \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination "platform=iOS Simulator,id=${{ steps.ios_simulator.outputs.udid }}" \
+            -derivedDataPath .build/DerivedData-ios \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            -only-testing:SimpleMediaPlayerTests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "${RUNNER_TEMP}/TestResults/iOSUnitTests.xcresult" \
+            -enableCodeCoverage YES \
             CODE_SIGNING_ALLOWED=NO test-without-building
 
       # Diagnostic runs retain the original failure and isolate each suite from the others.
@@ -102,7 +203,7 @@ jobs:
         if: ${{ failure() && steps.unit_tests.outcome == 'failure' }}
         timeout-minutes: 10
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-lyrics-diagnostic \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
@@ -118,7 +219,7 @@ jobs:
         if: ${{ failure() && steps.unit_tests.outcome == 'failure' }}
         timeout-minutes: 10
         run: |
-          xcodebuild \
+          ./scripts/ci-xcodebuild.sh macOS-loudness-diagnostic \
             -project SimpleMediaPlayer.xcodeproj \
             -scheme SimpleMediaPlayer \
             -destination 'platform=macOS,arch=arm64' \
@@ -129,31 +230,52 @@ jobs:
             -resultBundlePath "${RUNNER_TEMP}/TestResults/AudioLoudnessNormalizationTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO test-without-building
 
-      - name: Summarize macOS test outcomes
-        if: ${{ always() && steps.unit_tests.outcome != 'skipped' }}
+      - name: Summarize unit test outcomes
+        if: ${{ always() }}
         env:
           ALL_TESTS_OUTCOME: ${{ steps.unit_tests.outcome }}
+          IOS_TESTS_OUTCOME: ${{ steps.ios_unit_tests.outcome }}
           LYRICS_TESTS_OUTCOME: ${{ steps.lyrics_tests.outcome }}
           LOUDNESS_TESTS_OUTCOME: ${{ steps.loudness_tests.outcome }}
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          | macOS unit tests | Outcome |
+          | Test run | Outcome |
           | --- | --- |
-          | All suites | ${ALL_TESTS_OUTCOME} |
+          | macOS unit tests | ${ALL_TESTS_OUTCOME} |
+          | iOS Simulator unit tests | ${IOS_TESTS_OUTCOME} |
           | LazyLyricsLoadingTests in isolation | ${LYRICS_TESTS_OUTCOME} |
           | AudioLoudnessNormalizationTests in isolation | ${LOUDNESS_TESTS_OUTCOME} |
 
           Isolated runs execute only after the full test run fails. They do not clear its failure.
           Each isolated run preserves parallel execution within the suite.
-          Download macOS-test-results and open the .xcresult bundles in Xcode to inspect failures.
+          Download ci-logs-coverage-test-results and open the .xcresult bundles in Xcode to inspect failures.
           EOF
 
-      - name: Upload macOS test results
-        if: ${{ always() && steps.unit_tests.outcome != 'skipped' }}
+      - name: Export test coverage
+        if: ${{ always() }}
+        run: |
+          mkdir -p .build-logs/coverage
+          for result_name in AllUnitTests iOSUnitTests; do
+            result_bundle="${RUNNER_TEMP}/TestResults/${result_name}.xcresult"
+            if [[ -d "${result_bundle}" ]]; then
+              xcrun xccov view --report --json "${result_bundle}" \
+                > ".build-logs/coverage/${result_name}.json"
+              xcrun xcresulttool export coverage \
+                --path "${result_bundle}" \
+                --output-path ".build-logs/coverage/${result_name}"
+            fi
+          done
+
+      - name: Upload CI logs, coverage, and test results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: macOS-test-results
-          path: ${{ runner.temp }}/TestResults/*.xcresult
+          name: ci-logs-coverage-test-results
+          include-hidden-files: true
+          path: |
+            .build-logs/**/*.log
+            .build-logs/coverage/**
+            ${{ runner.temp }}/TestResults/*.xcresult
           retention-days: 14
           if-no-files-found: warn
 

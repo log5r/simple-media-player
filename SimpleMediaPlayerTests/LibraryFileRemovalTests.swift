@@ -20,7 +20,7 @@ struct LibraryFileRemovalTests {
 
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
         #expect(fixture.service.delete(item, from: fixture.context) == nil)
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
         #expect(fixture.journal.entries(in: fixture.mediaDirectory).map(\.id) == [itemID])
         recorder.release()
         await removal?.value
@@ -157,7 +157,7 @@ struct LibraryFileRemovalTests {
         defer { recorder.release() }
 
         let removal = fixture.service.delete(item, from: fixture.context)
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
         // The caller's snapshot still lists the deleted item while its file removal is blocked.
         await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         recorder.release()
@@ -187,9 +187,9 @@ struct LibraryFileRemovalTests {
         let importTask = Task {
             await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [item])
         }
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
         let removal = fixture.service.delete(item, from: fixture.context)
-        await recorder.waitForCalls(2)
+        try await recorder.waitForCalls(2)
         // The probe finishes while the deleted item's file still exists.
         recorder.release(call: 1)
         await importTask.value

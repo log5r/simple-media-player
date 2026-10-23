@@ -56,7 +56,7 @@ struct LibraryBookmarkResolutionTests {
         let task = Task { try await fixture.service.makeExportPlan(for: items) }
         defer { recorder.release() }
 
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
         task.cancel()
         recorder.release()
 
@@ -74,7 +74,7 @@ struct LibraryBookmarkResolutionTests {
         let task = Task { try await fixture.service.makeExportPlan(for: items) }
         defer { recorder.release() }
 
-        await recorder.waitForCalls(1)
+        try await recorder.waitForCalls(1)
         let start = ContinuousClock.now
         task.cancel()
 

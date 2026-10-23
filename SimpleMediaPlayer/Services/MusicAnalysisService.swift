@@ -331,7 +331,7 @@ actor MusicAnalysisService {
     }
 
     @available(macOS 27, iOS 27, *)
-    private func convert(_ result: MusicUnderstandingSession.SessionResult, duration: Double) -> MusicAnalysis {
+    func convert(_ result: MusicUnderstandingSession.SessionResult, duration: Double) -> MusicAnalysis {
         func interval(_ range: CMTimeRange) -> MusicAnalysis.Interval? {
             let start = range.start.seconds
             let end = CMTimeRangeGetEnd(range).seconds

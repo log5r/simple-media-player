@@ -4,6 +4,8 @@ import Foundation
 import SFBAudioEngine
 
 nonisolated enum ExtendedAudioSource {
+    // Scoped to one decode task; observation never changes decoding or cache publication rules.
+    @TaskLocal static var decodeObserver: (@Sendable (SMPAudioDecodeStage, Int64, URL?) -> Void)?
     enum Kind: String, Sendable {
         case wma
         case wavPack
@@ -33,6 +35,7 @@ nonisolated enum ExtendedAudioSource {
     }
 
     private static let maximumFileBytes: Int64 = 4 * 1_024 * 1_024 * 1_024
+    private static let decodedPCMCacheVersion = "canonical-float32-v2"
     private static let cache = ExtendedAudioCache(maximumBytes: 8 * 1_024 * 1_024 * 1_024)
     private static let extensions: [String: Kind] = [
         "wma": .wma, "wv": .wavPack, "ape": .monkeysAudio, "mpc": .musepack
@@ -167,6 +170,9 @@ nonisolated enum ExtendedAudioSource {
         }, isSourceCurrent: { try cacheKey(for: url) == key })
     }
 
+}
+
+nonisolated extension ExtendedAudioSource {
     private static func checkDecodedSize(for url: URL, kind: Kind) throws {
         let sourceInfo = try info(for: url, kind: kind)
         let estimatedBytes = sourceInfo.duration * (sourceInfo.sampleRate ?? 0)
@@ -180,12 +186,19 @@ nonisolated enum ExtendedAudioSource {
         switch kind {
         case .wma:
             do {
+                let observer = decodeObserver
+                let progress: SMPAudioDecodeObserver? = observer.map { observer in
+                    { stage, frames in observer(stage, frames, destination) }
+                }
                 if let destination {
                     try SMPFFmpegAudio.decode(
-                        url, toCAF: destination, maxBytes: maximumFileBytes, shouldCancel: shouldCancel
+                        url, toCAF: destination, maxBytes: maximumFileBytes,
+                        shouldCancel: shouldCancel, observer: progress
                     )
                 } else {
-                    try SMPFFmpegAudio.validate(url, maxBytes: maximumFileBytes, shouldCancel: shouldCancel)
+                    try SMPFFmpegAudio.validate(
+                        url, maxBytes: maximumFileBytes, shouldCancel: shouldCancel, observer: progress
+                    )
                 }
             } catch let error as NSError {
                 if error.code == NSUserCancelledError { throw CancellationError() }
@@ -221,7 +234,8 @@ nonisolated enum ExtendedAudioSource {
               let modified = attributes[.modificationDate] as? Date else {
             throw CocoaError(.fileReadUnknown)
         }
-        let identity = "\(url.standardizedFileURL.path)|\(size)|\(modified.timeIntervalSince1970)"
+        let identity = "\(decodedPCMCacheVersion)|\(url.standardizedFileURL.path)|\(size)|"
+            + "\(modified.timeIntervalSince1970)"
         return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -231,17 +245,19 @@ nonisolated enum ExtendedAudioSource {
         let decoder = try AudioDecoder(url: source)
         try decoder.open()
         defer { try? decoder.close() }
-        let format = decoder.processingFormat
+        let sourceFormat = decoder.processingFormat
+        let (outputFormat, converter) = try makeCanonicalConverter(for: sourceFormat)
         let maximumFrames = try SMPAudioCacheSizeLimit.maximumFrames(
-            for: format, maxFileBytes: maximumFileBytes
+            for: outputFormat, maxFileBytes: maximumFileBytes
         ).int64Value
         let output = try destination.map {
             try AVAudioFile(
-                forWriting: $0, settings: format.settings,
-                commonFormat: format.commonFormat, interleaved: format.isInterleaved
+                forWriting: $0, settings: outputFormat.settings,
+                commonFormat: outputFormat.commonFormat, interleaved: outputFormat.isInterleaved
             )
         }
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_384) else {
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: 16_384),
+              let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: 16_384) else {
             throw CocoaError(.fileReadCorruptFile)
         }
         var writtenBytes: Int64 = 0
@@ -250,17 +266,51 @@ nonisolated enum ExtendedAudioSource {
             if shouldCancel() { throw CancellationError() }
             try decoder.decode(into: buffer, length: buffer.frameCapacity)
             guard buffer.frameLength > 0 else { break }
-            decodedFrames += AVAudioFramePosition(buffer.frameLength)
+            // This is a same-rate PCM format conversion, so the synchronous simple-conversion API needs no drain.
+            try converter.convert(to: convertedBuffer, from: buffer)
+            guard convertedBuffer.frameLength == buffer.frameLength else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            decodedFrames += AVAudioFramePosition(convertedBuffer.frameLength)
             guard decodedFrames <= maximumFrames else { throw CocoaError(.fileReadTooLarge) }
-            let channelMultiplier = format.isInterleaved ? 1 : Int64(format.channelCount)
-            writtenBytes += Int64(buffer.frameLength) * Int64(format.streamDescription.pointee.mBytesPerFrame)
+            let channelMultiplier = outputFormat.isInterleaved ? 1 : Int64(outputFormat.channelCount)
+            writtenBytes += Int64(convertedBuffer.frameLength)
+                * Int64(outputFormat.streamDescription.pointee.mBytesPerFrame)
                 * channelMultiplier
             guard writtenBytes <= maximumFileBytes else { throw CocoaError(.fileReadTooLarge) }
-            try output?.write(from: buffer)
+            try output?.write(from: convertedBuffer)
+            decodeObserver?(.frames, decodedFrames, destination)
         }
         guard writtenBytes > 0, decoder.length <= 0 || decodedFrames == decoder.length else {
             throw CocoaError(.fileReadCorruptFile)
         }
+        decodeObserver?(.complete, decodedFrames, destination)
+        if shouldCancel() { throw CancellationError() }
+    }
+
+    private static func makeCanonicalConverter(
+        for sourceFormat: AVAudioFormat
+    ) throws -> (AVAudioFormat, AVAudioConverter) {
+        let outputFormat: AVAudioFormat?
+        if let channelLayout = sourceFormat.channelLayout {
+            outputFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sourceFormat.sampleRate,
+                interleaved: false,
+                channelLayout: channelLayout
+            )
+        } else {
+            outputFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: sourceFormat.sampleRate,
+                channels: sourceFormat.channelCount,
+                interleaved: false
+            )
+        }
+        guard let outputFormat, let converter = AVAudioConverter(from: sourceFormat, to: outputFormat) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return (outputFormat, converter)
     }
 
     private static func cacheDirectory() throws -> URL {

@@ -92,14 +92,14 @@ struct MusicLibraryTrackExporterTests {
         }
     }
 
-    @Test func cancelledExportLeavesNoFile() async throws {
+    @Test func exportCancelledBeforeStartingLeavesNoFile() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let source = try writeAudio(named: "source.wav", in: directory, formatID: kAudioFormatLinearPCM)
         let task = Task {
-            try await MusicLibraryTrackExporter.export(assetURL: source, to: directory, baseName: "5")
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await MusicLibraryTrackExporter.export(assetURL: source, to: directory, baseName: "5")
         }
-        task.cancel()
 
         let result = await task.result
         #expect(throws: CancellationError.self) { try result.get() }
@@ -137,7 +137,7 @@ struct MusicLibraryTrackExporterTests {
 
 final class MusicLibraryTestBundleToken {}
 
-func writeAudio(named name: String, in directory: URL, formatID: AudioFormatID) throws -> URL {
+func writeAudio(named name: String, in directory: URL, formatID: AudioFormatID, seconds: Int = 1) throws -> URL {
     let url = directory.appendingPathComponent(name)
     var settings: [String: Any] = [
         AVFormatIDKey: formatID, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 2
@@ -158,6 +158,6 @@ func writeAudio(named name: String, in directory: URL, formatID: AudioFormatID) 
             samples[index] = sinf(Float(index) * 0.05) * 0.3
         }
     }
-    try file.write(from: buffer)
+    for _ in 0..<seconds { try file.write(from: buffer) }
     return url
 }

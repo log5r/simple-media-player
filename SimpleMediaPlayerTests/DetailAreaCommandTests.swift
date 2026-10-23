@@ -9,17 +9,13 @@ struct DetailAreaCommandTests {
     @Test(arguments: [true, false], [true, false])
     func backToListDismissesFullScreenVideoAndRetainsPlayback(
         _ showsInlineVideo: Bool, _ isPaused: Bool
-    ) async {
+    ) async throws {
         let movie = makeMovie(title: "Current movie")
         let queue = [makeMovie(title: "Previous movie"), movie, makeMovie(title: "Next movie")]
         let movieURL = URL(fileURLWithPath: "/tmp/detail-command-movie.mov")
         let fixture = makePlayerFixture(urlsByID: [movie.id: movieURL])
         fixture.player.play(item: movie, in: queue)
-        for _ in 0..<20 {
-            await Task.yield()
-            if fixture.player.isPlaying { break }
-        }
-        #expect(fixture.player.isPlaying)
+        try await waitForPlaybackToStart(fixture.player)
         if isPaused { fixture.player.pause() }
         fixture.player.seek(to: 12)
         fixture.player.showVideoArea = showsInlineVideo

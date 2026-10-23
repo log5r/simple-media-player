@@ -250,6 +250,7 @@ static BOOL SMPConvertDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_
              toCAF:(NSURL *)destinationURL
           maxBytes:(int64_t)maxBytes
       shouldCancel:(BOOL (^)(void))shouldCancel
+          observer:(SMPAudioDecodeObserver)observer
              error:(NSError **)error {
     AVFormatContext *format = NULL;
     AVCodecContext *codec = NULL;
@@ -282,6 +283,7 @@ static BOOL SMPConvertDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_
             if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
             if (!SMPConvertDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
                                         &resampler, &writtenFrames, &maximumFileFrames, &failure)) goto cleanup;
+            if (observer) observer(SMPAudioDecodeStageFrames, writtenFrames);
             av_frame_unref(frame);
         }
         if (result != AVERROR(EAGAIN) && result != AVERROR_EOF) {
@@ -292,16 +294,20 @@ static BOOL SMPConvertDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_
     if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
     result = avcodec_send_packet(codec, NULL);
     if (result < 0) { failure = SMPAVError(result); goto cleanup; }
+    if (observer) observer(SMPAudioDecodeStageDecoderDrain, writtenFrames);
+    if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
     while ((result = avcodec_receive_frame(codec, frame)) >= 0) {
         if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
         if (!SMPConvertDecodedFrame(frame, destinationURL, maxBytes, &output, &outputFormat,
                                     &resampler, &writtenFrames, &maximumFileFrames, &failure)) goto cleanup;
+        if (observer) observer(SMPAudioDecodeStageDecoderDrain, writtenFrames);
         av_frame_unref(frame);
     }
     if (result != AVERROR_EOF) { failure = SMPAVError(result); goto cleanup; }
     if (resampler) {
         int64_t previousFrames;
         do {
+            if (observer) observer(SMPAudioDecodeStageResamplerDrain, writtenFrames);
             if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
             previousFrames = writtenFrames;
             if (!SMPConvertDecodedFrame(NULL, destinationURL, maxBytes, &output, &outputFormat,
@@ -312,6 +318,8 @@ static BOOL SMPConvertDecodedFrame(AVFrame *frame, NSURL *destinationURL, int64_
     if (writtenFrames == 0) {
         failure = SMPError(EINVAL, @"The file contains no decodable audio."); goto cleanup;
     }
+    if (observer) observer(SMPAudioDecodeStageComplete, writtenFrames);
+    if (shouldCancel()) { failure = SMPError(NSUserCancelledError, @"Audio conversion cancelled."); goto cleanup; }
     success = YES;
 
 cleanup:
@@ -328,7 +336,7 @@ cleanup:
           maxBytes:(int64_t)maxBytes
       shouldCancel:(BOOL (^)(void))shouldCancel
              error:(NSError **)error {
-    return [self processURL:url toCAF:nil maxBytes:maxBytes shouldCancel:shouldCancel error:error];
+    return [self processURL:url toCAF:nil maxBytes:maxBytes shouldCancel:shouldCancel observer:nil error:error];
 }
 
 + (BOOL)decodeURL:(NSURL *)url
@@ -336,7 +344,24 @@ cleanup:
           maxBytes:(int64_t)maxBytes
       shouldCancel:(BOOL (^)(void))shouldCancel
              error:(NSError **)error {
-    return [self processURL:url toCAF:destinationURL maxBytes:maxBytes shouldCancel:shouldCancel error:error];
+    return [self processURL:url toCAF:destinationURL maxBytes:maxBytes shouldCancel:shouldCancel observer:nil error:error];
+}
+
++ (BOOL)validateURL:(NSURL *)url
+          maxBytes:(int64_t)maxBytes
+      shouldCancel:(BOOL (^)(void))shouldCancel
+          observer:(SMPAudioDecodeObserver)observer
+             error:(NSError **)error {
+    return [self processURL:url toCAF:nil maxBytes:maxBytes shouldCancel:shouldCancel observer:observer error:error];
+}
+
++ (BOOL)decodeURL:(NSURL *)url
+             toCAF:(NSURL *)destinationURL
+          maxBytes:(int64_t)maxBytes
+      shouldCancel:(BOOL (^)(void))shouldCancel
+          observer:(SMPAudioDecodeObserver)observer
+             error:(NSError **)error {
+    return [self processURL:url toCAF:destinationURL maxBytes:maxBytes shouldCancel:shouldCancel observer:observer error:error];
 }
 
 @end

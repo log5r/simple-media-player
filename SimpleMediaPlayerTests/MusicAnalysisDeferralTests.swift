@@ -3,8 +3,8 @@ import Testing
 @testable import SimpleMediaPlayer
 
 struct MusicAnalysisDeferralTests {
+    @available(macOS 27, iOS 27, *)
     @Test func cachedAnalysisReturnsWithoutWaitingOrReading() async throws {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let fixture = try AnalysisDeferralFixture()
         defer { fixture.cleanup() }
         MusicAnalysisCache.write(MusicAnalysis(duration: 8, bpm: 128), at: try fixture.entryURL())
@@ -15,8 +15,8 @@ struct MusicAnalysisDeferralTests {
         #expect(events.values.isEmpty)
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func uncachedAnalysisWaitsBeforeOpeningTheFile() async throws {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let fixture = try AnalysisDeferralFixture()
         defer { fixture.cleanup() }
         let events = EventRecorder()
@@ -26,8 +26,8 @@ struct MusicAnalysisDeferralTests {
         #expect(events.values == ["wait", "read"])
     }
 
+    @available(macOS 27, iOS 27, *)
     @Test func cancellationDuringTheWaitSkipsTheFileAndTheCache() async throws {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let fixture = try AnalysisDeferralFixture()
         defer { fixture.cleanup() }
         let events = EventRecorder()
@@ -48,8 +48,8 @@ struct MusicAnalysisDeferralTests {
 
     // The wait ignores cancellation here, so only the check after it keeps the switched-away track from reading.
     @MainActor
+    @available(macOS 27, iOS 27, *)
     @Test func resetDuringANoncooperativeWaitSkipsTheFileAndLeavesTheControllerIdle() async throws {
-        guard #available(macOS 27, iOS 27, *) else { return }
         let fixture = try AnalysisDeferralFixture()
         defer { fixture.cleanup() }
         let events = EventRecorder()

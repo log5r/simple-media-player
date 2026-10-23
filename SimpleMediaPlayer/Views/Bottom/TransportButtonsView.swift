@@ -46,7 +46,7 @@ struct TransportButtonsView: View {
                 identifier: "playButton",
                 label: "Play",
                 systemName: "play.fill",
-                active: player.isPlaying,
+                active: player.canPause,
                 isEnabled: canPlay
             ) {
                 play()
@@ -66,7 +66,7 @@ struct TransportButtonsView: View {
                 identifier: "stopButton",
                 label: "Stop",
                 systemName: "stop.fill",
-                active: player.isPlaying == false && player.isPaused == false,
+                active: !player.canPause && !player.isPaused,
                 isEnabled: player.canStop
             ) {
                 player.stop()

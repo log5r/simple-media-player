@@ -16,13 +16,13 @@ struct AudioEngineFinishNotificationTests {
         let probe = try await makeEngineAtEnd(of: first)
         defer { probe.engine.suspend() }
 
-        // 終端処理を制御キューへ積んだ直後、その MainActor 通知より先に次の曲を読み込む
-        probe.engine.play()
+        try await probe.enqueueFinish()
         probe.engine.load(url: second)
-        try await waitUntil { probe.loadedDurations.count == 2 }
-        try await Task.sleep(for: .milliseconds(100))
-
+        try await probe.waitForLoad()
+        probe.notifications.deliverNext()
         #expect(probe.finishedCount == 0)
+        #expect(probe.loadedDurations.count == 2)
+        #expect(probe.engine.currentTime == 0)
     }
 
     @Test func finishWithoutTrackChangeIsDelivered() async throws {
@@ -31,11 +31,10 @@ struct AudioEngineFinishNotificationTests {
         let probe = try await makeEngineAtEnd(of: url)
         defer { probe.engine.suspend() }
 
-        probe.engine.play()
-        try await waitUntil { probe.finishedCount == 1 }
-        try await Task.sleep(for: .milliseconds(100))
-
+        try await probe.enqueueFinish()
+        probe.notifications.deliverNext()
         #expect(probe.finishedCount == 1)
+        #expect(probe.notifications.pendingCount == 0)
     }
 
     @Test func finishQueuedBeforeSeekBackIsNotDelivered() async throws {
@@ -44,11 +43,12 @@ struct AudioEngineFinishNotificationTests {
         let probe = try await makeEngineAtEnd(of: url)
         defer { probe.engine.suspend() }
 
-        probe.engine.play()
+        try await probe.enqueueFinish()
         probe.engine.seek(to: 0, autoPlay: false)
-        try await Task.sleep(for: .milliseconds(200))
-
+        _ = await probe.engine.isEngineRunning
+        probe.notifications.deliverNext()
         #expect(probe.finishedCount == 0)
+        #expect(probe.engine.currentTime == 0)
     }
 
     @Test func finishQueuedBeforePauseAndResumeIsDeliveredOnlyForResumedPlayback() async throws {
@@ -57,14 +57,30 @@ struct AudioEngineFinishNotificationTests {
         let probe = try await makeEngineAtEnd(of: url)
         defer { probe.engine.suspend() }
 
-        // 再開後の再生も終端から始まるため、通知は再開した再生の 1 回だけになる
-        probe.engine.play()
+        try await probe.enqueueFinish()
         probe.engine.pause()
-        probe.engine.play()
-        try await waitUntil { probe.finishedCount >= 1 }
-        try await Task.sleep(for: .milliseconds(200))
-
+        try await probe.enqueueFinish()
+        #expect(probe.notifications.pendingCount == 2)
+        probe.notifications.deliverNext()
+        #expect(probe.finishedCount == 0)
+        probe.notifications.deliverNext()
         #expect(probe.finishedCount == 1)
+    }
+
+    @Test(arguments: [false, true])
+    func finishQueuedBeforeStopIsNotDelivered(reset: Bool) async throws {
+        let url = try await makeSilentAudio()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let probe = try await makeEngineAtEnd(of: url)
+        defer { probe.engine.suspend() }
+        let endTime = probe.engine.currentTime
+
+        try await probe.enqueueFinish()
+        probe.engine.stop(reset: reset)
+        _ = await probe.engine.isEngineRunning
+        probe.notifications.deliverNext()
+        #expect(probe.finishedCount == 0)
+        #expect(probe.engine.currentTime == (reset ? 0 : endTime))
     }
 
     @Test func finishQueuedBeforeSuspendIsNotDelivered() async throws {
@@ -72,40 +88,35 @@ struct AudioEngineFinishNotificationTests {
         defer { try? FileManager.default.removeItem(at: url) }
         let probe = try await makeEngineAtEnd(of: url)
 
-        probe.engine.play()
+        try await probe.enqueueFinish()
         probe.engine.suspend()
-        try await Task.sleep(for: .milliseconds(200))
-
+        #expect(await probe.engine.isEngineRunning == false)
+        probe.notifications.deliverNext()
         #expect(probe.finishedCount == 0)
+        #expect(probe.engine.currentTime == 0)
     }
 
-    // 終端へシークしておくと、次の play() が制御キュー上で即座に終端処理を行う
     private func makeEngineAtEnd(of url: URL) async throws -> FinishProbe {
-        let probe = FinishProbe(engine: AudioEngineService(analyzer: SpectrumAnalyzer()))
+        let probe = FinishProbe()
         probe.engine.setVolume(0)
         probe.engine.load(url: url)
-        try await waitUntil { probe.loadedDurations.count == 1 }
+        try await probe.waitForLoad()
         let duration = try #require(probe.loadedDurations.first)
         probe.engine.seek(to: duration + 1, autoPlay: false)
-        try await waitUntil { probe.engine.currentTime >= duration }
+        _ = await probe.engine.isEngineRunning
+        try #require(probe.engine.currentTime >= duration)
         return probe
-    }
-
-    private func waitUntil(_ condition: () -> Bool) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-        while !condition(), ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        try #require(condition())
     }
 
     private func makeSilentAudio() async throws -> URL {
         try await Task.detached {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("finish-notification-\(UUID().uuidString).wav")
-            let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
-            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_410)!
+            let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+            let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_410))
             buffer.frameLength = buffer.frameCapacity
+            let samples = try #require(buffer.floatChannelData?[0])
+            samples.initialize(repeating: 0, count: Int(buffer.frameLength))
             let file = try AVAudioFile(forWriting: url, settings: format.settings)
             try file.write(from: buffer)
             return url
@@ -116,12 +127,50 @@ struct AudioEngineFinishNotificationTests {
 @MainActor
 private final class FinishProbe {
     let engine: AudioEngineService
+    let notifications: HeldFinishNotifications
+    private let loaded = DispatchSemaphore(value: 0)
     var loadedDurations: [TimeInterval] = []
     var finishedCount = 0
 
-    init(engine: AudioEngineService) {
-        self.engine = engine
-        engine.onFormatLoaded = { [weak self] duration, _ in self?.loadedDurations.append(duration) }
+    init() {
+        let notifications = HeldFinishNotifications()
+        self.notifications = notifications
+        engine = AudioEngineService(
+            analyzer: SpectrumAnalyzer(), deliverFinishNotification: { notifications.enqueue($0) }
+        )
+        engine.onFormatLoaded = { [weak self] duration, _ in
+            self?.loadedDurations.append(duration)
+            self?.loaded.signal()
+        }
         engine.onFinished = { [weak self] in self?.finishedCount += 1 }
+    }
+
+    func waitForLoad() async throws {
+        try #require(await loaded.waitAsync(timeout: .now() + 5) == .success)
+    }
+
+    func enqueueFinish() async throws {
+        engine.play()
+        // The old notification exists before another transport action is allowed.
+        // Awaiting the control queue alone would let MainActor deliver it too early.
+        try #require(await notifications.enqueued.waitAsync(timeout: .now() + 5) == .success)
+    }
+}
+
+nonisolated private final class HeldFinishNotifications: @unchecked Sendable {
+    let enqueued = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var pending: [@MainActor @Sendable () -> Void] = []
+
+    var pendingCount: Int { lock.withLock { pending.count } }
+
+    func enqueue(_ notification: @escaping @MainActor @Sendable () -> Void) {
+        lock.withLock { pending.append(notification) }
+        enqueued.signal()
+    }
+
+    @MainActor func deliverNext() {
+        let notification = lock.withLock { pending.removeFirst() }
+        notification()
     }
 }
