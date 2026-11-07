@@ -110,8 +110,10 @@ if [[ -z "$source_app" ]]; then
   xcode_args+=(-scheme "$scheme" -configuration "$configuration"
     -destination 'generic/platform=macOS' -derivedDataPath "$build_root")
   if [[ "$project_signing" == false ]]; then
+    # Hardened Runtime's library validation rejects embedded frameworks without a Team ID.
     xcode_args+=(CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=
-      PROVISIONING_PROFILE_SPECIFIER= CODE_SIGNING_ALLOWED=YES)
+      PROVISIONING_PROFILE_SPECIFIER= CODE_SIGNING_ALLOWED=YES
+      ENABLE_HARDENED_RUNTIME=NO)
   fi
   # Only build-setting assignments are accepted; keep the platform and output path fixed.
   # macOS ships Bash 3.2, where expanding an empty array under nounset fails.
