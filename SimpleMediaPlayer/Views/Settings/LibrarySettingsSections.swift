@@ -24,6 +24,27 @@ struct AudioSettingsSection: View {
     }
 }
 
+struct PlaybackControlsSettingsSection: View {
+    @AppStorage(AppSettingsKey.sectionNavigationEnabled)
+    private var sectionNavigationEnabled = AppSettingsDefault.sectionNavigationEnabled
+
+    var body: some View {
+        Section("Playback Controls") {
+            Toggle("Skip Between Sections", isOn: $sectionNavigationEnabled)
+                .accessibilityIdentifier("sectionNavigationToggle")
+
+            Text(
+                """
+                The previous and next buttons move between the sections of a song found by music analysis. \
+                When no section is available in that direction, they move to the previous or next track.
+                """
+            )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct AppearanceSettingsSection: View {
     @AppStorage(AppSettingsKey.appearanceMode) private var appearanceModeRaw = AppSettingsDefault.appearanceMode
 

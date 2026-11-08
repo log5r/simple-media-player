@@ -5,6 +5,8 @@ import SwiftUI
 struct IPhoneLEDDock: View {
     let player: PlayerViewModel
     let openDeck: () -> Void
+    @AppStorage(AppSettingsKey.sectionNavigationEnabled)
+    private var sectionNavigationEnabled = AppSettingsDefault.sectionNavigationEnabled
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
 
     var body: some View {
@@ -16,9 +18,15 @@ struct IPhoneLEDDock: View {
                 symbol: player.canPause ? "pause.fill" : "play.fill", identifier: "phoneDockPlayPause"
             ) { player.togglePlayPause() }
             if placement != .inline {
-                playbackButton("Next Track", symbol: "forward.end.fill", identifier: "phoneDockNext") {
-                    player.next()
-                }.disabled(!player.canSkipToNext)
+                if sectionNavigationEnabled {
+                    playbackButton("Next Section", symbol: "forward.frame.fill", identifier: "phoneDockNextSection") {
+                        player.nextSection()
+                    }.disabled(!player.canSkipToNextSection)
+                } else {
+                    playbackButton("Next Track", symbol: "forward.end.fill", identifier: "phoneDockNext") {
+                        player.next()
+                    }.disabled(!player.canSkipToNext)
+                }
             }
         }
         .padding(.horizontal, 12)

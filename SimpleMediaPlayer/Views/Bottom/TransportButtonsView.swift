@@ -10,6 +10,8 @@ struct TransportButtonsView: View {
 
     @State private var flashPrevious = false
     @State private var flashNext = false
+    @AppStorage(AppSettingsKey.sectionNavigationEnabled)
+    private var sectionNavigationEnabled = AppSettingsDefault.sectionNavigationEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -31,9 +33,9 @@ struct TransportButtonsView: View {
     var body: some View {
         HStack(spacing: 0) {
             transportButton(
-                identifier: "previousTrackButton",
-                label: "Previous Track",
-                systemName: "backward.end.alt.fill",
+                identifier: sectionNavigationEnabled ? "previousSectionButton" : "previousTrackButton",
+                label: sectionNavigationEnabled ? "Previous Section" : "Previous Track",
+                systemName: sectionNavigationEnabled ? "backward.frame.fill" : "backward.end.alt.fill",
                 active: flashPrevious,
                 isEnabled: canSkipToPrevious
             ) {
@@ -73,9 +75,9 @@ struct TransportButtonsView: View {
             }
             Divider().background(palette.buttonDivider)
             transportButton(
-                identifier: "nextTrackButton",
-                label: "Next Track",
-                systemName: "forward.end.alt.fill",
+                identifier: sectionNavigationEnabled ? "nextSectionButton" : "nextTrackButton",
+                label: sectionNavigationEnabled ? "Next Section" : "Next Track",
+                systemName: sectionNavigationEnabled ? "forward.frame.fill" : "forward.end.alt.fill",
                 active: flashNext,
                 isEnabled: canSkipToNext
             ) {
@@ -118,14 +120,14 @@ struct TransportButtonsView: View {
 
     private var canSkipToNext: Bool {
         if player.currentItem != nil {
-            return player.canSkipToNext
+            return sectionNavigationEnabled ? player.canSkipToNextSection : player.canSkipToNext
         }
         return adjacentSelectedItem(offset: 1) != nil
     }
 
     private var canSkipToPrevious: Bool {
         if player.currentItem != nil {
-            return player.canPlayPrevious
+            return sectionNavigationEnabled ? player.canPlayPreviousSection : player.canPlayPrevious
         }
         return adjacentSelectedItem(offset: -1) != nil
     }
@@ -140,7 +142,7 @@ struct TransportButtonsView: View {
 
     private func skipToNext() {
         if player.currentItem != nil {
-            player.next()
+            if sectionNavigationEnabled { player.nextSection() } else { player.next() }
         } else if let item = adjacentSelectedItem(offset: 1) {
             playItem(item)
         }
@@ -148,7 +150,7 @@ struct TransportButtonsView: View {
 
     private func skipToPrevious() {
         if player.currentItem != nil {
-            player.previous()
+            if sectionNavigationEnabled { player.previousSection() } else { player.previous() }
         } else if let item = adjacentSelectedItem(offset: -1) {
             playItem(item)
         }

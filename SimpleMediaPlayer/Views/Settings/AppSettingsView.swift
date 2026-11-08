@@ -14,6 +14,7 @@ struct AppSettingsView: View {
             Form {
                 AppearanceSettingsSection()
                 AudioSettingsSection(player: player)
+                PlaybackControlsSettingsSection()
                 if !usesPhoneLayout { MediaListSettingsSection() }
                 LEDSettingsSection()
             }

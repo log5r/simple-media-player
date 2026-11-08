@@ -40,7 +40,7 @@ extension PlayerViewModel {
             currentTime = videoService.currentTime
             if duration <= 0, videoService.duration > 0 { duration = videoService.duration }
         } else {
-            currentTime = audioEngine.currentTime
+            currentTime = clockTimeAfterSectionSeek(audioEngine.currentTime)
             if duration <= 0, audioEngine.duration > 0 { duration = audioEngine.duration }
         }
     }

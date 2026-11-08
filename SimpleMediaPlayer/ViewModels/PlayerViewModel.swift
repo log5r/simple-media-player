@@ -27,8 +27,10 @@ final class PlayerViewModel {
     @ObservationIgnored private let playbackClock = PlaybackClock()
     var currentTime: TimeInterval {
         get { playbackClock.time }
-        set { playbackClock.update(to: newValue) }
+        set { playbackClock.update(to: newValue); updateNextSectionAvailability() }
     }
+    @ObservationIgnored var sectionSeek: SectionSeek?
+    var hasNextSectionBoundary = false
     var elapsedSeconds: Int { playbackClock.elapsedSeconds }
     var canPlayPrevious: Bool {
         canSkipToPrevious || (currentItem != nil && playbackClock.canRestart)
@@ -145,6 +147,7 @@ final class PlayerViewModel {
             self?.duration = duration
             self?.formatInfo = formatInfo
         }
+        musicAnalysis.onSectionBoundariesChange = { [weak self] in self?.updateNextSectionAvailability() }
         updateVisualizationSuspension()
         audioEngine.setVolumeNormalizationEnabled(volumeNormalizationEnabled)
         audioEngine.setEqualizer(equalizer)
@@ -367,6 +370,7 @@ extension PlayerViewModel {
 extension PlayerViewModel {
     func seek(to time: TimeInterval) {
         let target = max(0, min(duration, time))
+        sectionSeek = nil
         currentTime = target
         if isVideoMode {
             videoService.seek(to: target)

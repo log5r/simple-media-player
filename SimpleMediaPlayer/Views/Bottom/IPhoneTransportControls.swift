@@ -86,19 +86,35 @@ struct IPhoneDeckBarCell<Label: View>: View {
 /// Stop, Previous, Play/Pause, and Next as one bar; Play/Pause is emphasized by width and symbol size.
 struct IPhoneTransportBar: View {
     let player: PlayerViewModel
+    @AppStorage(AppSettingsKey.sectionNavigationEnabled)
+    private var sectionNavigationEnabled = AppSettingsDefault.sectionNavigationEnabled
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         IPhoneDeckCellRow(weights: [1, 1, 2, 1]) {
             cell("Stop", symbol: "stop.fill", identifier: "phoneStop", showsDivider: false) { player.stop() }
-            cell("Previous Track", symbol: "backward.end.fill", identifier: "phonePrevious") { player.previous() }
-                .disabled(!player.canPlayPrevious)
+            if sectionNavigationEnabled {
+                cell("Previous Section", symbol: "backward.frame.fill", identifier: "phonePreviousSection") {
+                    player.previousSection()
+                }
+                .disabled(!player.canPlayPreviousSection)
+            } else {
+                cell("Previous Track", symbol: "backward.end.fill", identifier: "phonePrevious") { player.previous() }
+                    .disabled(!player.canPlayPrevious)
+            }
             cell(
                 player.canPause ? "Pause" : "Play", symbol: player.canPause ? "pause.fill" : "play.fill",
                 identifier: "phonePlayPause", symbolSize: 24
             ) { player.togglePlayPause() }
-            cell("Next Track", symbol: "forward.end.fill", identifier: "phoneNext") { player.next() }
-                .disabled(!player.canSkipToNext)
+            if sectionNavigationEnabled {
+                cell("Next Section", symbol: "forward.frame.fill", identifier: "phoneNextSection") {
+                    player.nextSection()
+                }
+                .disabled(!player.canSkipToNextSection)
+            } else {
+                cell("Next Track", symbol: "forward.end.fill", identifier: "phoneNext") { player.next() }
+                    .disabled(!player.canSkipToNext)
+            }
         }
         .frame(height: IPhoneDeckLayout.rowHeight)
         .iPhoneDeckControlFrame(BottomPanelPalette(colorScheme: colorScheme))

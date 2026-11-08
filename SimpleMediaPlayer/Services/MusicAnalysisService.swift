@@ -12,7 +12,12 @@ final class MusicAnalysisController {
         case idle, analyzing, ready, unavailable, failed
     }
 
-    private(set) var result: MusicAnalysis?
+    private(set) var result: MusicAnalysis? {
+        didSet { sectionBoundaries = result?.sectionBoundaries() ?? []; onSectionBoundariesChange?() }
+    }
+    /// `result.sectionBoundaries()`, kept so that transport availability does not recompute it on every clock tick.
+    private(set) var sectionBoundaries: [Double] = []
+    @ObservationIgnored var onSectionBoundariesChange: (@MainActor () -> Void)?
     private(set) var paceLevels: [Double?] = []
     private(set) var tempoByBeat: [Double?] = []
     private(set) var status: Status = .idle

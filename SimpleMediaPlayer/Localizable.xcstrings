@@ -3134,6 +3134,16 @@
         }
       }
     },
+    "Next Section" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "次の区切り"
+          }
+        }
+      }
+    },
     "Next Track" : {
       "localizations" : {
         "ja" : {
@@ -3554,6 +3564,16 @@
         }
       }
     },
+    "Playback Controls" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生操作"
+          }
+        }
+      }
+    },
     "Playback Error" : {
       "localizations" : {
         "ja" : {
@@ -3765,6 +3785,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "プリセット名"
+          }
+        }
+      }
+    },
+    "Previous Section" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前の区切り"
           }
         }
       }
@@ -4261,6 +4291,16 @@
         }
       }
     },
+    "Skip Between Sections" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "区切りごとに移動"
+          }
+        }
+      }
+    },
     "Skip Forward 10 Seconds" : {
       "localizations" : {
         "ja" : {
@@ -4551,6 +4591,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "シミュレータではMusicライブラリのピッカーを使用できません。"
+          }
+        }
+      }
+    },
+    "The previous and next buttons move between the sections of a song found by music analysis. When no section is available in that direction, they move to the previous or next track." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前後のボタンで、音楽解析で見つかった曲の区切りへ移動します。その方向に区切りがないときは、前の曲や次の曲へ移動します。"
           }
         }
       }
