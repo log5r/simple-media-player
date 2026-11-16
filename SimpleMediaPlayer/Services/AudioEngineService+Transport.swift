@@ -23,19 +23,30 @@ nonisolated extension AudioEngineService {
         engine.attach(graphicEQ)
         engine.attach(reverb)
         outputProtection.attach(to: engine)
-        engine.connect(playerNode, to: timePitch, format: nil)
-        engine.connect(timePitch, to: pitchEffect.node, format: nil)
-        engine.connect(pitchEffect.node, to: fadeMixer, format: nil)
-        engine.connect(fadeMixer, to: loudnessGain, format: nil)
-        engine.connect(loudnessGain, to: graphicEQ, format: nil)
-        engine.connect(graphicEQ, to: reverb, format: nil)
-        engine.connect(reverb, to: engine.mainMixerNode, format: nil)
+        // 接続の失敗はここでは報告できないため記録し、performPlay() で再試行して再生エラーとして報告する
+        do {
+            try connectEngineGraph()
+            engineGraphError = nil
+        } catch {
+            engineGraphError = error
+        }
         loudnessGain.bypass = true
         timePitch.pitch = 0
         timePitch.bypass = timePitch.rate == 1
         configureGraphicEqualizerBands()
         applyEqualizer(currentEqualizerSettings)
         observeEngineConfiguration()
+    }
+
+    func connectEngineGraph() throws {
+        dispatchPrecondition(condition: .onQueue(controlQueue))
+        try engine.connectNode(playerNode, to: timePitch, format: nil)
+        try engine.connectNode(timePitch, to: pitchEffect.node, format: nil)
+        try engine.connectNode(pitchEffect.node, to: fadeMixer, format: nil)
+        try engine.connectNode(fadeMixer, to: loudnessGain, format: nil)
+        try engine.connectNode(loudnessGain, to: graphicEQ, format: nil)
+        try engine.connectNode(graphicEQ, to: reverb, format: nil)
+        try engine.connectNode(reverb, to: engine.mainMixerNode, format: nil)
     }
 
     // Transport actions use this output clock too. Subtracting the latest rate times

@@ -133,29 +133,21 @@ final class DuoFullScreenVideoUITests: XCTestCase {
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 180
         ])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
-                                                          sourcePixelBufferAttributes: nil)
-        writer.add(input)
-        XCTAssertTrue(writer.startWriting())
+        let receiver = writer.inputPixelBufferReceiver(for: input, pixelBufferAttributes: nil)
+        try writer.start()
         writer.startSession(atSourceTime: .zero)
-        var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 320, 180, kCVPixelFormatType_32ARGB,
-                                          [kCVPixelBufferCGImageCompatibilityKey: true] as CFDictionary,
-                                          &buffer), kCVReturnSuccess)
-        let pixelBuffer = try XCTUnwrap(buffer)
-        CIContext().render(CIImage(color: .red), to: pixelBuffer)
+        let frame = try CVMutablePixelBuffer(CVPixelBufferCreationAttributes(
+            pixelFormatType: CVPixelFormatType(rawValue: kCVPixelFormatType_32ARGB),
+            size: CVImageSize(width: 320, height: 180), compatibility: .cgImage
+        ))
+        frame.withUnsafeBuffer { CIContext().render(CIImage(color: .red), to: $0) }
+        let pixelBuffer = CVReadOnlyPixelBuffer(frame)
         for second: Int64 in [0, 59] {
-            let deadline = Date().addingTimeInterval(5)
-            while !input.isReadyForMoreMediaData {
-                guard writer.status == .writing, Date() < deadline else {
-                    throw CocoaError(.fileWriteUnknown)
-                }
-                try await Task.sleep(for: .milliseconds(10))
-            }
-            XCTAssertTrue(adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: second, timescale: 1)))
+            // Suspends until the input is ready for more media data.
+            try await receiver.append(pixelBuffer, with: CMTime(value: second, timescale: 1))
         }
         writer.endSession(atSourceTime: CMTime(value: 60, timescale: 1))
-        input.markAsFinished()
+        receiver.finish()
         await writer.finishWriting()
         XCTAssertEqual(writer.status, .completed)
         return try Data(contentsOf: url)

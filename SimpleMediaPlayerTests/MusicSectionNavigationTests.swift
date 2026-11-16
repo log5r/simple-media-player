@@ -87,7 +87,6 @@ struct PlayerSectionNavigationTests {
         await fixture.player.musicAnalysis.load(url: fixture.urls[item.id]!)?.value
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func nextSectionSeeksWithinTheTrackThenAdvancesAfterTheLastBoundary() async {
         let fixture = makeFixture()
         await play(0, in: fixture)
@@ -106,7 +105,6 @@ struct PlayerSectionNavigationTests {
         #expect(fixture.player.currentItem?.id == fixture.items[1].id)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func nextSectionDoesNotStopAtTheEndOfTheQueue() async {
         let fixture = makeFixture(itemCount: 1)
         await play(0, in: fixture)
@@ -118,7 +116,6 @@ struct PlayerSectionNavigationTests {
         #expect(fixture.audio.seekRequests.count == seeks)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func previousSectionRestartsSectionThenFallsBackToPreviousTrack() async {
         let fixture = makeFixture()
         await play(1, in: fixture)
@@ -134,7 +131,6 @@ struct PlayerSectionNavigationTests {
         #expect(fixture.player.currentItem?.id == fixture.items[0].id)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func withoutSectionsTheButtonsMoveBetweenTracks() async {
         let fixture = makeFixture(sections: [])
         await play(0, in: fixture)
@@ -154,7 +150,6 @@ struct PlayerSectionNavigationTests {
         #expect(!fixture.player.canSkipToNextSection)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func nextSectionIsEnabledOnlyWithALaterBoundaryOrANextTrack() async {
         let fixture = makeFixture(itemCount: 1)
         #expect(!fixture.player.canSkipToNextSection)
@@ -176,7 +171,6 @@ struct PlayerSectionNavigationTests {
         #expect(twoTracks.player.canSkipToNextSection)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func nextSectionMovesToABoundaryJustAheadOfTheClock() async {
         let fixture = makeFixture()
         await play(0, in: fixture)
@@ -191,7 +185,6 @@ struct PlayerSectionNavigationTests {
     }
 
     /// The audio engine seeks after a fade and reports the earlier time until then, while the clock keeps ticking.
-    @available(macOS 27, iOS 27, *)
     @Test func consecutiveNextSectionsContinueFromThePendingTarget() async {
         let fixture = makeFixture()
         await play(0, in: fixture)
@@ -213,7 +206,6 @@ struct PlayerSectionNavigationTests {
         #expect(fixture.player.currentTime == 52)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func consecutivePreviousSectionsContinueFromThePendingTarget() async {
         let fixture = makeFixture()
         await play(0, in: fixture)
@@ -226,7 +218,6 @@ struct PlayerSectionNavigationTests {
         #expect(fixture.audio.seekRequests.map(\.time) == [20, 0])
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func nextSectionSkipsTheBoundaryTheEngineReachedOnAFrameJustBeforeIt() async {
         let fixture = makeFixture()
         await play(0, in: fixture)
@@ -240,7 +231,6 @@ struct PlayerSectionNavigationTests {
         #expect(fixture.audio.seekRequests.map(\.time) == [20, 50])
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func anotherSeekOrTrackReleasesThePendingSectionTarget() async {
         let fixture = makeFixture()
         await play(0, in: fixture)

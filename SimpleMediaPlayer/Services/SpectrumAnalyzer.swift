@@ -298,22 +298,16 @@ nonisolated extension SpectrumAnalyzer {
         return timer
     }
 
-    func analyze(_ buffer: AVAudioPCMBuffer, currentTime: TimeInterval, isPlaying: Bool) {
+    func analyze(_ buffer: AVReadOnlyAudioPCMBuffer, currentTime: TimeInterval, isPlaying: Bool) {
         // Paused taps can still deliver the reverb tail. They need neither PCM copies nor FFT.
         guard isPlaying, let generation = beginAnalysisIfNeeded() else { return }
-        guard let channels = buffer.floatChannelData else {
-            finishAnalysis()
-            return
-        }
-        let frameLength = Int(buffer.frameLength)
-        guard frameLength > 0 else {
-            finishAnalysis()
-            return
-        }
-
-        let left = Array(UnsafeBufferPointer(start: channels[0], count: frameLength))
         let rightIndex = buffer.format.channelCount > 1 ? 1 : 0
-        let right = Array(UnsafeBufferPointer(start: channels[rightIndex], count: frameLength))
+        guard buffer.frameLength > 0,
+              let left = Self.floatSamples(of: buffer, channel: 0),
+              let right = Self.floatSamples(of: buffer, channel: rightIndex) else {
+            finishAnalysis()
+            return
+        }
         let sampleRate = Float(buffer.format.sampleRate)
 
         queue.async {

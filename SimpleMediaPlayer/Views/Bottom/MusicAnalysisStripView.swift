@@ -10,7 +10,6 @@ struct MusicAnalysisStripView: View {
         case .idle: return ""
         case .analyzing: return L10n.string("Analyzing music…")
         case .ready: return ""
-        case .unavailable: return L10n.string("Music analysis requires OS 27")
         case .failed:
             let heading = L10n.string("Music analysis unavailable")
             guard let reason = player.musicAnalysis.failureReason else { return heading }

@@ -193,10 +193,13 @@ nonisolated extension AudioEngineService {
         return requestID
     }
 
-    func installTap() {
-        outputProtection.outputNode.installTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, _ in
+    func installTap() throws {
+        let outputNode = outputProtection.outputNode
+        try outputNode.installAudioTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
-            let clock = self.advanceDisplayClock(byFrames: buffer.frameLength, sampleRate: buffer.format.sampleRate)
+            let clock = self.advanceDisplayClock(
+                byFrames: AVAudioFrameCount(buffer.frameLength), sampleRate: buffer.format.sampleRate
+            )
             self.analyzer.analyze(buffer, currentTime: clock.time, isPlaying: clock.isPlaying)
         }
     }

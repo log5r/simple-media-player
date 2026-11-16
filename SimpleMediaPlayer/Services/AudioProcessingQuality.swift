@@ -18,11 +18,7 @@ nonisolated enum AudioProcessingQuality {
             componentFlags: 0,
             componentFlagsMask: 0
         ))
-        if #available(macOS 27, iOS 27, *) {
-            effect.withAudioUnit { configureLimiter($0) }
-        } else {
-            configureLimiter(effect.audioUnit)
-        }
+        effect.withAudioUnit { configureLimiter($0) }
         return effect
     }
 
@@ -63,25 +59,17 @@ nonisolated final class AudioOutputProtection {
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw TransformedAudioExportError.invalidRenderFormat
         }
-        engine.connect(engine.mainMixerNode, to: limiter, format: format)
-        engine.connect(limiter, to: outputNode, format: format)
-        engine.connect(outputNode, to: engine.outputNode, format: format)
+        try engine.connectNode(engine.mainMixerNode, to: limiter, format: format)
+        try engine.connectNode(limiter, to: outputNode, format: format)
+        try engine.connectNode(outputNode, to: engine.outputNode, format: format)
     }
 
     var latency: TimeInterval {
-        if #available(macOS 27, iOS 27, *) {
-            limiter.withAUAudioUnit { $0.latency }
-        } else {
-            limiter.auAudioUnit.latency
-        }
+        limiter.withAUAudioUnit { $0.latency }
     }
 
     var tailTime: TimeInterval {
-        if #available(macOS 27, iOS 27, *) {
-            limiter.withAUAudioUnit { $0.tailTime }
-        } else {
-            limiter.auAudioUnit.tailTime
-        }
+        limiter.withAUAudioUnit { $0.tailTime }
     }
 
     func reset() {

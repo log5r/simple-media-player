@@ -52,6 +52,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     var currentEqualizerSettings = EqualizerSettings.flat
     var loadedReverbPreset: EqualizerReverbPreset?
     var idleSuspensionStorage: AudioEngineIdleSuspension?
+    // 直近のグラフ構築で失敗した接続のエラー。次の再生開始時に接続をやり直す
+    var engineGraphError: Error?
 
     // メインスレッド・タップコールバックと共有する公開状態(stateLock で保護)
     let stateLock = NSLock()

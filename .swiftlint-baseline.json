@@ -1325,9 +1325,9 @@
       "location": {
         "character": 1,
         "file": "SimpleMediaPlayerTests/MusicAnalysisTests.swift",
-        "line": 684
+        "line": 678
       },
-      "reason": "File should contain 400 lines or less: currently contains 684",
+      "reason": "File should contain 400 lines or less: currently contains 678",
       "ruleDescription": "Files should not span too many lines.",
       "ruleIdentifier": "file_length",
       "ruleName": "File Length",

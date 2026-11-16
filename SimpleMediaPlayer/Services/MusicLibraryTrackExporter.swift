@@ -140,11 +140,9 @@ nonisolated enum MusicLibraryTrackExporter {
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
             throw MusicLibraryTrackError.notExportable
         }
-        // `cancelExport()` may be called from any thread; the session is used by no other task.
-        nonisolated(unsafe) let cancellableSession = session
         let observer = observeExport
         let observation = observer.map { observer in
-            let states = cancellableSession.states()
+            let states = session.states()
             return Task {
                 for await state in states {
                     if Task.isCancelled { return }
@@ -157,10 +155,11 @@ nonisolated enum MusicLibraryTrackExporter {
         }
         defer { observation?.cancel() }
         do {
+            // `export(to:as:)` cancels the session itself when this task is cancelled. The handler
+            // only reports the cancellation.
             try await withTaskCancellationHandler {
                 try await session.export(to: outputURL, as: fileType)
             } onCancel: {
-                cancellableSession.cancelExport()
                 observer?(.sessionCancelled, outputURL)
             }
         } catch {
@@ -171,7 +170,8 @@ nonisolated enum MusicLibraryTrackExporter {
     }
 
     /// MP3 packets are self-framed, so writing them in order produces a playable stream without the
-    /// container the reader took them from. Runs off the caller's actor because the reader blocks.
+    /// container the reader took them from. Runs off the caller's actor and the cooperative pool
+    /// because the copy loop writes the file synchronously.
     private static func copyMPEGFrames(assetURL: URL, to outputURL: URL) async throws {
         let readerHandle = ReaderHandle()
         let observer = observeExport
@@ -184,7 +184,7 @@ nonisolated enum MusicLibraryTrackExporter {
             try await copy.value
         } onCancel: {
             copy.cancel()
-            // The task only sees its cancellation between buffers; this also stops a blocked read.
+            // The task only sees its cancellation between buffers; this also ends the provider's reads.
             readerHandle.cancel()
         }
     }
@@ -199,11 +199,12 @@ nonisolated enum MusicLibraryTrackExporter {
         }
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-        output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else { throw MusicLibraryTrackError.notReadable }
-        reader.add(output)
-        guard reader.startReading() else {
-            throw MusicLibraryTrackError.exportFailed(reader.error?.localizedDescription ?? "")
+        let provider = reader.outputProvider(for: output)
+        do {
+            try reader.start()
+        } catch {
+            throw MusicLibraryTrackError.exportFailed(error.localizedDescription)
         }
         readerHandle.register(reader)
         guard FileManager.default.createFile(atPath: outputURL.path, contents: nil) else {
@@ -211,12 +212,12 @@ nonisolated enum MusicLibraryTrackExporter {
         }
         let handle = try FileHandle(forWritingTo: outputURL)
         defer { try? handle.close() }
-        while let sampleBuffer = output.copyNextSampleBuffer() {
+        while let sample = try await nextSample(from: provider, of: reader) {
             if Task.isCancelled {
                 reader.cancelReading()
                 throw CancellationError()
             }
-            try handle.write(contentsOf: packetData(of: sampleBuffer))
+            try handle.write(contentsOf: sample.withUnsafeSampleBuffer { try packetData(of: $0) })
             observer?(.mpegPacketWritten, outputURL)
         }
         switch reader.status {
@@ -226,6 +227,21 @@ nonisolated enum MusicLibraryTrackExporter {
             throw CancellationError()
         default:
             throw MusicLibraryTrackError.exportFailed(reader.error?.localizedDescription ?? "")
+        }
+    }
+
+    /// `next()` does not observe task cancellation: it keeps returning samples, so the copy loop checks
+    /// `Task.isCancelled` itself. After `cancelReading()` it returns `nil` with the reader `.cancelled`
+    /// (observed on macOS 27). An error thrown once either was requested is reported as cancellation.
+    private static func nextSample(
+        from provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>,
+        of reader: AVAssetReader
+    ) async throws -> CMReadySampleBuffer<CMSampleBuffer.DynamicContent>? {
+        do {
+            return try await provider.next()
+        } catch {
+            if Task.isCancelled || reader.status == .cancelled { throw CancellationError() }
+            throw MusicLibraryTrackError.exportFailed(error.localizedDescription)
         }
     }
 

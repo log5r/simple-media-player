@@ -25,11 +25,7 @@ nonisolated final class PitchEffectRenderFixture: @unchecked Sendable {
     init(sampleRate: Double = 44_100, channels: AVAudioChannelCount = 2, pitchCents: Float = -300) throws {
         self.sampleRate = sampleRate
         channelCount = Int(channels)
-        if #available(macOS 27, iOS 27, *) {
-            unit = effect.node.withAUAudioUnit { $0 }
-        } else {
-            unit = effect.node.auAudioUnit
-        }
+        unit = effect.node.withAUAudioUnit { $0 }
         let format = try #require(AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channels))
         input = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
         output = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4096))
