@@ -13,7 +13,7 @@ struct SpectrumAnalyzerIdleTests {
         // Even a loud tail delivered by a still-running engine must skip analysis.
         analyzer.setPlaybackActive(true, currentTime: 0)
         for _ in 0..<500 {
-            analyzer.analyze(buffer, currentTime: 5, isPlaying: false)
+            analyzer.analyze(AVReadOnlyAudioPCMBuffer(copying: buffer), currentTime: 5, isPlaying: false)
         }
         try await Task.sleep(for: .milliseconds(150))
         #expect(frames.isEmpty)
@@ -27,7 +27,7 @@ struct SpectrumAnalyzerIdleTests {
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
         let buffer = try toneBuffer()
-        analyzer.analyze(buffer, currentTime: 1, isPlaying: true)
+        analyzer.analyze(AVReadOnlyAudioPCMBuffer(copying: buffer), currentTime: 1, isPlaying: true)
         try await waitUntil { frames.contains { $0.isPlaying && $0.isSilent == false } }
         analyzer.setPlaybackActive(false, currentTime: 2)
         try await waitUntil {
@@ -38,8 +38,8 @@ struct SpectrumAnalyzerIdleTests {
         let count = frames.count
 
         // Both late playing callbacks and paused engine taps are ignored after suspension.
-        analyzer.analyze(buffer, currentTime: 99, isPlaying: true)
-        analyzer.analyze(buffer, currentTime: 99, isPlaying: false)
+        analyzer.analyze(AVReadOnlyAudioPCMBuffer(copying: buffer), currentTime: 99, isPlaying: true)
+        analyzer.analyze(AVReadOnlyAudioPCMBuffer(copying: buffer), currentTime: 99, isPlaying: false)
         try await Task.sleep(for: .milliseconds(200))
         #expect(frames.count == count)
     }
@@ -52,7 +52,9 @@ struct SpectrumAnalyzerIdleTests {
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
         // One second of input schedules chunks that will arrive after the stop and resume.
-        analyzer.analyze(try toneBuffer(frameCount: 44_100), currentTime: 1, isPlaying: true)
+        analyzer.analyze(
+            AVReadOnlyAudioPCMBuffer(copying: try toneBuffer(frameCount: 44_100)), currentTime: 1, isPlaying: true
+        )
         try await waitUntil { frames.contains { $0.isPlaying } }
         analyzer.setPlaybackActive(false, currentTime: 2)
         let stoppedAt = frames.count
@@ -61,7 +63,7 @@ struct SpectrumAnalyzerIdleTests {
 
         analyzer.setPlaybackActive(true, currentTime: 20)
         let resumedAt = frames.count
-        analyzer.analyze(try toneBuffer(), currentTime: 20, isPlaying: true)
+        analyzer.analyze(AVReadOnlyAudioPCMBuffer(copying: try toneBuffer()), currentTime: 20, isPlaying: true)
         try await waitUntil { frames.last.map { $0.isPlaying && $0.currentTime >= 20 } == true }
         try await Task.sleep(for: .milliseconds(250))
         #expect(frames.dropFirst(resumedAt).allSatisfy { $0.isPlaying && $0.currentTime >= 20 })
@@ -75,7 +77,7 @@ struct SpectrumAnalyzerIdleTests {
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
         let buffer = try toneBuffer()
-        analyzer.analyze(buffer, currentTime: 1, isPlaying: true)
+        analyzer.analyze(AVReadOnlyAudioPCMBuffer(copying: buffer), currentTime: 1, isPlaying: true)
         try await waitUntil { frames.contains { $0.isPlaying && !$0.isSilent } }
         analyzer.setPlaybackActive(false, currentTime: 2)
         analyzer.setPlaybackActive(true, currentTime: 20)
@@ -84,7 +86,7 @@ struct SpectrumAnalyzerIdleTests {
         for channel in 0..<Int(buffer.format.channelCount) {
             channels[channel].update(repeating: 0, count: Int(buffer.frameLength))
         }
-        analyzer.analyze(buffer, currentTime: 20, isPlaying: true)
+        analyzer.analyze(AVReadOnlyAudioPCMBuffer(copying: buffer), currentTime: 20, isPlaying: true)
         try await waitUntil { frames.count > resumedAt }
         #expect(frames.dropFirst(resumedAt).allSatisfy { $0.isPlaying && $0.isSilent && $0.currentTime >= 20 })
     }

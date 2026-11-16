@@ -205,15 +205,17 @@ struct MP4MetadataLayoutTests {
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ])
-        reader.add(output)
+        let provider = reader.outputProvider(for: output)
         reader.timeRange = CMTimeRange(
             start: CMTime(seconds: seconds, preferredTimescale: 30), duration: .positiveInfinity
         )
-        try #require(reader.startReading())
+        try reader.start()
         var times: [Double] = []
-        while let sample = output.copyNextSampleBuffer() {
-            #expect(CMSampleBufferGetImageBuffer(sample) != nil)
-            times.append(CMSampleBufferGetPresentationTimeStamp(sample).seconds)
+        while let sample = try await provider.next() {
+            sample.withUnsafeSampleBuffer { sample in
+                #expect(CMSampleBufferGetImageBuffer(sample) != nil)
+            }
+            times.append(sample.presentationTimeStamp.seconds)
         }
         #expect(reader.status == .completed)
         return times

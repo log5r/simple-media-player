@@ -336,7 +336,6 @@ struct MusicAnalysisTests {
 
 @MainActor
 struct MusicAnalysisControllerTests {
-    @available(macOS 27, iOS 27, *)
     @Test func publishesSettledFeaturesBeforeLocalRhythmFinishes() async {
         let gate = AnalysisGate()
         let controller = MusicAnalysisController(analyzeWithProgress: { url, progress in
@@ -357,7 +356,6 @@ struct MusicAnalysisControllerTests {
         #expect(controller.result?.bpm == 148)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func lateProgressCannotReplaceAnotherTrackOrReappearAfterReset() async {
         let gate = AnalysisGate()
         let controller = MusicAnalysisController(analyzeWithProgress: { url, progress in
@@ -384,7 +382,6 @@ struct MusicAnalysisControllerTests {
         #expect(controller.status == .idle)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func preparesLocalTempoAndClearsItOnReset() async {
         let controller = MusicAnalysisController { _ in
             MusicAnalysis(duration: 4, beats: [0, 0.5, 1, 1.5, 2])
@@ -395,7 +392,6 @@ struct MusicAnalysisControllerTests {
         #expect(controller.tempoByBeat.isEmpty)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func switchingTracksDiscardsLateResults() async {
         let gate = AnalysisGate()
         let controller = MusicAnalysisController { url in await gate.analyze(url) }
@@ -413,7 +409,6 @@ struct MusicAnalysisControllerTests {
         #expect(controller.status == .ready)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func resetPreventsInFlightAnalysisFromReappearing() async {
         let gate = AnalysisGate()
         let controller = MusicAnalysisController { url in await gate.analyze(url) }
@@ -426,7 +421,6 @@ struct MusicAnalysisControllerTests {
         #expect(controller.status == .idle)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func failureProducesFallbackState() async {
         let controller = MusicAnalysisController { _ in throw CocoaError(.fileReadUnknown) }
         await controller.load(url: URL(fileURLWithPath: "/missing"))?.value

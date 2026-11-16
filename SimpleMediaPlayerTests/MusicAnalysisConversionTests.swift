@@ -5,7 +5,6 @@ import Testing
 @testable import SimpleMediaPlayer
 
 struct MusicAnalysisConversionTests {
-    @available(macOS 27, iOS 27, *)
     @Test func emptyFrameworkResultPreservesDurationAndEmptyFeatures() async throws {
         let result = try JSONDecoder().decode(MusicUnderstandingSession.SessionResult.self, from: Data("{}".utf8))
         let analysis = await MusicAnalysisService(cacheDirectory: nil).convert(result, duration: 12)
@@ -18,7 +17,6 @@ struct MusicAnalysisConversionTests {
         #expect(analysis.bpm == nil)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func rangesAreClippedSortedAndInvalidValuesDiscarded() async throws {
         let ranges = [range(8, 5), range(-2, 3), range(11, 2), range(2, 0), CMTimeRange.invalid]
         let fixture = AnalysisResultFixture(
@@ -37,7 +35,6 @@ struct MusicAnalysisConversionTests {
         #expect(analysis.pace.map(\.value) == [0, 0.75])
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test func rhythmDeduplicatesOrdersAndFiltersNonfiniteAndOutOfRangeTimes() async throws {
         let fixture = AnalysisResultFixture(rhythm: .init(
             beats: [time(4), time(1), time(1), time(-1), time(10), .invalid, .positiveInfinity],
@@ -49,7 +46,6 @@ struct MusicAnalysisConversionTests {
         #expect(analysis.bpm == 123.5)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test(arguments: [
         (KeyResult.Tonic.c, (0, "C")), (KeyResult.Tonic.cSharp, (1, "C♯")),
         (KeyResult.Tonic.dFlat, (1, "D♭")), (KeyResult.Tonic.d, (2, "D")),
@@ -85,7 +81,6 @@ struct MusicAnalysisConversionTests {
 }
 
 /// Uses the SDK's public Codable entry point, including CoreMedia's encoding, without running the ML session.
-@available(macOS 27, iOS 27, *)
 private struct AnalysisResultFixture: Encodable {
     var structure: AnalysisFixtureStructure?
     var pace: AnalysisFixtureRanges<Double>?
@@ -105,7 +100,6 @@ private struct AnalysisResultFixture: Encodable {
     }
 }
 
-@available(macOS 27, iOS 27, *)
 private struct AnalysisFixtureStructure: Encodable {
     var sections: [CMTimeRange]
     var segments: [CMTimeRange] = []
@@ -121,7 +115,6 @@ private struct AnalysisFixtureStructure: Encodable {
     }
 }
 
-@available(macOS 27, iOS 27, *)
 private struct AnalysisFixtureRanged<Value: Encodable>: Encodable {
     var range: CMTimeRange
     var value: Value
@@ -135,18 +128,15 @@ private struct AnalysisFixtureRanged<Value: Encodable>: Encodable {
     }
 }
 
-@available(macOS 27, iOS 27, *)
 private struct AnalysisFixtureRanges<Value: Encodable>: Encodable {
     var ranges: [AnalysisFixtureRanged<Value>]
 }
 
-@available(macOS 27, iOS 27, *)
 private struct AnalysisFixtureSignature: Encodable {
     var tonic: KeyResult.Tonic
     var mode: KeyResult.Mode
 }
 
-@available(macOS 27, iOS 27, *)
 private struct AnalysisFixtureRhythm: Encodable {
     var beats: [CMTime]
     var bars: [CMTime]
@@ -162,7 +152,6 @@ private struct AnalysisFixtureRhythm: Encodable {
     }
 }
 
-@available(macOS 27, iOS 27, *)
 private struct EncodedCMTimeRange: Encodable {
     let range: CMTimeRange
 
@@ -177,7 +166,6 @@ private struct EncodedCMTimeRange: Encodable {
     }
 }
 
-@available(macOS 27, iOS 27, *)
 private struct EncodedCMTime: Encodable {
     let time: CMTime
 

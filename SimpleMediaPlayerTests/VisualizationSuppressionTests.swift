@@ -318,7 +318,7 @@ private final class ObservationChangeCount: Sendable {
     func record() { storage.withLock { $0 += 1 } }
 }
 
-private func toneBuffer(frameCount: AVAudioFrameCount = 4_410) throws -> AVAudioPCMBuffer {
+private func toneBuffer(frameCount: AVAudioFrameCount = 4_410) throws -> AVReadOnlyAudioPCMBuffer {
     let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2))
     let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
     buffer.frameLength = frameCount
@@ -328,7 +328,7 @@ private func toneBuffer(frameCount: AVAudioFrameCount = 4_410) throws -> AVAudio
         channels[0][index] = sample
         channels[1][index] = sample * 0.5
     }
-    return buffer
+    return AVReadOnlyAudioPCMBuffer(copying: buffer)
 }
 
 @MainActor

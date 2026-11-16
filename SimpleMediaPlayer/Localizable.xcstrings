@@ -3011,16 +3011,6 @@
         }
       }
     },
-    "Music analysis requires OS 27" : {
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音楽解析にはOS 27以降が必要です"
-          }
-        }
-      }
-    },
     "Music analysis unavailable" : {
       "localizations" : {
         "ja" : {

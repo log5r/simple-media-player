@@ -9,7 +9,7 @@ It supports importing audio and video files, browsing a local library, playlist 
 
 - Xcode 27.1+ (with Swift 6+ and the Music Understanding SDK; Xcode 27.1 Beta is supported)
 - Apple platform SDKs supported by the Xcode project
-- Music analysis using [Music Understanding](https://developer.apple.com/documentation/musicunderstanding) requires macOS 27+, iOS 27+, or iPadOS 27+. Music analysis is unavailable on earlier OS versions.
+- macOS 27+, iOS 27+, or iPadOS 27+ (music analysis uses [Music Understanding](https://developer.apple.com/documentation/musicunderstanding))
 
 The [embedded audio metadata support matrix](docs/embedded-audio-metadata.md) ([日本語](docs/embedded-audio-metadata.ja.md)) describes supported fields and formats.
 See [extended audio formats](docs/extended-audio-formats.md) ([日本語](docs/extended-audio-formats.ja.md)) for WMA, WavPack, Monkey's Audio, and Musepack playback, caching, and limitations.

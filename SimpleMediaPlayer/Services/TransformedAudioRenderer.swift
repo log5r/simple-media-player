@@ -80,10 +80,10 @@ nonisolated private final class TransformedAudioRenderSession {
         engine.attach(timePitch)
         engine.attach(pitchEffect.node)
         protection.attach(to: engine)
-        engine.connect(player, to: timePitch, format: sourceFormat)
-        engine.connect(timePitch, to: pitchEffect.node, format: sourceFormat)
-        engine.connect(pitchEffect.node, to: engine.mainMixerNode, format: sourceFormat)
         do {
+            try engine.connectNode(player, to: timePitch, format: sourceFormat)
+            try engine.connectNode(timePitch, to: pitchEffect.node, format: sourceFormat)
+            try engine.connectNode(pitchEffect.node, to: engine.mainMixerNode, format: sourceFormat)
             try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: maximumFrameCount)
             try protection.connect(to: engine)
             try engine.start()
@@ -122,7 +122,7 @@ nonisolated private final class TransformedAudioRenderSession {
         }
         player.scheduleFile(sourceFile, at: nil)
         player.scheduleBuffer(padding)
-        player.play()
+        try player.playAudio()
     }
 
     func render(to encoder: any AudioFileEncoding, progress: @escaping @Sendable (Double) -> Void) throws {

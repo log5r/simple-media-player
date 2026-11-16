@@ -121,12 +121,7 @@ nonisolated extension AudioEngineService {
         }
         loudnessNormalization.resume()
         do {
-            if engine.isRunning == false {
-                outputProtection.outputNode.removeTap(onBus: 0)
-                try outputProtection.connect(to: engine)
-                installTap()
-                try engine.start()
-            }
+            try startEngineIfNeeded()
             guard continuePlayback(ifCurrent: requestID) else { return }
             if playerNode.isPlaying == false {
                 schedule(file: audioFile, from: seekFrame)
@@ -136,7 +131,7 @@ nonisolated extension AudioEngineService {
                 // 0.5秒ぶん先読みを済ませてから再生を開始する
                 preparePlayer(playerNode, AVAudioFrameCount(sampleRate / 2))
                 guard continuePlayback(ifCurrent: requestID) else { return }
-                playerNode.play()
+                try startScheduledPlayer()
             }
             let didPublish = stateLock.withLock {
                 guard activePlaybackRequestID == requestID else { return false }
@@ -151,6 +146,33 @@ nonisolated extension AudioEngineService {
             suspendAfterTail()
             reportError(error, playbackRequestID: requestID)
         }
+    }
+
+    // playAudio() can fail right after schedule(file:from:) queued a segment. Drop that segment so
+    // its completion cannot finish playback and the next play() schedules from seekFrame only once.
+    func startScheduledPlayer() throws {
+        do {
+            try playerNode.playAudio()
+        } catch {
+            invalidateScheduledSegment()
+            playerNode.stop()
+            throw error
+        }
+    }
+
+    // A graph connection that failed while building the engine is retried here, so it fails
+    // playback like an engine start failure.
+    func startEngineIfNeeded() throws {
+        if engineGraphError != nil {
+            try connectEngineGraph()
+            engineGraphError = nil
+        }
+        guard engine.isRunning == false else { return }
+        outputProtection.outputNode.removeTap(onBus: 0)
+        try outputProtection.connect(to: engine)
+        // The tap drives the display clock, so playback cannot start without it.
+        try installTap()
+        try engine.start()
     }
 
     // Engine start and player preparation can block. Recheck the request after each

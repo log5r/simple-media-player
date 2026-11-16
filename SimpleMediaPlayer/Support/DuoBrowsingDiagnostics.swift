@@ -138,7 +138,8 @@ struct DuoEditorDiagnostics: ViewModifier {
         if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: {
             $0.activationState == .foregroundActive && $0.windows.contains(where: \.isKeyWindow)
         }) {
-            let bounds = scene.windows.first(where: \.isKeyWindow)?.bounds ?? scene.coordinateSpace.bounds
+            let bounds = scene.windows.first(where: \.isKeyWindow)?.bounds
+                ?? scene.effectiveGeometry.coordinateSpace.bounds
             values["sceneWidth"] = bounds.width
             values["sceneHeight"] = bounds.height
             values["scenePortrait"] = bounds.height > bounds.width

@@ -3,7 +3,6 @@ import Testing
 @testable import SimpleMediaPlayer
 
 struct MusicAnalysisCacheTests {
-    @available(macOS 27, iOS 27, *)
     @Test func embeddedTagSaveKeepsTheAnalysisCacheHit() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -72,7 +71,6 @@ struct MusicAnalysisCacheTests {
         #expect(MusicAnalysisCache.read(at: original)?.bpm == 128)
     }
 
-    @available(macOS 27, iOS 27, *)
     @Test(.timeLimit(.minutes(1)))
     func extendedDecodeLeavesTheActorAvailableAndReleasesCancelledFiles() async throws {
         let directory = try temporaryDirectory()
@@ -93,7 +91,6 @@ struct MusicAnalysisCacheTests {
     }
 
     @MainActor
-    @available(macOS 27, iOS 27, *)
     @Test(.timeLimit(.minutes(1)))
     func switchingAwayFromAnExtendedDecodeShowsTheNextTrackFirst() async throws {
         let directory = try temporaryDirectory()

@@ -49,7 +49,7 @@ final class VideoPlayerService {
             NotificationCenter.default.removeObserver(endObserver)
         }
         endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
+            forName: AVPlayerItem.didPlayToEndTimeNotification,
             object: item,
             queue: .main
         ) { [weak self] _ in

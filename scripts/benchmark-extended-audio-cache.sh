@@ -51,7 +51,7 @@ for framework in "${frameworks[@]}"; do link_frameworks+=(-framework "$framework
 profile_runtime="$(xcrun clang --print-file-name=libclang_rt.profile_osx.a)"
 
 for mode in before after; do
-    xcrun clang -fobjc-arc -mmacosx-version-min=26.5 -fmodules-cache-path="$work_dir/clang-cache" -c \
+    xcrun clang -fobjc-arc -mmacosx-version-min=27.0 -fmodules-cache-path="$work_dir/clang-cache" -c \
         "$work_dir/$mode/FFmpegAudioBridge.m" -F "$products" -I "$work_dir/$mode" \
         -o "$work_dir/$mode/bridge.o"
     mode_sources=("$work_dir/$mode/ExtendedAudioSource.swift")
@@ -60,7 +60,7 @@ for mode in before after; do
         mode_sources+=("$work_dir/after/ExtendedAudioCache.swift")
         mode_flags+=(-D AFTER)
     fi
-    xcrun swiftc -swift-version 6 -parse-as-library -target "$(uname -m)-apple-macos26.5" \
+    xcrun swiftc -swift-version 6 -parse-as-library -target "$(uname -m)-apple-macos27.0" \
         -module-cache-path "$work_dir/module-cache" "${mode_flags[@]}" \
         -import-objc-header "$work_dir/$mode/FFmpegAudioBridge.h" \
         -I "$products" -F "$products" -Xcc "-fmodule-map-file=$modulemaps/CSFBAudioEngine.modulemap" \

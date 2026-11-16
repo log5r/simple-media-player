@@ -21,6 +21,6 @@ macOS では、Music が起動中の場合に MP4 系音声の取り込みで Mu
 
 検証には 0.35 秒の合成音声を使用した。macOS 27.0 で４形式それぞれのタグ・画像・歌詞の保存、削除、再取り込み、PCM の一致、未知チャンクの保持、破損したファイルでの原本保持、キャンセル、Ogg の複数ページにまたがる画像、および FLAC/WAV の変換保存を自動テストした。既存の MP3・M4A・AIFF を含むユニットテストも通過した。
 
-iOS/iPadOS 27 シミュレータでは FLAC・Ogg Opus・WAV の再取り込みとタグ編集が通過した。Ogg Vorbis はタグの書き込み・削除は通過したが、iOS 27 の `AVAudioFile` がテスト用 `.ogg` を開けず、現行の取り込み・再生経路では利用できない。追加デコーダーは Issue #3 の対象外。iOS 用アプリ本体のビルドは通過した。macOS の最低対応 26.5 と iPhone/iPad の実機での動作は未検証。
+iOS/iPadOS 27 シミュレータでは FLAC・Ogg Opus・WAV の再取り込みとタグ編集が通過した。Ogg Vorbis はタグの書き込み・削除は通過したが、iOS 27 の `AVAudioFile` がテスト用 `.ogg` を開けず、現行の取り込み・再生経路では利用できない。追加デコーダーは Issue #3 の対象外。iOS 用アプリ本体のビルドは通過した。iPhone/iPad の実機での動作は未検証。
 
 仕様: [FLAC format](https://xiph.org/flac/format.html)、[Vorbis Comment](https://www.xiph.org/vorbis/doc/v-comment.html)、[Ogg framing](https://xiph.org/ogg/doc/framing.html)、[Opus in Ogg](https://www.rfc-editor.org/rfc/rfc7845)。

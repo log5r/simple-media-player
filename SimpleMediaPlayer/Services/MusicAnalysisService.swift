@@ -9,7 +9,7 @@ import OSLog
 @Observable
 final class MusicAnalysisController {
     enum Status {
-        case idle, analyzing, ready, unavailable, failed
+        case idle, analyzing, ready, failed
     }
 
     private(set) var result: MusicAnalysis? {
@@ -60,10 +60,6 @@ final class MusicAnalysisController {
     @discardableResult
     func load(url: URL) -> Task<Void, Never>? {
         reset()
-        guard #available(macOS 27, iOS 27, *) else {
-            status = .unavailable
-            return nil
-        }
         status = .analyzing
         let generation = generation
         let analyze = analyze
@@ -147,7 +143,6 @@ actor MusicAnalysisService {
         url: URL,
         onProgress: @Sendable (MusicAnalysis) async -> Void = { _ in }
     ) async throws -> MusicAnalysis {
-        guard #available(macOS 27, iOS 27, *) else { throw CancellationError() }
         let started = ContinuousClock.now
         defer { logDuration("Total (including cache lookup and wait; may be cancelled or failed)", since: started) }
         let accessed = url.startAccessingSecurityScopedResource()
@@ -252,7 +247,6 @@ actor MusicAnalysisService {
         return refined
     }
 
-    @available(macOS 27, iOS 27, *)
     private func analyzeKey(asset: AVURLAsset, range: MusicAnalysis.Interval) async throws -> [MusicAnalysis.Key] {
         let composition = AVMutableComposition()
         let timeRange = CMTimeRange(
@@ -311,7 +305,6 @@ actor MusicAnalysisService {
         return excerpts
     }
 
-    @available(macOS 27, iOS 27, *)
     private func analyzeRhythm(asset: AVURLAsset, context: MusicAnalysis.Interval) async throws -> ExcerptRhythm? {
         let composition = AVMutableComposition()
         let timeRange = CMTimeRange(
@@ -335,7 +328,6 @@ actor MusicAnalysisService {
         }
     }
 
-    @available(macOS 27, iOS 27, *)
     func convert(_ result: MusicUnderstandingSession.SessionResult, duration: Double) -> MusicAnalysis {
         func interval(_ range: CMTimeRange) -> MusicAnalysis.Interval? {
             let start = range.start.seconds
@@ -372,7 +364,6 @@ actor MusicAnalysisService {
 
 extension MusicAnalysisService {
     /// The MusicUnderstanding analysis that `analyze` runs on the readable file unless a test replaces it.
-    @available(macOS 27, iOS 27, *)
     private func analyzeWholeSong(
         at url: URL,
         since wholeSongStarted: ContinuousClock.Instant,
