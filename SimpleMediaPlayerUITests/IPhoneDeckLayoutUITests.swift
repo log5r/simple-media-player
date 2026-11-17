@@ -83,8 +83,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
             "Run this case on an ordinary compact iPhone."
         )
         openDeck(in: app)
-        XCUIDevice.shared.orientation = .landscapeLeft
-        defer { XCUIDevice.shared.orientation = .portrait }
+        setDeviceOrientation(.landscapeLeft)
         let playPause = app.buttons["phonePlayPause"]
         let display = duoDiagnostic("phoneDeckCompactDisplayMetrics", in: app)
         let beside = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in

@@ -39,7 +39,7 @@ final class LibraryArtworkUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "UI Test Legacy Artwork")
         ).firstMatch
         XCTAssertTrue(legacyAlbum.waitForExistence(timeout: 5))
-        assertLoadedArtworkCount(2, in: app)
+        assertLoadedAlbumGridArtworkCount(2, in: app)
         attachScreenshot(of: app, named: "Artwork in album grid")
 
         selectLibrarySection("allSongs", in: app)
@@ -60,6 +60,19 @@ final class LibraryArtworkUITests: XCTestCase {
             .withOffset(CGVector(dx: 40, dy: 0)).click()
         let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "selected == true"), object: row)
         XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
+    }
+
+    /// Each album button is one element with its own identifier, which hides its `libraryArtworkImage`.
+    /// The grid's debug diagnostic counts the artwork views that loaded an image instead.
+    @MainActor
+    private func assertLoadedAlbumGridArtworkCount(_ expected: Int, in app: XCUIApplication) {
+        let metrics = app.descendants(matching: .any).matching(identifier: "albumGridArtworkMetrics").firstMatch
+        XCTAssertTrue(metrics.waitForExistence(timeout: 5), "Album grid artwork diagnostics")
+        let loaded = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "\(expected)"), object: metrics
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [loaded], timeout: 10), .completed)
+        XCTAssertEqual(metrics.value as? String, "\(expected)")
     }
     #endif
 
@@ -123,7 +136,7 @@ final class LibraryArtworkUITests: XCTestCase {
     @MainActor
     private func assertLoadedArtworkCount(_ expected: Int, in app: XCUIApplication) {
         #if os(macOS)
-        // Album artwork is exposed as part of its combined button on macOS.
+        // Track lists match any element type on macOS; the album grid uses assertLoadedAlbumGridArtworkCount.
         let artwork = app.descendants(matching: .any).matching(identifier: "libraryArtworkImage")
         #else
         // Tablet row buttons inherit the identifier as well, so count only their child images.

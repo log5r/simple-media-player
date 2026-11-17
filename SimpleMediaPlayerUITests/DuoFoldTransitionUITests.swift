@@ -115,9 +115,7 @@ final class DuoFoldTransitionUITests: XCTestCase {
     }
 
     @MainActor private func launchApp(extraArguments: [String] = []) -> XCUIApplication {
-        if ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] != "1" {
-            XCUIDevice.shared.orientation = .landscapeLeft
-        }
+        setDuoOrientation(.landscapeLeft)
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-duo-long-playback",

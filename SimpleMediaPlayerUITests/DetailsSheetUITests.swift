@@ -134,9 +134,7 @@ final class DetailsSheetUITests: XCTestCase {
     }
 
     @MainActor private func launchExpanded() throws -> XCUIApplication {
-        if ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] != "1" {
-            XCUIDevice.shared.orientation = .landscapeLeft
-        }
+        setDuoOrientation(.landscapeLeft)
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-duo-autoplay-probe",
@@ -147,9 +145,8 @@ final class DetailsSheetUITests: XCTestCase {
         let layout = duoDiagnostic("duoLayoutMetrics", in: app)
         XCTAssertTrue(layout.waitForExistence(timeout: 10))
         // The Duo simulator may keep its display in portrait after XCTest requests landscape.
-        if ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] != "1",
-           (layout.value as? String)?.contains("\"portrait\":true") == true {
-            XCUIDevice.shared.orientation = .portrait
+        if (layout.value as? String)?.contains("\"portrait\":true") == true {
+            setDuoOrientation(.portrait)
         }
         try XCTSkipIf(
             (layout.value as? String)?.contains("\"layout\":\"expanded\"") != true,
