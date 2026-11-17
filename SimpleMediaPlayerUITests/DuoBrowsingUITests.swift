@@ -193,13 +193,15 @@ final class DuoBrowsingUITests: XCTestCase {
         app.launch()
         let layout = element("duoLayoutMetrics", in: app)
         XCTAssertTrue(layout.waitForExistence(timeout: 10))
-        if compact == false { rotateDuo(to: .landscapeLeft, in: app) }
-        let geometry = try metrics(layout)
         if compact == false {
+            // The posture decides the division, and the Closed outer screen never rotates, so skip before rotating.
             try XCTSkipIf(
-                (geometry["division"] as? [[String: Any]] ?? []).isEmpty, "Select Duo's Open posture in Device Hub."
+                (try metrics(layout)["division"] as? [[String: Any]] ?? []).isEmpty,
+                "Expanded cases need iPhone Duo's Open posture. Select it in Device Hub."
             )
+            rotateDuo(to: .landscapeLeft, in: app)
         }
+        let geometry = try metrics(layout)
         XCTAssertEqual(geometry["layout"] as? String, compact ? "compact" : "expanded")
         XCTAssertTrue(element("duoBrowsingMetrics", in: app).waitForExistence(timeout: 5))
         return app
