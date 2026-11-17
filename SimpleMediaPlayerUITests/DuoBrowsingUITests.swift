@@ -135,7 +135,7 @@ final class DuoBrowsingUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         waitForValue("\"selection\":\"playlist.", in: element("duoBrowsingMetrics", in: app))
 
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBackButton().tap()
 
         let browsing = element("duoBrowsingMetrics", in: app)
         waitForValue("\"selection\":\"library.allSongs\"", in: browsing)

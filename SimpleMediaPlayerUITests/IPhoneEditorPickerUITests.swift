@@ -49,7 +49,7 @@ final class IPhoneEditorPickerUITests: XCTestCase {
         let lyricsPage = app.buttons["phonePage.Lyrics"]
         XCTAssertTrue(lyricsPage.waitForExistence(timeout: 5))
         lyricsPage.tap()
-        app.navigationBars.buttons[language == "ja" ? "歌詞を編集…" : "Edit Lyrics…"].firstMatch.tap()
+        app.navigationBarButton(language == "ja" ? "歌詞を編集…" : "Edit Lyrics…").tap()
         let editor = app.textViews[language == "ja" ? "歌詞" : "Lyrics"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(editor.frame.height, 100, "Lyrics must retain editable space")
@@ -65,7 +65,7 @@ final class IPhoneEditorPickerUITests: XCTestCase {
 
     @MainActor private func verifyFilterOptions(language: String) {
         let app = launch(language: language)
-        app.tabBars.buttons[language == "ja" ? "検索" : "Search"].tap()
+        app.tabButton(language == "ja" ? "検索" : "Search").tap()
         let filters = app.buttons["advancedSearchButton"]
         XCTAssertTrue(filters.waitForExistence(timeout: 5))
         filters.tap()

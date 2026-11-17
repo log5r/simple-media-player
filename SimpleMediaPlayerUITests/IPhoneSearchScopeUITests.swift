@@ -10,7 +10,7 @@ final class IPhoneSearchScopeUITests: XCTestCase {
 
     @MainActor func testQueryDoesNotFilterLibraryGroupsOrPlaylists() {
         let app = launch()
-        app.tabBars.buttons["Search"].tap()
+        app.tabButton("Search").tap()
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
@@ -20,14 +20,14 @@ final class IPhoneSearchScopeUITests: XCTestCase {
 
         verifyUnfilteredDestinations(in: app)
 
-        app.tabBars.buttons["Search"].tap()
+        app.tabButton("Search").tap()
         verifySearchResult(in: app)
         XCTAssertEqual(search.value as? String, "Layout Track 2")
     }
 
     @MainActor func testAdvancedFilterDoesNotFilterLibraryGroupsOrPlaylists() {
         let app = launch()
-        app.tabBars.buttons["Search"].tap()
+        app.tabButton("Search").tap()
         let filters = app.buttons["advancedSearchButton"]
         XCTAssertTrue(filters.waitForExistence(timeout: 5))
         filters.tap()
@@ -40,7 +40,7 @@ final class IPhoneSearchScopeUITests: XCTestCase {
 
         verifyUnfilteredDestinations(in: app)
 
-        app.tabBars.buttons["Search"].tap()
+        app.tabButton("Search").tap()
         verifySearchResult(in: app)
         filters.tap()
         XCTAssertTrue(title.waitForExistence(timeout: 5))
@@ -48,18 +48,18 @@ final class IPhoneSearchScopeUITests: XCTestCase {
     }
 
     @MainActor private func verifyUnfilteredDestinations(in app: XCUIApplication) {
-        app.tabBars.buttons["Library"].tap()
+        app.tabButton("Library").tap()
         app.buttons["All Songs"].tap()
         verifyAllTracks(in: app)
 
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBackButton().tap()
         app.buttons["Albums"].tap()
         let album = app.buttons["libraryGroup.albums.Layout Album"]
         XCTAssertTrue(album.waitForExistence(timeout: 10))
         album.tap()
         verifyAllTracks(in: app)
 
-        app.tabBars.buttons["Playlists"].tap()
+        app.tabButton("Playlists").tap()
         app.buttons["Layout Playlist"].tap()
         verifyAllTracks(in: app)
     }

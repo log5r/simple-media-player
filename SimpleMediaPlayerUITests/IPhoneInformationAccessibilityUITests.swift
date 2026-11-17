@@ -68,7 +68,7 @@ final class IPhoneInformationAccessibilityUITests: XCTestCase {
         verifyEditingFromToolbar(in: app, language: language)
     }
 
-    /// The deck has no bottom edit bars; Info edits from the More menu and Lyrics from the navigation bar.
+    /// The deck has no bottom edit bars; Info edits from the More menu and Lyrics from a visible bar item.
     @MainActor private func verifyEditingFromToolbar(in app: XCUIApplication, language: String) {
         let editInformation = language == "ja" ? "情報を編集…" : "Edit Information…"
         app.openToolbarOverflowMenu(item: editInformation).tap()
@@ -85,8 +85,8 @@ final class IPhoneInformationAccessibilityUITests: XCTestCase {
         lyricsPage.tap()
         let editLyrics = language == "ja" ? "歌詞を編集…" : "Edit Lyrics…"
         let addLyrics = language == "ja" ? "歌詞を追加…" : "Add Lyrics…"
-        let navigationEdit = app.navigationBars.buttons[editLyrics]
-        XCTAssertTrue(navigationEdit.waitForExistence(timeout: 5), "Edit Lyrics must stay in the navigation bar")
+        let barEdit = app.navigationBarButton(editLyrics, timeout: 5)
+        XCTAssertTrue(barEdit.exists, "Edit Lyrics must stay a visible bar item instead of moving into the More menu")
         XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", editLyrics)).count, 1)
         XCTAssertFalse(app.buttons[addLyrics].exists, "The Lyrics page must not repeat the edit action at its bottom")
     }
