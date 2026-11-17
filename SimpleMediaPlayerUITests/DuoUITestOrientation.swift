@@ -4,6 +4,26 @@ import UIKit
 import XCTest
 
 extension XCTestCase {
+    /// DUO_INTERACTIVE_ORIENTATION_TESTS=1 leaves rotation to the tester in Device Hub.
+    var usesInteractiveDuoOrientation: Bool {
+        ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] == "1"
+    }
+
+    /// Requests an XCTest orientation and returns the simulator to portrait when the case ends.
+    /// The booted simulator keeps the orientation across cases, and `continueAfterFailure = false` skips the
+    /// rest of a failing case, so the restoration runs as a teardown block on every exit path.
+    @MainActor func setDeviceOrientation(_ orientation: UIDeviceOrientation) {
+        if orientation != .portrait {
+            addTeardownBlock { @MainActor in XCUIDevice.shared.orientation = .portrait }
+        }
+        XCUIDevice.shared.orientation = orientation
+    }
+
+    /// Requests the orientation unless the tester rotates the Duo in Device Hub.
+    @MainActor func setDuoOrientation(_ orientation: UIDeviceOrientation) {
+        if !usesInteractiveDuoOrientation { setDeviceOrientation(orientation) }
+    }
+
     /// Xcode 27.1's Duo simulator can report XCTest rotation while its display stays unchanged.
     /// Enable DUO_INTERACTIVE_ORIENTATION_TESTS=1 and rotate in Device Hub when the step is logged.
     @MainActor func rotateDuo(
@@ -11,9 +31,9 @@ extension XCTestCase {
         layoutIdentifier: String = "duoLayoutMetrics", portraitKey: String = "portrait",
         interactiveTimeout: TimeInterval = 45
     ) {
-        let interactive = ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] == "1"
+        let interactive = usesInteractiveDuoOrientation
         let posture = orientation.isPortrait ? "Portrait" : "Landscape"
-        if !interactive { XCUIDevice.shared.orientation = orientation }
+        setDuoOrientation(orientation)
         let layout = duoDiagnostic(layoutIdentifier, in: app)
         XCTAssertTrue(layout.waitForExistence(timeout: 5), layoutIdentifier)
         let expected = "\"\(portraitKey)\":\(orientation.isPortrait)"

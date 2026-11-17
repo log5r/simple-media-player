@@ -8,11 +8,6 @@ final class LibraryTableHeaderUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    override func tearDown() {
-        if UIDevice.current.userInterfaceIdiom == .phone { XCUIDevice.shared.orientation = .portrait }
-        super.tearDown()
-    }
-
     /// Restoring the first row used to align it with the viewport top, beneath the header.
     @MainActor func testLongLibraryOpensWithFirstRowBelowHeader() throws {
         let table = try launchTable()
@@ -53,7 +48,7 @@ final class LibraryTableHeaderUITests: XCTestCase {
         )
         if rows.firstMatch.waitForExistence(timeout: 15) == false,
            UIDevice.current.userInterfaceIdiom == .phone {
-            XCUIDevice.shared.orientation = .landscapeLeft
+            setDeviceOrientation(.landscapeLeft)
         }
         try XCTSkipUnless(rows.firstMatch.waitForExistence(timeout: 10), "The expanded library table is not shown.")
         let header = app.buttons.matching(NSPredicate(format: "label == %@", "Title")).firstMatch

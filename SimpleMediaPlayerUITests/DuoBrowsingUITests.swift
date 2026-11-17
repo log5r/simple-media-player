@@ -181,7 +181,8 @@ final class DuoBrowsingUITests: XCTestCase {
     }
 
     @MainActor private func launchExpanded(compact: Bool = false) throws -> XCUIApplication {
-        XCUIDevice.shared.orientation = .landscapeLeft
+        // Forced compact cases are independent of the simulator's orientation, so only expanded cases rotate.
+        if compact == false { setDuoOrientation(.landscapeLeft) }
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-reset-led-settings",

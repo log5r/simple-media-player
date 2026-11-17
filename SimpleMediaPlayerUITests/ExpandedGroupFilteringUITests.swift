@@ -56,7 +56,7 @@ final class ExpandedGroupFilteringUITests: XCTestCase {
     }
 
     @MainActor private func launchExpanded() throws -> XCUIApplication {
-        XCUIDevice.shared.orientation = .landscapeLeft
+        setDeviceOrientation(.landscapeLeft)
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-multiple-albums",

@@ -30,6 +30,9 @@ struct LibraryArtworkView: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
                     .accessibilityIdentifier("libraryArtworkImage")
+                    #if DEBUG
+                    .preference(key: LibraryArtworkDiagnostics.LoadedCount.self, value: 1)
+                    #endif
             } else {
                 Image(systemName: isVideo ? "film" : "music.note")
                     .foregroundStyle(.secondary)

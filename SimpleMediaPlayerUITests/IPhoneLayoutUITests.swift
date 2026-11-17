@@ -158,7 +158,7 @@ final class IPhoneLayoutUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["First lyric"].waitForExistence(timeout: 5))
         attachScreenshot(in: app, name: "Lyrics strip \(language) \(appearance) \(style)")
         app.buttons["phonePage.Info"].tap()
-        XCTAssertTrue(app.buttons[language == "ja" ? "情報を編集…" : "Edit Information…"].waitForExistence(timeout: 5))
+        verifyInformationPage(in: app, language: language)
         app.buttons["phonePage.Up Next"].tap()
         XCTAssertTrue(app.staticTexts["Layout Track 3"].waitForExistence(timeout: 5))
         let queuedTrack = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneQueue.'"))
@@ -172,6 +172,23 @@ final class IPhoneLayoutUITests: XCTestCase {
         app.buttons["phoneDeckClose"].tap()
         XCTAssertTrue(dock.waitForExistence(timeout: 5))
         verifyTrackAccessibility(in: app, language: language)
+    }
+
+    /// The Info page shows the metadata card without a bottom edit bar; the deck's More menu edits it.
+    @MainActor private func verifyInformationPage(in app: XCUIApplication, language: String) {
+        let artwork = language == "ja" ? "アートワークがありません" : "No artwork available"
+        XCTAssertTrue(app.staticTexts[artwork].waitForExistence(timeout: 5), "The Info page must show the metadata")
+        let editInformation = language == "ja" ? "情報を編集…" : "Edit Information…"
+        XCTAssertFalse(app.buttons[editInformation].exists, "The Info page must not repeat the More menu's edit action")
+        app.openToolbarOverflowMenu(item: editInformation).tap()
+        let close = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", language == "ja" ? "閉じる" : "Close", "phoneDeckClose"
+        )).firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 10), "Edit Information must open from the More menu")
+        close.tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: close)
+        wait(for: [dismissed], timeout: 10)
+        XCTAssertTrue(app.buttons["phonePage.Up Next"].waitForExistence(timeout: 5))
     }
 
     @MainActor private func verifyTrackAccessibility(in app: XCUIApplication, language: String) {

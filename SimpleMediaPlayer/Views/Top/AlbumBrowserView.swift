@@ -82,6 +82,9 @@ struct AlbumBrowserView<ItemMenu: View>: View {
         }
         .scrollPosition(id: $browsingState.albumScrollID, anchor: .top)
         .background(.background)
+        #if DEBUG
+        .modifier(LibraryArtworkDiagnostics.Report(identifier: "albumGridArtworkMetrics"))
+        #endif
     }
 
     private func albumDetail(_ albumID: String) -> some View {
