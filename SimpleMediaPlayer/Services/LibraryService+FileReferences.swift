@@ -86,39 +86,34 @@ extension LibraryService {
         guard case let .legacyPath(path) = entry.location else { return nil }
         // The old path is outside the directory, so a bookmark that does not resolve falls back outside it too.
         let url = resolveBookmark(entry.bookmarkData, URL(fileURLWithPath: path))
-        let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
-        let directory = mediaDirectory.standardizedFileURL.resolvingSymlinksInPath()
-        guard normalized.deletingLastPathComponent().path == directory.path,
-              FileManager.default.fileExists(atPath: normalized.path)
+        guard PendingFileRemovalJournal.isDirectlyInside(mediaDirectory, url),
+              FileManager.default.fileExists(atPath: url.path)
         else { return nil }
         return PendingFileRemovalJournal.Entry(
-            id: entry.id, bookmarkData: entry.bookmarkData, fileName: normalized.lastPathComponent, libraryID: libraryID
+            id: entry.id, bookmarkData: entry.bookmarkData, fileName: url.lastPathComponent, libraryID: libraryID,
+            recordedPath: path
         )
     }
 
     /// Blocks on the file system, so callers run it on `FileSystemWorkQueue`.
     ///
-    /// A managed file whose bookmark resolves to a path that no longer exists, as after iOS moves the app's
-    /// container, is removed by its name in the current media directory instead. The entry stays journaled
-    /// unless a file was removed or both locations are missing.
+    /// The file is reached only by its bookmark or by its name in the current media directory. A file whose
+    /// bookmark resolves to a path that no longer exists, as after iOS moves the app's container, is removed by
+    /// its name instead. The entry stays journaled unless a file was removed or every location is missing.
     nonisolated func removeFile(for removal: PendingFileRemovalJournal.Entry) {
-        let fallbackURL: URL
-        let isManaged: Bool
-        switch removal.location {
-        case let .managed(fileName, _):
-            fallbackURL = fallbackMediaURL(forFileName: fileName)
-            isManaged = true
-        case let .legacyPath(path):
-            fallbackURL = URL(fileURLWithPath: path)
-            isManaged = false
-        }
+        // Earlier-format entries are checked and turned into names when they are selected. An unchecked path
+        // could name a file outside the library, so its entry is left for a later launch.
+        guard case let .managed(fileName, _) = removal.location else { return }
+        let fallbackURL = fallbackMediaURL(forFileName: fileName)
         let url = resolveBookmark(removal.bookmarkData, fallbackURL)
         var candidates = [url]
-        if isManaged, url.standardizedFileURL.path != fallbackURL.standardizedFileURL.path {
+        if url.standardizedFileURL.path != fallbackURL.standardizedFileURL.path {
             candidates.append(fallbackURL)
         }
+        // Caches key a file by its path as written, so each of these that names the removed file has entries.
+        let spellings = [url, fallbackURL] + (removal.recordedPath.map { [URL(fileURLWithPath: $0)] } ?? [])
         for candidate in candidates {
-            switch Self.removeFileAndDerivedEntries(at: candidate) {
+            switch Self.removeFileAndDerivedEntries(at: candidate, spellings: spellings) {
             case .removed:
                 removalJournal.remove(id: removal.id)
                 return
@@ -136,14 +131,30 @@ extension LibraryService {
 
     /// Removes one location of a managed file and the cache entries derived from that location, so when a
     /// stale bookmark sends the removal to a second location, each location's entries go with its own file.
-    private nonisolated static func removeFileAndDerivedEntries(at url: URL) -> FileRemovalOutcome {
-        if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
+    /// The caches key a file by its path as written, so the entries of each of `spellings` that names the same
+    /// file, compared by device and inode rather than by path, are removed too.
+    private nonisolated static func removeFileAndDerivedEntries(
+        at url: URL, spellings: [URL]
+    ) -> FileRemovalOutcome {
+        var originals = [url]
+        if let identity = fileIdentity(of: url) {
+            originals += spellings.filter { fileIdentity(of: $0) == identity }
+        }
+        let decodedCaches = Set(originals.compactMap {
+            ExtendedAudioSource.cacheURL(forOriginalURL: $0, attributesOf: url)
+        })
+        for cacheURL in decodedCaches {
             ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
         }
         // These entries are keyed by the file's path and attributes, so nothing can find them once the file is
         // gone. The keys need the file, so they are read first; the entries are removed after the file, so a
         // loudness measurement that stores while the file is removed either finds it gone or is removed here.
-        let derivedEntries = [MusicAnalysisCache.entryURL(for: url), AudioLoudnessCache.entryURL(for: url)]
+        let derivedEntries = Set(originals.flatMap { original in
+            [
+                MusicAnalysisCache.entryURL(forOriginalURL: original, attributesOf: url),
+                AudioLoudnessCache.entryURL(forOriginalURL: original, attributesOf: url)
+            ].compactMap(\.self)
+        })
         let outcome: FileRemovalOutcome
         do {
             try FileManager.default.removeItem(at: url)
@@ -153,10 +164,21 @@ extension LibraryService {
             guard isMissingFileError(error) else { return .failed }
             outcome = .missing
         }
-        for entry in derivedEntries.compactMap(\.self) {
+        for entry in derivedEntries {
             try? FileManager.default.removeItem(at: entry)
         }
         return outcome
+    }
+
+    nonisolated private struct FileIdentity: Equatable {
+        let device: dev_t
+        let inode: ino_t
+    }
+
+    private nonisolated static func fileIdentity(of url: URL) -> FileIdentity? {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return nil }
+        return FileIdentity(device: info.st_dev, inode: info.st_ino)
     }
 
     /// Only a missing file needs no retry. Any other failure keeps the journal entry, even when the file's

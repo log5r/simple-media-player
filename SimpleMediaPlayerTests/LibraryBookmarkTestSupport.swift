@@ -163,3 +163,32 @@ nonisolated final class BookmarkResolutionRecorder: @unchecked Sendable {
         pending.forEach { $0.signal() }
     }
 }
+
+/// Writes the loudness and analysis cache entries keyed by `url`, which removing the file should remove too.
+func writeDerivedCacheEntries(for url: URL) throws -> [URL] {
+    let loudness = try #require(AudioLoudnessCache.entryURL(for: url))
+    AudioLoudnessCache.write(3, at: loudness)
+    let analysis = try #require(MusicAnalysisCache.entryURL(for: url))
+    MusicAnalysisCache.write(MusicAnalysis(duration: 8, bpm: 128), at: analysis)
+    #expect([loudness, analysis].allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+    return [loudness, analysis]
+}
+
+/// Writes a decoded cache file where `ExtendedAudioSource` looks for `url`'s.
+func writeDecodedCache(for url: URL) throws -> URL {
+    let cache = try #require(ExtendedAudioSource.cacheURL(for: url))
+    let directory = cache.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try Data("decoded".utf8).write(to: cache)
+    return cache
+}
+
+/// Waits at most five seconds, without blocking a thread, for files removed on another queue.
+func waitUntilRemoved(_ files: [URL]) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while files.contains(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+        guard ContinuousClock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return true
+}

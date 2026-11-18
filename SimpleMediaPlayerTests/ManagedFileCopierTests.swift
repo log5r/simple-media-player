@@ -39,6 +39,38 @@ struct ManagedFileCopierTests {
         #expect(written < size)
     }
 
+    @Test func errorsFailTheCopyAsWithoutACallbackExceptAnIgnoredQuarantine() {
+        func interruption(
+            _ what: Int32, _ stage: Int32, _ name: String? = nil, errno: Int32 = ENOSPC, stopped: Bool = false
+        ) -> ManagedFileCopier.Interruption? {
+            ManagedFileCopier.interruption(
+                what: what, stage: stage, attributeName: name, errno: errno, shouldStop: { stopped }
+            )
+        }
+        let data = COPYFILE_COPY_DATA
+        let xattr = COPYFILE_COPY_XATTR
+        let error = COPYFILE_ERR
+        #expect(interruption(data, error) == .failed(errno: ENOSPC))
+        #expect(interruption(data, error, errno: 0) == .failed(errno: EIO))
+        // Continuing would register a copy whose resource fork or attribute is missing.
+        #expect(interruption(xattr, error, "com.apple.ResourceFork") == .failed(errno: ENOSPC))
+        #expect(interruption(xattr, error, "com.apple.metadata:kMDItemWhereFroms", errno: EPERM)
+            == .failed(errno: EPERM))
+        #expect(interruption(xattr, error, nil) == .failed(errno: ENOSPC))
+        // copyfile ignores a quarantine it cannot apply when it has no callback, and so does the import.
+        #expect(interruption(xattr, error, "com.apple.quarantine", errno: ENOTSUP) == nil)
+        for what in [data, xattr] {
+            for stage in [COPYFILE_START, COPYFILE_PROGRESS, COPYFILE_FINISH] {
+                #expect(interruption(what, stage) == nil)
+                #expect(interruption(what, stage, stopped: true) == .stopped)
+            }
+        }
+        // A cancelled import is stopped rather than failed, whatever error the copy also reports.
+        #expect(interruption(data, error, stopped: true) == .stopped)
+        #expect(interruption(xattr, error, "com.apple.ResourceFork", stopped: true) == .stopped)
+        #expect(interruption(xattr, error, "com.apple.quarantine", stopped: true) == .stopped)
+    }
+
     private func makeDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

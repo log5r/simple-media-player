@@ -124,7 +124,8 @@ extension LibraryService {
     }
 
     nonisolated func fallbackMediaURL(forFileName fileName: String) -> URL {
-        mediaDirectoryURL().appendingPathComponent(fileName)
+        // Without `isDirectory`, Foundation checks the file system to tell whether the path is a directory.
+        mediaDirectoryURL().appendingPathComponent(fileName, isDirectory: false)
     }
 
     nonisolated func mediaDirectoryURL() -> URL {
@@ -138,7 +139,8 @@ extension LibraryService {
     }
 
     nonisolated func mediaDirectoryURL(for sourceURL: URL, id: UUID) -> URL {
-        mediaDirectoryURL().appendingPathComponent(id.uuidString).appendingPathExtension(sourceURL.pathExtension)
+        mediaDirectoryURL().appendingPathComponent(id.uuidString, isDirectory: false)
+            .appendingPathExtension(sourceURL.pathExtension)
     }
 }
 

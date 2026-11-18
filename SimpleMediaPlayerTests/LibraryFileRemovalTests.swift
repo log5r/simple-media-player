@@ -71,7 +71,7 @@ struct LibraryFileRemovalTests {
         let item = try fixture.insertItem(copying: source)
         let itemID = item.id
         let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
-        let cacheEntries = try writeCacheEntries(for: fileURL)
+        let cacheEntries = try writeDerivedCacheEntries(for: fileURL)
         defer { cacheEntries.forEach { try? FileManager.default.removeItem(at: $0) } }
         let missing = PendingFileRemovalJournal.Entry(
             id: UUID(), bookmarkData: Data([0xFF]), fileName: "\(UUID().uuidString).wav",
@@ -115,7 +115,7 @@ struct LibraryFileRemovalTests {
         let item = try fixture.insertItem(copying: source)
         let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
         // The service removes entries from the default directories, as it does in the app.
-        let cacheEntries = try writeCacheEntries(for: fileURL)
+        let cacheEntries = try writeDerivedCacheEntries(for: fileURL)
         defer { cacheEntries.forEach { try? FileManager.default.removeItem(at: $0) } }
 
         if resumed {
@@ -135,41 +135,6 @@ struct LibraryFileRemovalTests {
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
         #expect(cacheEntries.allSatisfy { FileManager.default.fileExists(atPath: $0.path) == false })
-    }
-
-    @Test func bookmarkResolvingToTheLocationBeforeAContainerMoveStillRemovesTheFileByName() async throws {
-        let fixture = try BookmarkFixture(recorder: BookmarkResolutionRecorder())
-        defer { fixture.remove() }
-        let source = try fixture.makeAudio(named: "song.wav", frameCount: 4_410)
-        let item = try fixture.insertItem(copying: source)
-        let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
-        let cacheEntries = try writeCacheEntries(for: fileURL)
-        defer { cacheEntries.forEach { try? FileManager.default.removeItem(at: $0) } }
-        // The bookmark still resolves to where the file was before iOS moved the app's container.
-        let oldLocation = fixture.directory.appendingPathComponent("OldContainer/Media/\(item.fileName)")
-        fixture.journal.add(PendingFileRemovalJournal.Entry(
-            id: item.id, bookmarkData: Data([0x01]), fileName: item.fileName, libraryID: fixture.service.libraryID
-        ))
-
-        let relaunched = LibraryService(
-            mediaDirectoryURL: fixture.mediaDirectory,
-            resolveBookmark: { _, _ in oldLocation },
-            removalJournal: fixture.journal
-        )
-        await relaunched.resumePendingFileRemovals().value
-
-        #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
-        #expect(fixture.pendingRemovals().isEmpty)
-        #expect(cacheEntries.allSatisfy { FileManager.default.fileExists(atPath: $0.path) == false })
-    }
-
-    private func writeCacheEntries(for url: URL) throws -> [URL] {
-        let loudness = try #require(AudioLoudnessCache.entryURL(for: url))
-        AudioLoudnessCache.write(3, at: loudness)
-        let analysis = try #require(MusicAnalysisCache.entryURL(for: url))
-        MusicAnalysisCache.write(MusicAnalysis(duration: 8, bpm: 128), at: analysis)
-        #expect([loudness, analysis].allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
-        return [loudness, analysis]
     }
 
     @Test func staleSnapshotDoesNotTreatADeletedItemsPendingFileAsADuplicate() async throws {

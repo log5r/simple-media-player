@@ -263,21 +263,22 @@ extension LibraryService {
     /// The copy stops between blocks once the import is cancelled. A copy that fails or stops can leave part
     /// of the file, which is removed like any discarded copy.
     private func copyIntoMediaDirectory(_ sourceURL: URL, id: UUID) async throws -> URL {
-        let destination = mediaDirectoryURL(for: sourceURL, id: id)
         try Task.checkCancellation()
         let copyFile = importFileOperations.copyFile
         let stop = FileWorkStopSignal()
         // The wait lasts until the copy notices the stop, so the partial file is not removed while it is written.
-        let result = await withTaskCancellationHandler {
-            await FileSystemWorkQueue.run {
-                Result {
+        let (destination, result) = await withTaskCancellationHandler {
+            await FileSystemWorkQueue.run { [self] in
+                // Building the destination reads the media directory's location, so it happens here too.
+                let destination = mediaDirectoryURL(for: sourceURL, id: id)
+                return (destination, Result {
                     let directory = destination.deletingLastPathComponent()
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                     if FileManager.default.fileExists(atPath: destination.path) {
                         try FileManager.default.removeItem(at: destination)
                     }
                     try copyFile(sourceURL, destination) { stop.isRequested }
-                }
+                })
             }
         } onCancel: {
             stop.request()
