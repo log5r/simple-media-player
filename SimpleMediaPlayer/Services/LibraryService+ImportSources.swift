@@ -236,7 +236,7 @@ extension LibraryService {
 
     /// Runs on the uncancellable queue: a cancelled bookmark keeps running on the same, possibly slow, volume.
     /// The empty bookmark makes the removal use the path; a failed removal stays journaled for the next launch.
-    private func discardImportedCopy(at url: URL, id: UUID) async {
+    func discardImportedCopy(at url: URL, id: UUID) async {
         let removal = PendingFileRemovalJournal.Entry(id: id, bookmarkData: Data(), fallbackPath: url.path)
         await FileSystemWorkQueue.run { [self] in
             removalJournal.add(removal)

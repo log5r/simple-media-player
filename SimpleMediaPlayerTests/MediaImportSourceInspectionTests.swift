@@ -1,15 +1,14 @@
-import AVFoundation
 import Foundation
 import SwiftData
 import Testing
 @testable import SimpleMediaPlayer
 
 /// The import inspects files and creates bookmarks on `FileSystemWorkQueue`, and removes the managed copy
-/// there when a later step fails or is cancelled.
+/// there when a later step fails or the caller cancels the import.
 @MainActor
 struct MediaImportSourceInspectionTests {
     @Test func inspectionAndBookmarkRunOffTheMainThreadAndUnreadableAudioIsRejected() async throws {
-        let recorder = ThreadRecorder()
+        let recorder = ImportOperationRecorder()
         let fixture = try InspectionFixture(recorder: recorder)
         defer { fixture.remove() }
         let valid = try fixture.makeAudio(named: "valid.wav")
@@ -20,7 +19,7 @@ struct MediaImportSourceInspectionTests {
             from: [valid, broken], into: fixture.context, existingItems: []
         )
 
-        for operation in ThreadRecorder.Operation.allCases {
+        for operation in ImportOperationRecorder.Operation.allCases {
             let calls = recorder.calls(operation)
             #expect(calls.isEmpty == false, "\(operation) was not called")
             #expect(calls.allSatisfy { $0 == false }, "\(operation) ran on the main thread")
@@ -47,22 +46,21 @@ struct MediaImportSourceInspectionTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
-    func cancellingWhileTheBookmarkIsHeldRemovesTheCopyOffTheMainThread() async throws {
-        let recorder = ThreadRecorder()
-        let hold = WorkerHold()
+    func cancellingTheCallerWhileTheBookmarkIsHeldRegistersNothing() async throws {
+        let recorder = ImportOperationRecorder()
+        let hold = ImportWorkerHold()
         defer { hold.release() }
-        let fixture = try InspectionFixture(recorder: recorder, beforeBookmark: hold.hold)
+        let fixture = try InspectionFixture(recorder: recorder, beforeBookmark: { _ in hold.hold() })
         defer { fixture.remove() }
         let source = try fixture.makeAudio(named: "song.wav")
         let service = fixture.service
-        let session = MusicLibraryMetadataProvider().makeSession()
-        let fingerprint = try MediaImportFingerprint.read(from: source)
+        let context = fixture.context
 
-        let task = Task { @MainActor in
+        let caller = Task { @MainActor in
             defer { hold.taskEnded() }
-            _ = try await service.makeMediaItem(from: source, importFingerprint: fingerprint, musicSession: session)
+            return await service.importFiles(from: [source], into: context, existingItems: [])
         }
-        try #require(await hold.waitUntilHeld(), "makeMediaItem ended before creating the bookmark")
+        try #require(await hold.waitUntilHeld(), "the import ended before creating the bookmark")
 
         // The main actor keeps running while the worker is held.
         await Task { @MainActor in }.value
@@ -70,9 +68,14 @@ struct MediaImportSourceInspectionTests {
         #expect(ContinuousClock.now - heldAt < .seconds(5))
         #expect(try fixture.managedFiles().count == 1)
 
-        task.cancel()
-        await #expect(throws: CancellationError.self) { try await task.value }
+        caller.cancel()
+        hold.release()
+        let summary = await caller.value
 
+        #expect(summary.createdCount == 0)
+        #expect(summary.errors.isEmpty)
+        #expect(try fixture.savedItemCount() == 0)
+        #expect(try fixture.items().isEmpty)
         #expect(try fixture.managedFiles().isEmpty)
         #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
         let removals = recorder.removals()
@@ -80,8 +83,110 @@ struct MediaImportSourceInspectionTests {
         #expect(removals.allSatisfy { $0.isMainThread == false })
         // The removal was journaled under the media directory before it ran, and resolved from the path.
         #expect(removals.allSatisfy { $0.wasJournaled && $0.bookmarkWasEmpty })
-        #expect(try fixture.items().isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func cancellingDuringTheSecondFileKeepsTheFirstAndReportsNoError() async throws {
+        let hold = ImportWorkerHold(holdingCall: 2)
+        defer { hold.release() }
+        let fixture = try InspectionFixture(recorder: ImportOperationRecorder(), beforeBookmark: { _ in hold.hold() })
+        defer { fixture.remove() }
+        let first = try fixture.makeAudio(named: "first.wav", amplitude: 0.1)
+        let second = try fixture.makeAudio(named: "second.wav", amplitude: 0.2)
+        let service = fixture.service
+        let context = fixture.context
+
+        let caller = Task { @MainActor in
+            defer { hold.taskEnded() }
+            return await service.importFiles(from: [first, second], into: context, existingItems: [])
+        }
+        try #require(await hold.waitUntilHeld(), "the import ended before the second bookmark")
+        caller.cancel()
         hold.release()
+        let summary = await caller.value
+
+        #expect(summary.createdCount == 1)
+        #expect(summary.errors.isEmpty)
+        #expect(fixture.service.lastImportErrors.isEmpty)
+        #expect(try fixture.savedItemCount() == 1)
+        let item = try #require(fixture.items().first)
+        #expect(item.title == "first")
+        #expect(try fixture.managedFiles().map(\.lastPathComponent) == [item.fileName])
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func cancellingJustBeforeRegistrationDiscardsTheCopy() async throws {
+        let recorder = ImportOperationRecorder()
+        let registration = ImportRegistrationHold()
+        defer { registration.release() }
+        let fixture = try InspectionFixture(recorder: recorder, beforeImportRegistration: registration.hold)
+        defer { fixture.remove() }
+        let source = try fixture.makeAudio(named: "song.wav")
+        let service = fixture.service
+        let context = fixture.context
+
+        let caller = Task { @MainActor in
+            defer { registration.taskEnded() }
+            return await service.importFiles(from: [source], into: context, existingItems: [])
+        }
+        try #require(await registration.waitUntilHeld(), "the import ended before registering its item")
+        #expect(try fixture.managedFiles().count == 1)
+        caller.cancel()
+        registration.release()
+        let summary = await caller.value
+
+        #expect(summary.createdCount == 0)
+        #expect(summary.errors.isEmpty)
+        #expect(try fixture.savedItemCount() == 0)
+        #expect(try fixture.items().isEmpty)
+        #expect(try fixture.managedFiles().isEmpty)
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(recorder.removals().map(\.isMainThread) == [false])
+    }
+
+    @Test func rollbackThatCannotRemoveTheCopyStaysJournaledUntilTheRetry() async throws {
+        let fixture = try InspectionFixture(recorder: ImportOperationRecorder(), beforeBookmark: { copiedURL in
+            // Without search permission, neither the removal nor an existence check can reach the copy.
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: copiedURL.deletingLastPathComponent().path
+            )
+            throw CocoaError(.fileWriteUnknown)
+        })
+        defer { fixture.remove() }
+        defer { restorePermissions(of: fixture.mediaDirectory) }
+        let source = try fixture.makeAudio(named: "song.wav")
+
+        let summary = await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [])
+
+        #expect(summary.createdCount == 0)
+        #expect(fixture.service.lastImportErrors.count == 1)
+        let entry = try #require(fixture.journal.entries(in: fixture.mediaDirectory).first)
+        restorePermissions(of: fixture.mediaDirectory)
+        let fallbackName = URL(fileURLWithPath: entry.fallbackPath).lastPathComponent
+        #expect(try fixture.managedFiles().map(\.lastPathComponent) == [fallbackName])
+
+        await fixture.service.resumePendingFileRemovals().value
+
+        #expect(try fixture.managedFiles().isEmpty)
+        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+    }
+
+    @Test func onlyAMissingFileCountsAsRemoved() throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let removalError = try #require(throws: (any Error).self) { try FileManager.default.removeItem(at: missing) }
+        #expect(LibraryService.isMissingFileError(removalError))
+        #expect(LibraryService.isMissingFileError(CocoaError(.fileNoSuchFile)))
+        #expect(LibraryService.isMissingFileError(POSIXError(.ENOENT)))
+        #expect(LibraryService.isMissingFileError(CocoaError(.fileReadNoPermission)) == false)
+        #expect(LibraryService.isMissingFileError(CocoaError(
+            .fileWriteNoPermission, userInfo: [NSUnderlyingErrorKey: POSIXError(.EACCES)]
+        )) == false)
+        #expect(LibraryService.isMissingFileError(POSIXError(.EACCES)) == false)
+    }
+
+    private func restorePermissions(of directory: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
     }
 }
 
@@ -90,162 +195,3 @@ private let bookmarkResolutionOptions: URL.BookmarkResolutionOptions = [.withSec
 #else
 private let bookmarkResolutionOptions: URL.BookmarkResolutionOptions = []
 #endif
-
-@MainActor
-private struct InspectionFixture {
-    let directory: URL
-    let mediaDirectory: URL
-    let container: ModelContainer
-    let service: LibraryService
-    let journal: PendingFileRemovalJournal
-    private let journalSuiteName = "MediaImportSourceInspectionTests-\(UUID().uuidString)"
-    var context: ModelContext { container.mainContext }
-
-    init(recorder: ThreadRecorder, beforeBookmark: @escaping @Sendable () -> Void = {}) throws {
-        directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let mediaDirectory = directory.appendingPathComponent("Media")
-        self.mediaDirectory = mediaDirectory
-        try FileManager.default.createDirectory(at: mediaDirectory, withIntermediateDirectories: true)
-        let schema = Schema([MediaItem.self, Playlist.self, PlaylistEntry.self])
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        container = try ModelContainer(for: schema, configurations: [configuration])
-        let journal = PendingFileRemovalJournal(defaults: try #require(UserDefaults(suiteName: journalSuiteName)))
-        self.journal = journal
-        let defaults = ImportFileOperations()
-        let operations = ImportFileOperations(
-            isVideoFile: { url in
-                recorder.record(.isVideoFile)
-                return defaults.isVideoFile(url)
-            },
-            openAudioFile: { url in
-                recorder.record(.openAudioFile)
-                try defaults.openAudioFile(url)
-            },
-            makeBookmark: { url in
-                recorder.record(.makeBookmark)
-                beforeBookmark()
-                return try defaults.makeBookmark(url)
-            }
-        )
-        // The import resolves bookmarks only to remove a discarded copy.
-        let resolveBookmark: @Sendable (Data, URL) -> URL = { bookmarkData, fallbackURL in
-            let journaledIDs = journal.entries(in: mediaDirectory).map(\.id.uuidString)
-            recorder.recordRemoval(.init(
-                isMainThread: Thread.isMainThread,
-                wasJournaled: journaledIDs.contains(fallbackURL.deletingPathExtension().lastPathComponent),
-                bookmarkWasEmpty: bookmarkData.isEmpty
-            ))
-            return EmbeddedMetadataEditabilityChecker.resolve(bookmarkData, fallbackURL)
-        }
-        service = LibraryService(
-            mediaDirectoryURL: mediaDirectory, resolveBookmark: resolveBookmark, removalJournal: journal,
-            importFileOperations: operations
-        )
-    }
-
-    func remove() {
-        try? FileManager.default.removeItem(at: directory)
-        UserDefaults(suiteName: journalSuiteName)?.removePersistentDomain(forName: journalSuiteName)
-    }
-
-    func makeAudio(named name: String, frameCount: AVAudioFrameCount = 4_410) throws -> URL {
-        let url = directory.appendingPathComponent(name)
-        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
-        buffer.frameLength = frameCount
-        try #require(buffer.floatChannelData?[0]).update(repeating: 0.1, count: Int(frameCount))
-        try file.write(from: buffer)
-        return url
-    }
-
-    func items() throws -> [MediaItem] { try context.fetch(FetchDescriptor<MediaItem>()) }
-
-    func managedFiles() throws -> [URL] {
-        try FileManager.default.contentsOfDirectory(at: mediaDirectory, includingPropertiesForKeys: nil)
-    }
-}
-
-/// Records whether each replaced file operation ran on the main thread.
-nonisolated private final class ThreadRecorder: @unchecked Sendable {
-    enum Operation: CaseIterable { case isVideoFile, openAudioFile, makeBookmark }
-
-    struct Removal {
-        let isMainThread: Bool
-        let wasJournaled: Bool
-        let bookmarkWasEmpty: Bool
-    }
-
-    private let lock = NSLock()
-    private var operationCalls: [Operation: [Bool]] = [:]
-    private var removalCalls: [Removal] = []
-
-    func record(_ operation: Operation) {
-        let isMainThread = Thread.isMainThread
-        lock.withLock { operationCalls[operation, default: []].append(isMainThread) }
-    }
-
-    func recordRemoval(_ removal: Removal) {
-        lock.withLock { removalCalls.append(removal) }
-    }
-
-    /// Whether each call ran on the main thread.
-    func calls(_ operation: Operation) -> [Bool] {
-        lock.withLock { operationCalls[operation] ?? [] }
-    }
-
-    func removals() -> [Removal] {
-        lock.withLock { removalCalls }
-    }
-}
-
-/// Holds a `FileSystemWorkQueue` worker, which is not a cooperative thread, until the test releases it.
-nonisolated private final class WorkerHold: @unchecked Sendable {
-    private let lock = NSLock()
-    private let semaphore = DispatchSemaphore(value: 0)
-    private var outcome: Bool?
-    private var waiter: CheckedContinuation<Bool, Never>?
-    private var isReleased = false
-    private var heldTime: ContinuousClock.Instant?
-
-    var heldAt: ContinuousClock.Instant? { lock.withLock { heldTime } }
-
-    func hold() {
-        lock.withLock { heldTime = .now }
-        finishWaiting(held: true)
-        _ = semaphore.wait(timeout: .now() + 10)
-    }
-
-    /// Lets a test that waits for the hold stop when the work ends without reaching it.
-    func taskEnded() { finishWaiting(held: false) }
-
-    /// Returns true once the worker is held, or false when the task ended first.
-    func waitUntilHeld() async -> Bool {
-        await withCheckedContinuation { continuation in
-            let outcome: Bool? = lock.withLock {
-                if let outcome { return outcome }
-                waiter = continuation
-                return nil
-            }
-            if let outcome { continuation.resume(returning: outcome) }
-        }
-    }
-
-    func release() {
-        let shouldSignal = lock.withLock {
-            defer { isReleased = true }
-            return isReleased == false
-        }
-        if shouldSignal { semaphore.signal() }
-    }
-
-    private func finishWaiting(held: Bool) {
-        let waiter: CheckedContinuation<Bool, Never>? = lock.withLock {
-            guard outcome == nil else { return nil }
-            outcome = held
-            defer { self.waiter = nil }
-            return self.waiter
-        }
-        waiter?.resume(returning: held)
-    }
-}

@@ -3,6 +3,8 @@ import SwiftData
 
 extension LibraryService {
     /// `overrides` carry values that take precedence over the file's embedded metadata, keyed by source URL.
+    /// Cancelling the caller stops this request: the file in progress is discarded and the rest are skipped,
+    /// while files registered before then are still saved. Earlier and later requests are not cancelled.
     @discardableResult
     func importFiles(
         from urls: [URL], overrides: [URL: MediaImportOverride] = [:],
@@ -20,7 +22,11 @@ extension LibraryService {
             )
         }
         importTask = (requestID, task)
-        let summary = await task.value
+        let summary = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         if importTask?.id == requestID { importTask = nil }
         return summary
     }
@@ -47,7 +53,9 @@ extension LibraryService {
         let musicSession = musicMetadataProvider.makeSession()
         var createdItems: [MediaItem] = []
 
-        for (index, url) in urls.enumerated() {
+        files: for (index, url) in urls.enumerated() {
+            // A cancelled request is stopped, not failed, so the files left are not reported as errors.
+            guard Task.isCancelled == false else { break }
             currentImportFileName = url.lastPathComponent
             importProgress = Double(index) / Double(urls.count)
             await Task.yield()
@@ -61,6 +69,8 @@ extension LibraryService {
                 } else {
                     summary.duplicateCount += 1
                 }
+            } catch is CancellationError where Task.isCancelled {
+                break files
             } catch {
                 lastImportErrors.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }
@@ -108,6 +118,10 @@ extension LibraryService {
         )
         await apply(override, to: item, importedValues: importedValues)
         await beforeImportRegistration(url)
+        if Task.isCancelled {
+            await discardImportedCopy(at: fallbackMediaURL(forFileName: item.fileName), id: item.id)
+            throw CancellationError()
+        }
         context.insert(item)
         index.insert(item)
         return item

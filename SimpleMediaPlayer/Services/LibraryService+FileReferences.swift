@@ -89,12 +89,22 @@ extension LibraryService {
             try FileManager.default.removeItem(at: url)
         } catch {
             // Keep the entry so the next launch retries; a file that is already gone needs no retry.
-            guard FileManager.default.fileExists(atPath: url.path) == false else { return }
+            guard Self.isMissingFileError(error) else { return }
         }
         for entry in derivedEntries.compactMap(\.self) {
             try? FileManager.default.removeItem(at: entry)
         }
         removalJournal.remove(id: removal.id)
+    }
+
+    /// Only a missing file needs no retry. Any other failure keeps the journal entry, even when the file's
+    /// existence cannot be checked either, as when the media directory loses its search permission.
+    nonisolated static func isMissingFileError(_ error: any Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSCocoaErrorDomain, error.code == CocoaError.fileNoSuchFile.rawValue { return true }
+        if error.domain == NSPOSIXErrorDomain, error.code == Int(ENOENT) { return true }
+        guard let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
+        return underlying.domain == NSPOSIXErrorDomain && underlying.code == Int(ENOENT)
     }
 
     /// Checked after every awaited probe: a deleted item's file can outlive the item until its removal runs.
