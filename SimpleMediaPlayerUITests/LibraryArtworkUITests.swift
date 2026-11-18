@@ -89,7 +89,7 @@ final class LibraryArtworkUITests: XCTestCase {
         assertLoadedArtworkCount(2, in: app)
         attachScreenshot(of: app, named: "Artwork in phone track list")
 
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBackButton().tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.toolbarOverflowButton().waitForExistence(timeout: 5))
         let trackListDisappeared = XCTNSPredicateExpectation(

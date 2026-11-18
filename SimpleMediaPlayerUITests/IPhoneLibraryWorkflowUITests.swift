@@ -29,11 +29,11 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
 
     @MainActor func testPlaylistAddRenameAndRemove() {
         let app = launch()
-        app.tabBars.buttons["Playlists"].tap()
+        app.tabButton("Playlists").tap()
         app.buttons["addPlaylistButton"].tap()
         app.buttons["Add Tracks"].tap()
         addSelectionAfterHidingItWithSearch(in: app)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBackButton().tap()
         app.buttons["New Playlist"].press(forDuration: 1)
         app.buttons["Rename"].tap()
         let name = app.alerts.textFields.firstMatch
@@ -189,7 +189,7 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         XCTAssertTrue(dock.waitForExistence(timeout: 10))
         dock.tap()
         app.buttons["phonePage.Lyrics"].tap()
-        let edit = app.navigationBars.buttons[isJapanese ? "歌詞を編集…" : "Edit Lyrics…"].firstMatch
+        let edit = app.navigationBarButton(isJapanese ? "歌詞を編集…" : "Edit Lyrics…")
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
         edit.tap()
         let editor = app.textViews[isJapanese ? "歌詞" : "Lyrics"]

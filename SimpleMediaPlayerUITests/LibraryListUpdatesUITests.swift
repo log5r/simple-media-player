@@ -26,8 +26,9 @@ final class LibraryListUpdatesUITests: XCTestCase {
         XCTAssertTrue(anchor.waitForExistence(timeout: 15))
         #elseif os(iOS)
         if UIDevice.current.userInterfaceIdiom == .phone {
-            XCTAssertTrue(app.tabBars.buttons["Search"].waitForExistence(timeout: 15))
-            app.tabBars.buttons["Search"].tap()
+            let searchTab = app.tabButton("Search", timeout: 15)
+            XCTAssertTrue(searchTab.exists, "Search tab")
+            searchTab.tap()
         } else {
             XCTAssertTrue(app.buttons["addPlaylistButton"].waitForExistence(timeout: 15))
         }
@@ -60,8 +61,8 @@ final class LibraryListUpdatesUITests: XCTestCase {
     private func verifySearchAfterChangingTabs(in app: XCUIApplication) {
         #if os(iOS)
         if UIDevice.current.userInterfaceIdiom == .phone {
-            app.tabBars.buttons["Library"].tap()
-            app.tabBars.buttons["Search"].tap()
+            app.tabButton("Library").tap()
+            app.tabButton("Search").tap()
             XCTAssertTrue(track(number: 2999, in: app).waitForExistence(timeout: 10))
             waitForValue("UI Test Track 2999", of: app.searchFields.firstMatch)
         }
@@ -174,8 +175,9 @@ final class LibraryListUpdatesUITests: XCTestCase {
     @MainActor
     private func dismissSearchKeyboard(in app: XCUIApplication) {
         #if os(iOS)
+        // With Simulate Hardware Keyboard on, the software keyboard stays below the window and covers nothing.
         let submit = app.keyboards.buttons["Search"]
-        if submit.exists { submit.tap() }
+        if submit.exists, submit.isHittable { submit.tap() }
         #endif
     }
 
