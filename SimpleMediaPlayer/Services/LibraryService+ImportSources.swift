@@ -260,19 +260,35 @@ extension LibraryService {
         }
     }
 
-    private nonisolated func copyIntoMediaDirectory(_ sourceURL: URL, id: UUID) async throws -> URL {
+    /// The copy stops between blocks once the import is cancelled. A copy that fails or stops can leave part
+    /// of the file, which is removed like any discarded copy.
+    private func copyIntoMediaDirectory(_ sourceURL: URL, id: UUID) async throws -> URL {
         let destination = mediaDirectoryURL(for: sourceURL, id: id)
-        // The copy cannot stop part way, so it starts only if the import is still wanted.
         try Task.checkCancellation()
-        return try await Task.detached(priority: .utility) {
-            let directory = destination.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
+        let copyFile = importFileOperations.copyFile
+        let stop = FileWorkStopSignal()
+        // The wait lasts until the copy notices the stop, so the partial file is not removed while it is written.
+        let result = await withTaskCancellationHandler {
+            await FileSystemWorkQueue.run {
+                Result {
+                    let directory = destination.deletingLastPathComponent()
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    if FileManager.default.fileExists(atPath: destination.path) {
+                        try FileManager.default.removeItem(at: destination)
+                    }
+                    try copyFile(sourceURL, destination) { stop.isRequested }
+                }
             }
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
-            return destination
-        }.value
+        } onCancel: {
+            stop.request()
+        }
+        do {
+            try result.get()
+        } catch {
+            await discardImportedCopy(named: destination.lastPathComponent, id: id)
+            throw error
+        }
+        return destination
     }
 
 }

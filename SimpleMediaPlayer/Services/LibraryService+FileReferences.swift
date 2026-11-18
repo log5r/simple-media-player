@@ -64,11 +64,36 @@ extension LibraryService {
     func resumePendingFileRemovals() -> Task<Void, Never> {
         Task.detached(priority: .utility) { [self] in
             await FileSystemWorkQueue.run { [self] in
-                for removal in removalJournal.entries(forLibrary: libraryID, mediaDirectory: mediaDirectoryURL()) {
+                let mediaDirectory = mediaDirectoryURL()
+                for removal in removalJournal.entries(forLibrary: libraryID, mediaDirectory: mediaDirectory) {
+                    removeFile(for: removal)
+                }
+                for legacy in removalJournal.legacyEntries(outside: mediaDirectory) {
+                    guard let removal = adoptedLegacyRemoval(legacy, in: mediaDirectory) else { continue }
+                    removalJournal.add(removal)
                     removeFile(for: removal)
                 }
             }
         }
+    }
+
+    /// An entry of the earlier format whose path is outside the media directory belongs to this library only if
+    /// its bookmark resolves to a file that exists directly in the directory, as when iOS moved the app's
+    /// container. Such an entry is rewritten by name; any other is left, as it may be another library's.
+    private nonisolated func adoptedLegacyRemoval(
+        _ entry: PendingFileRemovalJournal.Entry, in mediaDirectory: URL
+    ) -> PendingFileRemovalJournal.Entry? {
+        guard case let .legacyPath(path) = entry.location else { return nil }
+        // The old path is outside the directory, so a bookmark that does not resolve falls back outside it too.
+        let url = resolveBookmark(entry.bookmarkData, URL(fileURLWithPath: path))
+        let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
+        let directory = mediaDirectory.standardizedFileURL.resolvingSymlinksInPath()
+        guard normalized.deletingLastPathComponent().path == directory.path,
+              FileManager.default.fileExists(atPath: normalized.path)
+        else { return nil }
+        return PendingFileRemovalJournal.Entry(
+            id: entry.id, bookmarkData: entry.bookmarkData, fileName: normalized.lastPathComponent, libraryID: libraryID
+        )
     }
 
     /// Blocks on the file system, so callers run it on `FileSystemWorkQueue`.
@@ -149,12 +174,6 @@ extension LibraryService {
         deletedItemIDs.contains(item.id) == false && item.isDeleted == false && item.modelContext === context
     }
 
-    func hasAvailableFile(for items: [MediaItem], in context: ModelContext) async -> Bool {
-        guard let probe = availableFileProbe(for: items, in: context) else { return false }
-        let availableIDs = await FileSystemWorkQueue.run(probe.work)
-        return probe.liveItems.contains { availableIDs.contains($0.id) && isLibraryItemLive($0, in: context) }
-    }
-
     /// Stops waiting when the caller is cancelled; the abandoned probe keeps its `limiter` slot until it
     /// finishes, so cancel-and-retry cycles cannot pile up probes on a slow volume.
     func hasAvailableFileCancellable(
@@ -185,20 +204,29 @@ extension LibraryService {
 
     /// Libraries imported before fingerprints existed can hold thousands of items, so every bookmark is
     /// resolved in the worker and the resolved URL is kept for the fingerprint comparison.
+    /// A cancelled import stops waiting at once, and the worker stops before the next candidate; the abandoned
+    /// worker keeps its slot of the import's limiter until then.
     func groupImportCandidatesBySize(
         _ items: [MediaItem]
-    ) async -> [UInt64: [(item: MediaItem, url: URL)]] {
+    ) async throws -> [UInt64: [(item: MediaItem, url: URL)]] {
         let references = items.map(fileReference(for:))
-        let files = await FileSystemWorkQueue.run { [self] in
-            var files: [UUID: (url: URL, size: UInt64)] = [:]
-            for reference in references {
-                let url = resolvedURL(for: reference)
-                if let size = try? MediaImportFingerprint.fileSize(of: url) {
-                    files[reference.id] = (url, size)
+        let stop = FileWorkStopSignal()
+        let files = try await withTaskCancellationHandler {
+            try await FileSystemWorkQueue.runCancellable(limiter: importFileLimiter) { [self] in
+                var files: [UUID: (url: URL, size: UInt64)] = [:]
+                for reference in references {
+                    guard stop.isRequested == false else { break }
+                    let url = resolvedURL(for: reference)
+                    if let size = try? MediaImportFingerprint.fileSize(of: url) {
+                        files[reference.id] = (url, size)
+                    }
                 }
+                return files
             }
-            return files
+        } onCancel: {
+            stop.request()
         }
+        try Task.checkCancellation()
         var grouped: [UInt64: [(item: MediaItem, url: URL)]] = [:]
         for item in items {
             if let file = files[item.id] { grouped[file.size, default: []].append((item, file.url)) }

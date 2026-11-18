@@ -21,6 +21,9 @@ struct InspectionFixture {
         beforeIsVideoFile: @escaping @Sendable (URL) -> Void = { _ in },
         beforeBookmark: @escaping @Sendable (URL) throws -> Void = { _ in },
         readFingerprint: @escaping @Sendable (URL) throws -> String = MediaImportFingerprint.read(from:),
+        copyFile: @escaping @Sendable (URL, URL, @escaping @Sendable () -> Bool) throws -> Void
+            = ImportFileOperations().copyFile,
+        beforeResolve: @escaping @Sendable () -> Void = {},
         beforeImportRegistration: @escaping @MainActor (URL) async -> Void = { _ in }
     ) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -48,9 +51,10 @@ struct InspectionFixture {
                 try beforeBookmark(url)
                 return try defaults.makeBookmark(url)
             },
-            readFingerprint: readFingerprint
+            readFingerprint: readFingerprint,
+            copyFile: copyFile
         )
-        // The import resolves bookmarks only to remove a discarded copy.
+        // Without existing items, the import resolves bookmarks only to remove a discarded copy.
         let libraryID = libraryID
         let resolveBookmark: @Sendable (Data, URL) -> URL = { bookmarkData, fallbackURL in
             let journaledIDs = journal.entries(forLibrary: libraryID, mediaDirectory: mediaDirectory)
@@ -60,6 +64,7 @@ struct InspectionFixture {
                 wasJournaled: journaledIDs.contains(fallbackURL.deletingPathExtension().lastPathComponent),
                 bookmarkWasEmpty: bookmarkData.isEmpty
             ))
+            beforeResolve()
             return EmbeddedMetadataEditabilityChecker.resolve(bookmarkData, fallbackURL)
         }
         service = LibraryService(
@@ -67,6 +72,20 @@ struct InspectionFixture {
             libraryID: libraryID, importFileOperations: operations,
             beforeImportRegistration: beforeImportRegistration
         )
+    }
+
+    /// A library item for a copy of `source` in the media directory, with the source's fingerprint.
+    func insertManagedCopy(of source: URL) throws -> MediaItem {
+        let id = UUID()
+        let fileName = "\(id.uuidString).\(source.pathExtension)"
+        try FileManager.default.copyItem(at: source, to: mediaDirectory.appendingPathComponent(fileName))
+        let item = MediaItem(
+            id: id, title: "Existing", duration: 0.1, isVideo: false, bookmarkData: Data([0xFF]),
+            fileName: fileName, importFingerprint: try MediaImportFingerprint.read(from: source)
+        )
+        context.insert(item)
+        try context.save()
+        return item
     }
 
     func pendingRemovals() -> [PendingFileRemovalJournal.Entry] {

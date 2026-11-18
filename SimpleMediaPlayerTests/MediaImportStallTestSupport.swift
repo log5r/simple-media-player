@@ -154,3 +154,86 @@ nonisolated final class StalledFileOperationProbe: @unchecked Sendable {
         }
     }
 }
+
+/// Copies one file in chunks, checking `shouldStop` between them like `ManagedFileCopier`, and pauses after a
+/// chunk until `shouldStop` returns true. Other files are copied by `ManagedFileCopier`.
+nonisolated final class ChunkedCopyProbe: @unchecked Sendable {
+    enum CopyState: Equatable { case notStarted, copying, stopped, finished }
+
+    let chunkCount: Int
+    private let heldFileName: String
+    private let pausedChunk: Int
+    private let lock = NSLock()
+    private var state = CopyState.notStarted
+    private var writtenChunks = 0
+    private var outcome: Bool?
+    private var waiter: CheckedContinuation<Bool, Never>?
+
+    init(heldFileName: String, chunkCount: Int = 8, pausedChunk: Int = 2) {
+        self.heldFileName = heldFileName
+        self.chunkCount = chunkCount
+        self.pausedChunk = pausedChunk
+    }
+
+    var chunksWritten: Int { lock.withLock { writtenChunks } }
+    var heldCopyState: CopyState { lock.withLock { state } }
+
+    func copy(from source: URL, to destination: URL, shouldStop: @escaping @Sendable () -> Bool) throws {
+        guard source.lastPathComponent == heldFileName else {
+            try ManagedFileCopier.copy(from: source, to: destination, shouldStop: shouldStop)
+            return
+        }
+        lock.withLock { state = .copying }
+        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let handle = try FileHandle(forWritingTo: destination)
+        defer { try? handle.close() }
+        for chunk in 1...chunkCount {
+            guard shouldStop() == false else {
+                lock.withLock { state = .stopped }
+                throw CancellationError()
+            }
+            try handle.write(contentsOf: Data(repeating: 0x5A, count: 1_024))
+            lock.withLock { writtenChunks += 1 }
+            if chunk == pausedChunk { pause(until: shouldStop) }
+        }
+        try handle.close()
+        try FileManager.default.removeItem(at: destination)
+        try ManagedFileCopier.copy(from: source, to: destination) { false }
+        lock.withLock { state = .finished }
+    }
+
+    func taskEnded() { finishWaiting(paused: false) }
+
+    /// Returns true once the copy is paused, or false when the import ended first.
+    func waitUntilPaused() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let outcome: Bool? = lock.withLock {
+                if let outcome { return outcome }
+                waiter = continuation
+                return nil
+            }
+            if let outcome { continuation.resume(returning: outcome) }
+        }
+    }
+
+    /// Runs on a `FileSystemWorkQueue` worker, not a cooperative thread, and waits at most 10 seconds.
+    private func pause(until shouldStop: () -> Bool) {
+        finishWaiting(paused: true)
+        let deadline = Date().addingTimeInterval(10)
+        while shouldStop() == false, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.005)
+        }
+    }
+
+    private func finishWaiting(paused: Bool) {
+        let waiter: CheckedContinuation<Bool, Never>? = lock.withLock {
+            guard outcome == nil else { return nil }
+            outcome = paused
+            defer { self.waiter = nil }
+            return self.waiter
+        }
+        waiter?.resume(returning: paused)
+    }
+}

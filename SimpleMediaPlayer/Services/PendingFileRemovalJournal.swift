@@ -66,15 +66,37 @@ nonisolated final class PendingFileRemovalJournal: @unchecked Sendable {
     /// Entries are scoped by library so services with separate media directories do not remove each other's
     /// files. Entries of the earlier format are matched by the prefix of their absolute path instead.
     func entries(forLibrary libraryID: String, mediaDirectory: URL) -> [Entry] {
-        let prefix = mediaDirectory.path.hasSuffix("/") ? mediaDirectory.path : mediaDirectory.path + "/"
-        return lock.withLock {
+        let prefix = Self.prefix(of: mediaDirectory)
+        return allEntries().filter { entry in
+            switch entry.location {
+            case let .managed(_, library): library == libraryID
+            case let .legacyPath(path): path.hasPrefix(prefix)
+            }
+        }
+    }
+
+    /// Entries of the earlier format outside `mediaDirectory`. They can belong to another library, or to this
+    /// one from before iOS moved the app's container, which only their bookmarks can tell.
+    func legacyEntries(outside mediaDirectory: URL) -> [Entry] {
+        let prefix = Self.prefix(of: mediaDirectory)
+        return allEntries().filter { entry in
+            guard case let .legacyPath(path) = entry.location else { return false }
+            return path.hasPrefix(prefix) == false
+        }
+    }
+
+    private static func prefix(of directory: URL) -> String {
+        directory.path.hasSuffix("/") ? directory.path : directory.path + "/"
+    }
+
+    private func allEntries() -> [Entry] {
+        lock.withLock {
             storedEntries().compactMap { key, value in
                 guard let id = UUID(uuidString: key), let bookmarkData = value["bookmark"] as? Data else { return nil }
                 if let fileName = value["fileName"] as? String, let library = value["library"] as? String {
-                    guard library == libraryID else { return nil }
                     return Entry(id: id, bookmarkData: bookmarkData, fileName: fileName, libraryID: library)
                 }
-                guard let path = value["fallbackPath"] as? String, path.hasPrefix(prefix) else { return nil }
+                guard let path = value["fallbackPath"] as? String else { return nil }
                 return Entry(id: id, bookmarkData: bookmarkData, location: .legacyPath(path))
             }
         }

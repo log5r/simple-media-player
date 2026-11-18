@@ -93,14 +93,14 @@ extension LibraryService {
         session: MusicLibraryMetadataSession, index: inout ImportIndex
     ) async throws -> MediaItem? {
         let fingerprint = try await importFingerprint(for: url)
-        // The duplicate checks read whole files and wait on uncancellable workers, so they start only if
-        // the import is still wanted.
-        try Task.checkCancellation()
-        var isDuplicate = await hasAvailableFile(for: index.byFingerprint[fingerprint] ?? [], in: context)
+        // The duplicate checks share the import's limiter: a check left blocked by a cancelled request keeps
+        // its slot, so cancel-and-retry cycles on a stalled volume cannot pile up blocked workers either.
+        var isDuplicate = try await hasAvailableFileCancellable(
+            for: index.byFingerprint[fingerprint] ?? [], in: context, limiter: importFileLimiter
+        )
         if !isDuplicate, !index.legacyItems.isEmpty {
-            try Task.checkCancellation()
             if index.legacyItemsBySize == nil {
-                index.legacyItemsBySize = await groupImportCandidatesBySize(index.legacyItems)
+                index.legacyItemsBySize = try await groupImportCandidatesBySize(index.legacyItems)
             }
             var fingerprints = index.byFingerprint
             do {
@@ -115,7 +115,9 @@ extension LibraryService {
             index.byFingerprint = fingerprints
         }
         // Exports of the same Music song never share bytes, so the song ID is checked here too.
-        let isMusicDuplicate = await isMusicLibraryDuplicate(override, in: index.byMusicID, context: context)
+        let isMusicDuplicate = try await isMusicLibraryDuplicate(override, in: index.byMusicID, context: context)
+        // A check that finished after the request was cancelled does not count the file as a duplicate.
+        try Task.checkCancellation()
         guard !isDuplicate, !isMusicDuplicate else { return nil }
         let (item, importedValues) = try await makeMediaItem(
             from: url, importFingerprint: fingerprint, musicSession: session
@@ -144,10 +146,11 @@ extension LibraryService {
     ) async throws -> Bool {
         let size = try await Self.runDetached { try MediaImportFingerprint.fileSize(of: source.url) }
         for (candidate, url) in candidates[size] ?? [] where candidate.importFingerprint == nil {
-            // A failed read skips the candidate, but cancellation stops the comparison.
+            // A failed read skips the candidate, but cancellation stops the comparison before the index changes.
             try Task.checkCancellation()
-            guard let fingerprint = try? await importFingerprint(for: url), isLibraryItemLive(candidate, in: context)
-            else { continue }
+            let fingerprint = try? await importFingerprint(for: url)
+            try Task.checkCancellation()
+            guard let fingerprint, isLibraryItemLive(candidate, in: context) else { continue }
             candidate.importFingerprint = fingerprint
             index[fingerprint, default: []].append(candidate)
             if fingerprint == source.fingerprint { return true }
@@ -198,9 +201,9 @@ extension LibraryService {
     /// before the first one registered its item still sees that item.
     private func isMusicLibraryDuplicate(
         _ override: MediaImportOverride?, in itemsByMusicID: [String: [MediaItem]], context: ModelContext
-    ) async -> Bool {
+    ) async throws -> Bool {
         guard let musicID = override?.musicLibraryItemID, let items = itemsByMusicID[musicID] else { return false }
-        return await hasAvailableFile(for: items, in: context)
+        return try await hasAvailableFileCancellable(for: items, in: context, limiter: importFileLimiter)
     }
 
     private func applyPrimaryValues(

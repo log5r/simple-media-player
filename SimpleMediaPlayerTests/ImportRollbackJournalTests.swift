@@ -72,6 +72,40 @@ struct ImportRollbackJournalTests {
             .map(\.id) == [staleLegacyID])
     }
 
+    @Test func earlierFormatEntryIsFoundThroughItsBookmarkAfterTheMediaDirectoryMoves() async throws {
+        let fixture = try InspectionFixture(recorder: ImportOperationRecorder())
+        defer { fixture.remove() }
+        // Entries a previous release wrote: absolute paths with the files' real bookmarks.
+        let pending = try makeFile(named: "\(UUID().uuidString).wav", in: fixture.mediaDirectory)
+        try addEarlierFormatEntry(for: pending, to: fixture.journal)
+        let otherDirectory = fixture.directory.appendingPathComponent("OtherLibrary/Media")
+        try FileManager.default.createDirectory(at: otherDirectory, withIntermediateDirectories: true)
+        let otherFile = try makeFile(named: "other.wav", in: otherDirectory)
+        let otherID = try addEarlierFormatEntry(for: otherFile, to: fixture.journal)
+        let unresolvableID = UUID()
+        fixture.journal.add(PendingFileRemovalJournal.Entry(
+            id: unresolvableID, bookmarkData: Data([0xFF]),
+            location: .legacyPath(fixture.mediaDirectory.appendingPathComponent("gone.wav").path)
+        ))
+        let moved = fixture.directory.appendingPathComponent("MovedContainer/Media")
+        try FileManager.default.createDirectory(
+            at: moved.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try FileManager.default.moveItem(at: fixture.mediaDirectory, to: moved)
+
+        let relaunched = LibraryService(
+            mediaDirectoryURL: moved, removalJournal: fixture.journal, libraryID: fixture.libraryID
+        )
+        await relaunched.resumePendingFileRemovals().value
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: moved.path).isEmpty)
+        #expect(fixture.journal.entries(forLibrary: fixture.libraryID, mediaDirectory: moved).isEmpty)
+        // Another library's file, and an entry whose bookmark cannot tell, are left for their owners.
+        #expect(FileManager.default.fileExists(atPath: otherFile.path))
+        #expect(fixture.journal.entries(forLibrary: "other", mediaDirectory: otherDirectory).map(\.id) == [otherID])
+        #expect(Set(fixture.journal.legacyEntries(outside: moved).map(\.id)) == [otherID, unresolvableID])
+    }
+
     @Test func defaultLibraryIDsSeparateOverridingDirectoriesButNotTheAppLibrary() {
         let first = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let second = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -111,6 +145,16 @@ struct ImportRollbackJournalTests {
         case let .managed(fileName, _): fileName
         case let .legacyPath(path): URL(fileURLWithPath: path).lastPathComponent
         }
+    }
+
+    @discardableResult
+    private func addEarlierFormatEntry(for file: URL, to journal: PendingFileRemovalJournal) throws -> UUID {
+        let id = UUID()
+        journal.add(PendingFileRemovalJournal.Entry(
+            id: id, bookmarkData: try ImportFileOperations.managedFileBookmark(for: file),
+            location: .legacyPath(file.path)
+        ))
+        return id
     }
 
     private func makeFile(named name: String, in directory: URL) throws -> URL {

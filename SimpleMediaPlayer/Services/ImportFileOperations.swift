@@ -11,6 +11,11 @@ nonisolated struct ImportFileOperations: Sendable {
     var makeBookmark: @Sendable (URL) throws -> Data = Self.managedFileBookmark
     /// Runs in a detached task that the import's cancellation reaches; the read checks it between chunks.
     var readFingerprint: @Sendable (URL) throws -> String = MediaImportFingerprint.read(from:)
+    /// Copies the source to the destination on `FileSystemWorkQueue`; the copy checks the last argument between
+    /// blocks and stops with `CancellationError` once it returns true.
+    var copyFile: @Sendable (URL, URL, @escaping @Sendable () -> Bool) throws -> Void = {
+        try ManagedFileCopier.copy(from: $0, to: $1, shouldStop: $2)
+    }
 
     /// Uses the file extension when the content type cannot be read.
     static func isVideoContent(_ url: URL) -> Bool {
