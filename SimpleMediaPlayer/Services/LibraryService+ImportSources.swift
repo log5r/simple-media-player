@@ -32,14 +32,11 @@ extension LibraryService {
                 validationTask.cancel()
             }
         }
-        #if os(macOS)
-        let bookmarkOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
-        #else
-        let bookmarkOptions: URL.BookmarkCreationOptions = []
-        #endif
-        let bookmark = try copiedURL.bookmarkData(
-            options: bookmarkOptions, includingResourceValuesForKeys: nil, relativeTo: nil
-        )
+        let bookmark = try await FileSystemWorkQueue.runCancellable {
+            Result { try Self.managedFileBookmark(for: copiedURL) }
+        }.get()
+        // Cancellation after the last wait still discards the copy instead of handing back an item.
+        try Task.checkCancellation()
         let item = MediaItem(
             id: id,
             title: values.title ?? sourceURL.deletingPathExtension().lastPathComponent,
@@ -77,13 +74,17 @@ extension LibraryService {
             duration = try await asset.load(.duration).seconds
         }
         let metadata = extended == nil ? await allMetadata(for: asset) : []
-        let isVideo = isVideoFile(url)
+        let isVideo = try await FileSystemWorkQueue.runCancellable { Self.isVideoFile(url) }
         if extended == nil {
             let tracks = try await asset.load(.tracks)
             guard tracks.contains(where: { $0.mediaType == .audio || $0.mediaType == .video }) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
-            if isVideo == false { _ = try AVAudioFile(forReading: url) }
+            if isVideo == false {
+                try await FileSystemWorkQueue.runCancellable {
+                    Result { _ = try AVAudioFile(forReading: url) }
+                }.get()
+            }
         }
         let mp4 = extended == nil ? await mp4Metadata(for: url) : nil
         let music = extended == nil ? await musicLibraryMetadata(
@@ -188,7 +189,8 @@ extension LibraryService {
         )
     }
 
-    private func isVideoFile(_ url: URL) -> Bool {
+    /// Reads the file's content type, so it runs on `FileSystemWorkQueue` rather than the main actor.
+    private nonisolated static func isVideoFile(_ url: URL) -> Bool {
         guard let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType else {
             return ["mp4", "mov", "m4v"].contains(url.pathExtension.lowercased())
         }
@@ -227,6 +229,16 @@ extension LibraryService {
             }
             return nil
         }
+    }
+
+    /// Creates the bookmark synchronously, so it runs on `FileSystemWorkQueue` rather than the main actor.
+    private nonisolated static func managedFileBookmark(for url: URL) throws -> Data {
+        #if os(macOS)
+        let options: URL.BookmarkCreationOptions = [.withSecurityScope]
+        #else
+        let options: URL.BookmarkCreationOptions = []
+        #endif
+        return try url.bookmarkData(options: options, includingResourceValuesForKeys: nil, relativeTo: nil)
     }
 
     private nonisolated func copyIntoMediaDirectory(_ sourceURL: URL, id: UUID) async throws -> URL {
