@@ -39,6 +39,7 @@ final class LibraryService {
     @ObservationIgnored let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
+    @ObservationIgnored nonisolated let importFileOperations: ImportFileOperations
     @ObservationIgnored let saveContext: @MainActor (ModelContext) throws -> Void
     @ObservationIgnored let beforeMetadataWrite: @Sendable (URL) async throws -> Void
     @ObservationIgnored let metadataWriter: @Sendable (MediaMetadataEditDraft, URL) throws -> Void
@@ -81,6 +82,7 @@ final class LibraryService {
         musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider(),
         resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve,
         removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal(),
+        importFileOperations: ImportFileOperations = ImportFileOperations(),
         saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() },
         beforeMetadataWrite: @escaping @Sendable (URL) async throws -> Void = { _ in },
         metadataWriter: @escaping @Sendable (MediaMetadataEditDraft, URL) throws -> Void
@@ -92,6 +94,7 @@ final class LibraryService {
         self.temporaryDirectoryURL = temporaryDirectoryURL
         self.resolveBookmark = resolveBookmark
         self.removalJournal = removalJournal
+        self.importFileOperations = importFileOperations
         self.saveContext = saveContext
         self.beforeMetadataWrite = beforeMetadataWrite
         self.metadataWriter = metadataWriter

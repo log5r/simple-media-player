@@ -75,7 +75,8 @@ extension LibraryService {
         }
     }
 
-    private nonisolated func removeFile(for removal: PendingFileRemovalJournal.Entry) {
+    /// Blocks on the file system, so callers run it on `FileSystemWorkQueue`.
+    nonisolated func removeFile(for removal: PendingFileRemovalJournal.Entry) {
         let url = resolveBookmark(removal.bookmarkData, URL(fileURLWithPath: removal.fallbackPath))
         if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
             ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
