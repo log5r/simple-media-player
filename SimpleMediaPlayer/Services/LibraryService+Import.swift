@@ -3,6 +3,8 @@ import SwiftData
 
 extension LibraryService {
     /// `overrides` carry values that take precedence over the file's embedded metadata, keyed by source URL.
+    /// Cancelling the caller stops this request: the file in progress is discarded and the rest are skipped,
+    /// while files registered before then are still saved. Earlier and later requests are not cancelled.
     @discardableResult
     func importFiles(
         from urls: [URL], overrides: [URL: MediaImportOverride] = [:],
@@ -20,7 +22,11 @@ extension LibraryService {
             )
         }
         importTask = (requestID, task)
-        let summary = await task.value
+        let summary = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         if importTask?.id == requestID { importTask = nil }
         return summary
     }
@@ -47,7 +53,9 @@ extension LibraryService {
         let musicSession = musicMetadataProvider.makeSession()
         var createdItems: [MediaItem] = []
 
-        for (index, url) in urls.enumerated() {
+        files: for (index, url) in urls.enumerated() {
+            // A cancelled request is stopped, not failed, so the files left are not reported as errors.
+            guard Task.isCancelled == false else { break }
             currentImportFileName = url.lastPathComponent
             importProgress = Double(index) / Double(urls.count)
             await Task.yield()
@@ -61,6 +69,8 @@ extension LibraryService {
                 } else {
                     summary.duplicateCount += 1
                 }
+            } catch is CancellationError where Task.isCancelled {
+                break files
             } catch {
                 lastImportErrors.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }
@@ -83,10 +93,14 @@ extension LibraryService {
         session: MusicLibraryMetadataSession, index: inout ImportIndex
     ) async throws -> MediaItem? {
         let fingerprint = try await importFingerprint(for: url)
-        var isDuplicate = await hasAvailableFile(for: index.byFingerprint[fingerprint] ?? [], in: context)
+        // The duplicate checks share the import's limiter: a check left blocked by a cancelled request keeps
+        // its slot, so cancel-and-retry cycles on a stalled volume cannot pile up blocked workers either.
+        var isDuplicate = try await hasAvailableFileCancellable(
+            for: index.byFingerprint[fingerprint] ?? [], in: context, limiter: importFileLimiter
+        )
         if !isDuplicate, !index.legacyItems.isEmpty {
             if index.legacyItemsBySize == nil {
-                index.legacyItemsBySize = await groupImportCandidatesBySize(index.legacyItems)
+                index.legacyItemsBySize = try await groupImportCandidatesBySize(index.legacyItems)
             }
             var fingerprints = index.byFingerprint
             do {
@@ -101,13 +115,19 @@ extension LibraryService {
             index.byFingerprint = fingerprints
         }
         // Exports of the same Music song never share bytes, so the song ID is checked here too.
-        let isMusicDuplicate = await isMusicLibraryDuplicate(override, in: index.byMusicID, context: context)
+        let isMusicDuplicate = try await isMusicLibraryDuplicate(override, in: index.byMusicID, context: context)
+        // A check that finished after the request was cancelled does not count the file as a duplicate.
+        try Task.checkCancellation()
         guard !isDuplicate, !isMusicDuplicate else { return nil }
         let (item, importedValues) = try await makeMediaItem(
             from: url, importFingerprint: fingerprint, musicSession: session
         )
         await apply(override, to: item, importedValues: importedValues)
         await beforeImportRegistration(url)
+        if Task.isCancelled {
+            await discardImportedCopy(named: item.fileName, id: item.id)
+            throw CancellationError()
+        }
         context.insert(item)
         index.insert(item)
         return item
@@ -124,12 +144,13 @@ extension LibraryService {
         _ source: (url: URL, fingerprint: String), candidates: [UInt64: [(item: MediaItem, url: URL)]],
         index: inout [String: [MediaItem]], context: ModelContext
     ) async throws -> Bool {
-        let size = try await Task.detached(priority: .utility) {
-            try MediaImportFingerprint.fileSize(of: source.url)
-        }.value
+        let size = try await Self.runDetached { try MediaImportFingerprint.fileSize(of: source.url) }
         for (candidate, url) in candidates[size] ?? [] where candidate.importFingerprint == nil {
-            guard let fingerprint = try? await importFingerprint(for: url), isLibraryItemLive(candidate, in: context)
-            else { continue }
+            // A failed read skips the candidate, but cancellation stops the comparison before the index changes.
+            try Task.checkCancellation()
+            let fingerprint = try? await importFingerprint(for: url)
+            try Task.checkCancellation()
+            guard let fingerprint, isLibraryItemLive(candidate, in: context) else { continue }
             candidate.importFingerprint = fingerprint
             index[fingerprint, default: []].append(candidate)
             if fingerprint == source.fingerprint { return true }
@@ -180,9 +201,9 @@ extension LibraryService {
     /// before the first one registered its item still sees that item.
     private func isMusicLibraryDuplicate(
         _ override: MediaImportOverride?, in itemsByMusicID: [String: [MediaItem]], context: ModelContext
-    ) async -> Bool {
+    ) async throws -> Bool {
         guard let musicID = override?.musicLibraryItemID, let items = itemsByMusicID[musicID] else { return false }
-        return await hasAvailableFile(for: items, in: context)
+        return try await hasAvailableFileCancellable(for: items, in: context, limiter: importFileLimiter)
     }
 
     private func applyPrimaryValues(
@@ -224,9 +245,19 @@ extension LibraryService {
     }
 
     private func importFingerprint(for url: URL) async throws -> String {
-        try await Task.detached(priority: .utility) {
-            try MediaImportFingerprint.read(from: url)
-        }.value
+        let readFingerprint = importFileOperations.readFingerprint
+        return try await Self.runDetached { try readFingerprint(url) }
+    }
+
+    /// Runs whole-file work in a detached task that the caller's cancellation reaches, which
+    /// `Task.detached(...).value` alone does not, so a read that checks for cancellation stops early.
+    nonisolated static func runDetached<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        let task = Task.detached(priority: .utility) { try work() }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
 }

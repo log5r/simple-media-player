@@ -125,3 +125,14 @@ private nonisolated final class Resumption<T: Sendable>: @unchecked Sendable {
         continuation?.resume(with: result)
     }
 }
+
+/// Lets synchronous work on `FileSystemWorkQueue` stop between steps once its caller is cancelled, which the
+/// queue cannot interrupt on its own.
+nonisolated final class FileWorkStopSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isStopRequested = false
+
+    var isRequested: Bool { lock.withLock { isStopRequested } }
+
+    func request() { lock.withLock { isStopRequested = true } }
+}

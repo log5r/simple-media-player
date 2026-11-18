@@ -216,7 +216,14 @@ nonisolated extension ExtendedAudioSource {
     }
 
     static func cacheURL(for url: URL) -> URL? {
-        guard let key = try? cacheKey(for: url), let directory = try? cacheDirectory() else { return nil }
+        cacheURL(forOriginalURL: url, attributesOf: url)
+    }
+
+    /// The cache `cacheURL(for: original)` gives for the file now at `fileURL`, which `original` names too, as
+    /// a symbolic link in its path can; the key includes the path as written.
+    static func cacheURL(forOriginalURL original: URL, attributesOf fileURL: URL) -> URL? {
+        guard let key = try? cacheKey(for: original, attributesOf: fileURL), let directory = try? cacheDirectory()
+        else { return nil }
         return directory.appendingPathComponent(key).appendingPathExtension("caf")
     }
 
@@ -229,7 +236,11 @@ nonisolated extension ExtendedAudioSource {
     }
 
     private static func cacheKey(for url: URL) throws -> String {
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        try cacheKey(for: url, attributesOf: url)
+    }
+
+    private static func cacheKey(for url: URL, attributesOf fileURL: URL) throws -> String {
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         guard let size = attributes[.size] as? NSNumber,
               let modified = attributes[.modificationDate] as? Date else {
             throw CocoaError(.fileReadUnknown)

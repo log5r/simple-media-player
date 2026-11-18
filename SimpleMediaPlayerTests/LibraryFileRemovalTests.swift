@@ -21,11 +21,11 @@ struct LibraryFileRemovalTests {
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
         #expect(fixture.service.delete(item, from: fixture.context) == nil)
         try await recorder.waitForCalls(1)
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).map(\.id) == [itemID])
+        #expect(fixture.pendingRemovals().map(\.id) == [itemID])
         recorder.release()
         await removal?.value
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(fixture.pendingRemovals().isEmpty)
         #expect(recorder.mainThreadCount == 0)
         #expect(recorder.workerCount == 1)
     }
@@ -38,14 +38,14 @@ struct LibraryFileRemovalTests {
         let item = try fixture.insertItem(copying: source)
         let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
         fixture.journal.add(PendingFileRemovalJournal.Entry(
-            id: item.id, bookmarkData: item.bookmarkData, fallbackPath: fileURL.path
+            id: item.id, bookmarkData: item.bookmarkData, fileName: item.fileName, libraryID: fixture.service.libraryID
         ))
         let otherDirectory = fixture.directory.appendingPathComponent("OtherMedia")
         try FileManager.default.createDirectory(at: otherDirectory, withIntermediateDirectories: true)
         let otherFile = otherDirectory.appendingPathComponent("\(UUID().uuidString).wav")
         try FileManager.default.copyItem(at: source, to: otherFile)
         fixture.journal.add(PendingFileRemovalJournal.Entry(
-            id: UUID(), bookmarkData: Data([0xFF]), fallbackPath: otherFile.path
+            id: UUID(), bookmarkData: Data([0xFF]), location: .legacyPath(otherFile.path)
         ))
 
         let relaunched = LibraryService(
@@ -56,10 +56,10 @@ struct LibraryFileRemovalTests {
         await relaunched.resumePendingFileRemovals().value
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(fixture.pendingRemovals().isEmpty)
         // Entries of another media directory belong to another service.
         #expect(FileManager.default.fileExists(atPath: otherFile.path))
-        #expect(fixture.journal.entries(in: otherDirectory).count == 1)
+        #expect(fixture.journal.entries(forLibrary: "other", mediaDirectory: otherDirectory).count == 1)
         #expect(recorder.mainThreadCount == 0)
     }
 
@@ -71,11 +71,11 @@ struct LibraryFileRemovalTests {
         let item = try fixture.insertItem(copying: source)
         let itemID = item.id
         let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
-        let cacheEntries = try writeCacheEntries(for: fileURL)
+        let cacheEntries = try writeDerivedCacheEntries(for: fileURL)
         defer { cacheEntries.forEach { try? FileManager.default.removeItem(at: $0) } }
         let missing = PendingFileRemovalJournal.Entry(
-            id: UUID(), bookmarkData: Data([0xFF]),
-            fallbackPath: fixture.mediaDirectory.appendingPathComponent("\(UUID().uuidString).wav").path
+            id: UUID(), bookmarkData: Data([0xFF]), fileName: "\(UUID().uuidString).wav",
+            libraryID: fixture.service.libraryID
         )
         fixture.journal.add(missing)
         let attributes = try FileManager.default.attributesOfItem(atPath: fixture.mediaDirectory.path)
@@ -92,7 +92,7 @@ struct LibraryFileRemovalTests {
         // The item is gone, but its file could not be removed, so the entry remains for a later retry.
         #expect(try fixture.context.fetchCount(FetchDescriptor<MediaItem>()) == 0)
         #expect(FileManager.default.fileExists(atPath: fileURL.path))
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).map(\.id) == [itemID])
+        #expect(fixture.pendingRemovals().map(\.id) == [itemID])
         // The retry reads the keys again, so the entries stay with the file until then.
         #expect(cacheEntries.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
 
@@ -100,7 +100,7 @@ struct LibraryFileRemovalTests {
         await fixture.service.resumePendingFileRemovals().value
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(fixture.pendingRemovals().isEmpty)
         #expect(cacheEntries.allSatisfy { FileManager.default.fileExists(atPath: $0.path) == false })
     }
 
@@ -115,12 +115,13 @@ struct LibraryFileRemovalTests {
         let item = try fixture.insertItem(copying: source)
         let fileURL = fixture.mediaDirectory.appendingPathComponent(item.fileName)
         // The service removes entries from the default directories, as it does in the app.
-        let cacheEntries = try writeCacheEntries(for: fileURL)
+        let cacheEntries = try writeDerivedCacheEntries(for: fileURL)
         defer { cacheEntries.forEach { try? FileManager.default.removeItem(at: $0) } }
 
         if resumed {
             fixture.journal.add(PendingFileRemovalJournal.Entry(
-                id: item.id, bookmarkData: item.bookmarkData, fallbackPath: fileURL.path
+                id: item.id, bookmarkData: item.bookmarkData, fileName: item.fileName,
+                libraryID: fixture.service.libraryID
             ))
             let relaunched = LibraryService(
                 mediaDirectoryURL: fixture.mediaDirectory,
@@ -134,15 +135,6 @@ struct LibraryFileRemovalTests {
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
         #expect(cacheEntries.allSatisfy { FileManager.default.fileExists(atPath: $0.path) == false })
-    }
-
-    private func writeCacheEntries(for url: URL) throws -> [URL] {
-        let loudness = try #require(AudioLoudnessCache.entryURL(for: url))
-        AudioLoudnessCache.write(3, at: loudness)
-        let analysis = try #require(MusicAnalysisCache.entryURL(for: url))
-        MusicAnalysisCache.write(MusicAnalysis(duration: 8, bpm: 128), at: analysis)
-        #expect([loudness, analysis].allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
-        return [loudness, analysis]
     }
 
     @Test func staleSnapshotDoesNotTreatADeletedItemsPendingFileAsADuplicate() async throws {
