@@ -24,9 +24,7 @@ extension LibraryService {
         // The unidirectional item relationship has no inverse to nullify on deletion.
         for entry in entries { entry.item = nil }
         let removal = PendingFileRemovalJournal.Entry(
-            id: itemID,
-            bookmarkData: item.bookmarkData,
-            fallbackPath: fallbackMediaURL(forFileName: item.fileName).path
+            id: itemID, bookmarkData: item.bookmarkData, fileName: item.fileName, libraryID: libraryID
         )
         deletedItemIDs.insert(itemID)
         removalJournal.add(removal)
@@ -46,9 +44,7 @@ extension LibraryService {
         summary.createdCount = 0
         let removals = items.map { item in
             PendingFileRemovalJournal.Entry(
-                id: item.id,
-                bookmarkData: item.bookmarkData,
-                fallbackPath: fallbackMediaURL(forFileName: item.fileName).path
+                id: item.id, bookmarkData: item.bookmarkData, fileName: item.fileName, libraryID: libraryID
             )
         }
         for (item, removal) in zip(items, removals) {
@@ -68,7 +64,7 @@ extension LibraryService {
     func resumePendingFileRemovals() -> Task<Void, Never> {
         Task.detached(priority: .utility) { [self] in
             await FileSystemWorkQueue.run { [self] in
-                for removal in removalJournal.entries(in: mediaDirectoryURL()) {
+                for removal in removalJournal.entries(forLibrary: libraryID, mediaDirectory: mediaDirectoryURL()) {
                     removeFile(for: removal)
                 }
             }
@@ -76,8 +72,46 @@ extension LibraryService {
     }
 
     /// Blocks on the file system, so callers run it on `FileSystemWorkQueue`.
+    ///
+    /// A managed file whose bookmark resolves to a path that no longer exists, as after iOS moves the app's
+    /// container, is removed by its name in the current media directory instead. The entry stays journaled
+    /// unless a file was removed or both locations are missing.
     nonisolated func removeFile(for removal: PendingFileRemovalJournal.Entry) {
-        let url = resolveBookmark(removal.bookmarkData, URL(fileURLWithPath: removal.fallbackPath))
+        let fallbackURL: URL
+        let isManaged: Bool
+        switch removal.location {
+        case let .managed(fileName, _):
+            fallbackURL = fallbackMediaURL(forFileName: fileName)
+            isManaged = true
+        case let .legacyPath(path):
+            fallbackURL = URL(fileURLWithPath: path)
+            isManaged = false
+        }
+        let url = resolveBookmark(removal.bookmarkData, fallbackURL)
+        var candidates = [url]
+        if isManaged, url.standardizedFileURL.path != fallbackURL.standardizedFileURL.path {
+            candidates.append(fallbackURL)
+        }
+        for candidate in candidates {
+            switch Self.removeFileAndDerivedEntries(at: candidate) {
+            case .removed:
+                removalJournal.remove(id: removal.id)
+                return
+            case .missing:
+                continue
+            case .failed:
+                return
+            }
+        }
+        // Every location is already gone.
+        removalJournal.remove(id: removal.id)
+    }
+
+    private enum FileRemovalOutcome { case removed, missing, failed }
+
+    /// Removes one location of a managed file and the cache entries derived from that location, so when a
+    /// stale bookmark sends the removal to a second location, each location's entries go with its own file.
+    private nonisolated static func removeFileAndDerivedEntries(at url: URL) -> FileRemovalOutcome {
         if let cacheURL = ExtendedAudioSource.cacheURL(for: url) {
             ExtendedAudioSource.removeCacheInBackground(at: cacheURL)
         }
@@ -85,16 +119,19 @@ extension LibraryService {
         // gone. The keys need the file, so they are read first; the entries are removed after the file, so a
         // loudness measurement that stores while the file is removed either finds it gone or is removed here.
         let derivedEntries = [MusicAnalysisCache.entryURL(for: url), AudioLoudnessCache.entryURL(for: url)]
+        let outcome: FileRemovalOutcome
         do {
             try FileManager.default.removeItem(at: url)
+            outcome = .removed
         } catch {
-            // Keep the entry so the next launch retries; a file that is already gone needs no retry.
-            guard Self.isMissingFileError(error) else { return }
+            // Keep the entries with a file that is still there, so the retry can read their keys again.
+            guard isMissingFileError(error) else { return .failed }
+            outcome = .missing
         }
         for entry in derivedEntries.compactMap(\.self) {
             try? FileManager.default.removeItem(at: entry)
         }
-        removalJournal.remove(id: removal.id)
+        return outcome
     }
 
     /// Only a missing file needs no retry. Any other failure keeps the journal entry, even when the file's

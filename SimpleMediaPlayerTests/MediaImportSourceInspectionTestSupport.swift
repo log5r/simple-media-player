@@ -12,12 +12,15 @@ struct InspectionFixture {
     let container: ModelContainer
     let service: LibraryService
     let journal: PendingFileRemovalJournal
+    let libraryID = "inspection-\(UUID().uuidString)"
     private let journalSuiteName = "MediaImportSourceInspectionTests-\(UUID().uuidString)"
     var context: ModelContext { container.mainContext }
 
     init(
         recorder: ImportOperationRecorder,
+        beforeIsVideoFile: @escaping @Sendable (URL) -> Void = { _ in },
         beforeBookmark: @escaping @Sendable (URL) throws -> Void = { _ in },
+        readFingerprint: @escaping @Sendable (URL) throws -> String = MediaImportFingerprint.read(from:),
         beforeImportRegistration: @escaping @MainActor (URL) async -> Void = { _ in }
     ) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -33,6 +36,7 @@ struct InspectionFixture {
         let operations = ImportFileOperations(
             isVideoFile: { url in
                 recorder.record(.isVideoFile)
+                beforeIsVideoFile(url)
                 return defaults.isVideoFile(url)
             },
             openAudioFile: { url in
@@ -43,11 +47,14 @@ struct InspectionFixture {
                 recorder.record(.makeBookmark)
                 try beforeBookmark(url)
                 return try defaults.makeBookmark(url)
-            }
+            },
+            readFingerprint: readFingerprint
         )
         // The import resolves bookmarks only to remove a discarded copy.
+        let libraryID = libraryID
         let resolveBookmark: @Sendable (Data, URL) -> URL = { bookmarkData, fallbackURL in
-            let journaledIDs = journal.entries(in: mediaDirectory).map(\.id.uuidString)
+            let journaledIDs = journal.entries(forLibrary: libraryID, mediaDirectory: mediaDirectory)
+                .map(\.id.uuidString)
             recorder.recordRemoval(.init(
                 isMainThread: Thread.isMainThread,
                 wasJournaled: journaledIDs.contains(fallbackURL.deletingPathExtension().lastPathComponent),
@@ -57,8 +64,13 @@ struct InspectionFixture {
         }
         service = LibraryService(
             mediaDirectoryURL: mediaDirectory, resolveBookmark: resolveBookmark, removalJournal: journal,
-            importFileOperations: operations, beforeImportRegistration: beforeImportRegistration
+            libraryID: libraryID, importFileOperations: operations,
+            beforeImportRegistration: beforeImportRegistration
         )
+    }
+
+    func pendingRemovals() -> [PendingFileRemovalJournal.Entry] {
+        journal.entries(forLibrary: libraryID, mediaDirectory: mediaDirectory)
     }
 
     func remove() {

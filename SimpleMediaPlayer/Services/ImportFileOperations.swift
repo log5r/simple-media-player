@@ -2,13 +2,15 @@ import AVFoundation
 import Foundation
 import UniformTypeIdentifiers
 
-/// The synchronous file operations an import runs on `FileSystemWorkQueue`. Tests replace them to observe
-/// where they run or to hold one while the import waits for it.
+/// The synchronous file operations an import runs off the main actor. Tests replace them to observe where
+/// they run or to hold one while the import waits for it.
 nonisolated struct ImportFileOperations: Sendable {
     var isVideoFile: @Sendable (URL) -> Bool = Self.isVideoContent
     /// Throws when AVAudioFile cannot read the file, which rejects it from the import.
     var openAudioFile: @Sendable (URL) throws -> Void = { _ = try AVAudioFile(forReading: $0) }
     var makeBookmark: @Sendable (URL) throws -> Data = Self.managedFileBookmark
+    /// Runs in a detached task that the import's cancellation reaches; the read checks it between chunks.
+    var readFingerprint: @Sendable (URL) throws -> String = MediaImportFingerprint.read(from:)
 
     /// Uses the file extension when the content type cannot be read.
     static func isVideoContent(_ url: URL) -> Bool {

@@ -39,6 +39,9 @@ final class LibraryService {
     @ObservationIgnored let editabilityChecker: EmbeddedMetadataEditabilityChecker
     @ObservationIgnored nonisolated let resolveBookmark: @Sendable (Data, URL) -> URL
     @ObservationIgnored nonisolated let removalJournal: PendingFileRemovalJournal
+    /// Identifies this library in the removal journal without its absolute path, which iOS can change when it
+    /// moves the app's container during an update.
+    @ObservationIgnored nonisolated let libraryID: String
     @ObservationIgnored nonisolated let importFileOperations: ImportFileOperations
     @ObservationIgnored let saveContext: @MainActor (ModelContext) throws -> Void
     @ObservationIgnored let beforeMetadataWrite: @Sendable (URL) async throws -> Void
@@ -49,6 +52,10 @@ final class LibraryService {
     @ObservationIgnored nonisolated let exportPlanLimiter = FileSystemWorkLimiter(limit: exportPlanConcurrency)
     /// Shared by Music import pre-checks, so probes abandoned by cancelled preparations still count.
     @ObservationIgnored nonisolated let musicLibraryProbeLimiter = FileSystemWorkLimiter(limit: 2)
+    /// Shared by the import's file inspections and bookmarks. Imports handle one file at a time, so this is
+    /// the Music pre-check's limit; work left blocked by cancelled imports keeps its slot, so cancel-and-retry
+    /// cycles on a stalled file provider cannot pile up blocked workers.
+    @ObservationIgnored nonisolated let importFileLimiter = FileSystemWorkLimiter(limit: 2)
     @ObservationIgnored var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored var importTask: (id: UUID, task: Task<MediaImportSummary, Never>)?
     /// Deleted items can stay in import snapshots while their files are removed in the background.
@@ -82,6 +89,7 @@ final class LibraryService {
         musicMetadataProvider: MusicLibraryMetadataProvider = MusicLibraryMetadataProvider(),
         resolveBookmark: @escaping @Sendable (Data, URL) -> URL = EmbeddedMetadataEditabilityChecker.resolve,
         removalJournal: PendingFileRemovalJournal = PendingFileRemovalJournal(),
+        libraryID: String? = nil,
         importFileOperations: ImportFileOperations = ImportFileOperations(),
         saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() },
         beforeMetadataWrite: @escaping @Sendable (URL) async throws -> Void = { _ in },
@@ -94,6 +102,8 @@ final class LibraryService {
         self.temporaryDirectoryURL = temporaryDirectoryURL
         self.resolveBookmark = resolveBookmark
         self.removalJournal = removalJournal
+        // The app's library is fixed; a library in an overriding directory, as in tests, is named by its path.
+        self.libraryID = libraryID ?? mediaDirectoryURL.map { "directory:\($0.path)" } ?? "default"
         self.importFileOperations = importFileOperations
         self.saveContext = saveContext
         self.beforeMetadataWrite = beforeMetadataWrite

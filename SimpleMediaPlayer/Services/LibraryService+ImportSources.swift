@@ -58,22 +58,38 @@ extension LibraryService {
         }
         let metadata = extended == nil ? await allMetadata(for: asset) : []
         let operations = importFileOperations
-        let isVideo = try await FileSystemWorkQueue.runCancellable { operations.isVideoFile(url) }
+        let limiter = importFileLimiter
+        let isVideo = try await FileSystemWorkQueue.runCancellable(limiter: limiter) { operations.isVideoFile(url) }
         if extended == nil {
             let tracks = try await asset.load(.tracks)
             guard tracks.contains(where: { $0.mediaType == .audio || $0.mediaType == .video }) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
             if isVideo == false {
-                try await FileSystemWorkQueue.runCancellable {
+                try await FileSystemWorkQueue.runCancellable(limiter: limiter) {
                     Result { try operations.openAudioFile(url) }
                 }.get()
             }
         }
+        // The tag readers below parse whole files without checking for cancellation, so none starts once the
+        // import is cancelled.
+        try Task.checkCancellation()
         let mp4 = extended == nil ? await mp4Metadata(for: url) : nil
         let music = extended == nil ? await musicLibraryMetadata(
             for: url, mp4Metadata: mp4, duration: duration, isVideo: isVideo, session: musicSession
         ) : nil
+        let (id3, additional) = try await readTags(from: url)
+        return ImportSources(
+            duration: duration, isVideo: isVideo, extended: extended,
+            metadata: metadata, mp4: mp4, music: music, id3: id3, additional: additional
+        )
+    }
+
+    /// A tag that cannot be read leaves its values to the other sources; cancellation stops the import.
+    private nonisolated func readTags(
+        from url: URL
+    ) async throws -> (id3: MediaMetadataEmbeddedValues?, additional: AudioTagReadResult?) {
+        try Task.checkCancellation()
         let id3: MediaMetadataEmbeddedValues?
         if ID3TagWriter.canWriteMetadata(to: url) {
             id3 = try? await Task.detached(priority: .utility) {
@@ -82,6 +98,7 @@ extension LibraryService {
         } else {
             id3 = nil
         }
+        try Task.checkCancellation()
         let additional: AudioTagReadResult?
         do {
             additional = try await Task.detached(priority: .utility) {
@@ -94,10 +111,7 @@ extension LibraryService {
             try Task.checkCancellation()
             additional = nil
         }
-        return ImportSources(
-            duration: duration, isVideo: isVideo, extended: extended,
-            metadata: metadata, mp4: mp4, music: music, id3: id3, additional: additional
-        )
+        return (id3, additional)
     }
 
     private func mergeImportSources(_ sources: ImportSources, fileURL: URL) async -> ImportValues {
@@ -222,22 +236,24 @@ extension LibraryService {
                 }
             }
             let makeBookmark = importFileOperations.makeBookmark
-            let bookmark = try await FileSystemWorkQueue.runCancellable {
+            let bookmark = try await FileSystemWorkQueue.runCancellable(limiter: importFileLimiter) {
                 Result { try makeBookmark(copiedURL) }
             }.get()
             // Cancellation after the last wait still discards the copy instead of handing back an item.
             try Task.checkCancellation()
             return bookmark
         } catch {
-            await discardImportedCopy(at: copiedURL, id: id)
+            await discardImportedCopy(named: copiedURL.lastPathComponent, id: id)
             throw error
         }
     }
 
     /// Runs on the uncancellable queue: a cancelled bookmark keeps running on the same, possibly slow, volume.
-    /// The empty bookmark makes the removal use the path; a failed removal stays journaled for the next launch.
-    func discardImportedCopy(at url: URL, id: UUID) async {
-        let removal = PendingFileRemovalJournal.Entry(id: id, bookmarkData: Data(), fallbackPath: url.path)
+    /// The empty bookmark makes the removal use the file name; a failed removal stays journaled for the next launch.
+    func discardImportedCopy(named fileName: String, id: UUID) async {
+        let removal = PendingFileRemovalJournal.Entry(
+            id: id, bookmarkData: Data(), fileName: fileName, libraryID: libraryID
+        )
         await FileSystemWorkQueue.run { [self] in
             removalJournal.add(removal)
             removeFile(for: removal)
@@ -246,7 +262,8 @@ extension LibraryService {
 
     private nonisolated func copyIntoMediaDirectory(_ sourceURL: URL, id: UUID) async throws -> URL {
         let destination = mediaDirectoryURL(for: sourceURL, id: id)
-
+        // The copy cannot stop part way, so it starts only if the import is still wanted.
+        try Task.checkCancellation()
         return try await Task.detached(priority: .utility) {
             let directory = destination.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

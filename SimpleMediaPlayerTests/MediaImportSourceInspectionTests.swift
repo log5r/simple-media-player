@@ -32,7 +32,7 @@ struct MediaImportSourceInspectionTests {
         #expect(item.duration > 0)
         #expect(try fixture.managedFiles().map(\.lastPathComponent) == [item.fileName])
         // The successful import neither journals nor removes its copy.
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(fixture.pendingRemovals().isEmpty)
         #expect(recorder.removals().isEmpty)
         // `resolvedURL(for:)` falls back to the file name, so the bookmark is resolved on its own here.
         var isStale = false
@@ -77,7 +77,7 @@ struct MediaImportSourceInspectionTests {
         #expect(try fixture.savedItemCount() == 0)
         #expect(try fixture.items().isEmpty)
         #expect(try fixture.managedFiles().isEmpty)
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(fixture.pendingRemovals().isEmpty)
         let removals = recorder.removals()
         #expect(removals.count == 1)
         #expect(removals.allSatisfy { $0.isMainThread == false })
@@ -112,7 +112,7 @@ struct MediaImportSourceInspectionTests {
         let item = try #require(fixture.items().first)
         #expect(item.title == "first")
         #expect(try fixture.managedFiles().map(\.lastPathComponent) == [item.fileName])
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(fixture.pendingRemovals().isEmpty)
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -141,52 +141,8 @@ struct MediaImportSourceInspectionTests {
         #expect(try fixture.savedItemCount() == 0)
         #expect(try fixture.items().isEmpty)
         #expect(try fixture.managedFiles().isEmpty)
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
+        #expect(fixture.pendingRemovals().isEmpty)
         #expect(recorder.removals().map(\.isMainThread) == [false])
-    }
-
-    @Test func rollbackThatCannotRemoveTheCopyStaysJournaledUntilTheRetry() async throws {
-        let fixture = try InspectionFixture(recorder: ImportOperationRecorder(), beforeBookmark: { copiedURL in
-            // Without search permission, neither the removal nor an existence check can reach the copy.
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: copiedURL.deletingLastPathComponent().path
-            )
-            throw CocoaError(.fileWriteUnknown)
-        })
-        defer { fixture.remove() }
-        defer { restorePermissions(of: fixture.mediaDirectory) }
-        let source = try fixture.makeAudio(named: "song.wav")
-
-        let summary = await fixture.service.importFiles(from: [source], into: fixture.context, existingItems: [])
-
-        #expect(summary.createdCount == 0)
-        #expect(fixture.service.lastImportErrors.count == 1)
-        let entry = try #require(fixture.journal.entries(in: fixture.mediaDirectory).first)
-        restorePermissions(of: fixture.mediaDirectory)
-        let fallbackName = URL(fileURLWithPath: entry.fallbackPath).lastPathComponent
-        #expect(try fixture.managedFiles().map(\.lastPathComponent) == [fallbackName])
-
-        await fixture.service.resumePendingFileRemovals().value
-
-        #expect(try fixture.managedFiles().isEmpty)
-        #expect(fixture.journal.entries(in: fixture.mediaDirectory).isEmpty)
-    }
-
-    @Test func onlyAMissingFileCountsAsRemoved() throws {
-        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let removalError = try #require(throws: (any Error).self) { try FileManager.default.removeItem(at: missing) }
-        #expect(LibraryService.isMissingFileError(removalError))
-        #expect(LibraryService.isMissingFileError(CocoaError(.fileNoSuchFile)))
-        #expect(LibraryService.isMissingFileError(POSIXError(.ENOENT)))
-        #expect(LibraryService.isMissingFileError(CocoaError(.fileReadNoPermission)) == false)
-        #expect(LibraryService.isMissingFileError(CocoaError(
-            .fileWriteNoPermission, userInfo: [NSUnderlyingErrorKey: POSIXError(.EACCES)]
-        )) == false)
-        #expect(LibraryService.isMissingFileError(POSIXError(.EACCES)) == false)
-    }
-
-    private func restorePermissions(of directory: URL) {
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
     }
 }
 

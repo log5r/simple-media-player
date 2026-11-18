@@ -27,6 +27,10 @@ struct BookmarkFixture {
         )
     }
 
+    func pendingRemovals() -> [PendingFileRemovalJournal.Entry] {
+        journal.entries(forLibrary: service.libraryID, mediaDirectory: mediaDirectory)
+    }
+
     func remove() {
         try? FileManager.default.removeItem(at: directory)
         UserDefaults(suiteName: journalSuiteName)?.removePersistentDomain(forName: journalSuiteName)
