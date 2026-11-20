@@ -285,10 +285,33 @@ final class LibraryListProjection {
 
         /// True when `items` keeps every current model and only adds new ones.
         func isStrictSubset(of items: [MediaItem], playlist: Playlist?) -> Bool {
-            guard self.playlist === playlist, self.items.count < items.count else { return false }
-            let newIdentities = Set(items.map(ObjectIdentifier.init))
-            return self.items.allSatisfy { newIdentities.contains(ObjectIdentifier($0)) }
+            self.playlist === playlist && LibraryListInsertion.isStrictSubset(self.items, of: items)
         }
+    }
+}
+
+nonisolated enum LibraryListInsertion {
+    /// True when `next` contains every model in `current`, by identity, and at least one more.
+    ///
+    /// The projection runs this on the MainActor for every query change during an import. The
+    /// query is sorted, and inserting models does not reorder the existing ones, so a pure
+    /// insertion keeps `current` as an in-order subsequence of `next`; check that first without
+    /// allocating. A changed sort key can reorder models without removing any, so fall back to an
+    /// identity set before treating the change as a removal.
+    static func isStrictSubset<Model: AnyObject>(_ current: [Model], of next: [Model]) -> Bool {
+        guard current.count < next.count else { return false }
+        if isOrderedSubsequence(current, of: next) { return true }
+        let identities = Set(next.map(ObjectIdentifier.init))
+        return current.allSatisfy { identities.contains(ObjectIdentifier($0)) }
+    }
+
+    private static func isOrderedSubsequence<Model: AnyObject>(_ current: [Model], of next: [Model]) -> Bool {
+        var remaining = next[...]
+        for model in current {
+            guard let index = remaining.firstIndex(where: { $0 === model }) else { return false }
+            remaining = remaining[(index + 1)...]
+        }
+        return true
     }
 }
 

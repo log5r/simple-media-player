@@ -5,6 +5,10 @@ nonisolated enum LibraryListPlaylistChange: CaseIterable {
     case entries, order, relationship
 }
 
+nonisolated enum LibraryListInsertionOrder: CaseIterable {
+    case middle, reordered
+}
+
 nonisolated enum LibraryListObservedField: CaseIterable {
     case title, artist, album, genre, albumArtist, composer, year, trackNumber, discNumber
     case duration, isVideo, addedAt, fileName
