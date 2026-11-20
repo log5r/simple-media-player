@@ -276,6 +276,57 @@ extension LibraryListProjectionTests {
         try await waitUntil { projection.items.map(\.id) == [alpha.id, gamma.id] }
     }
 
+    @Test(arguments: LibraryListInsertionOrder.allCases)
+    func insertionKeepingEveryModelDefersTheSourceCapture(_ order: LibraryListInsertionOrder) async throws {
+        let alpha = makeItem("Alpha")
+        let beta = makeItem("Beta")
+        let gamma = makeItem("Gamma")
+        let probe = LibraryListComputationProbe()
+        let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
+        defer { projection.cancel(); probe.finishAll() }
+        let request = LibraryListRequest(sortField: .title)
+        projection.update(items: [alpha, gamma], playlist: nil, request: request)
+        try await waitUntil { probe.count == 1 }
+        switch order {
+        // A query insertion keeps the existing order, so the in-order scan accepts it.
+        case .middle: projection.update(items: [alpha, beta, gamma], playlist: nil, request: request)
+        // A sort-key change can reorder existing models; only the identity fallback accepts it.
+        case .reordered: projection.update(items: [gamma, beta, alpha], playlist: nil, request: request)
+        }
+
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(probe.count == 1)
+    }
+
+    @Test func strictSubsetRequiresEveryCurrentModelByIdentity() {
+        let (alpha, beta, gamma) = (makeItem("Alpha"), makeItem("Beta"), makeItem("Gamma"))
+        #expect(LibraryListInsertion.isStrictSubset([], of: [alpha]))
+        #expect(LibraryListInsertion.isStrictSubset([alpha, gamma], of: [alpha, beta, gamma]))
+        #expect(LibraryListInsertion.isStrictSubset([alpha, gamma], of: [gamma, beta, alpha]))
+        #expect(LibraryListInsertion.isStrictSubset([alpha, beta], of: [beta, alpha]) == false)
+        #expect(LibraryListInsertion.isStrictSubset([alpha, beta], of: [alpha, gamma, makeItem("Delta")]) == false)
+        #expect(LibraryListInsertion.isStrictSubset([alpha], of: [makeItem("Alpha"), beta]) == false)
+    }
+
+    @Test func replacementWithMoreItemsCapturesImmediately() async throws {
+        let alpha = makeItem("Alpha")
+        let beta = makeItem("Beta")
+        let gamma = makeItem("Gamma")
+        let delta = makeItem("Delta")
+        let probe = LibraryListComputationProbe()
+        let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
+        defer { projection.cancel(); probe.finishAll() }
+        let request = LibraryListRequest(sortField: .title)
+        projection.update(items: [alpha, beta], playlist: nil, request: request)
+        try await waitUntil { probe.count == 1 }
+        projection.update(items: [alpha, gamma, delta], playlist: nil, request: request)
+
+        try await waitUntil { probe.count == 2 }
+        #expect(probe.snapshot(at: 1).identifiers() == [alpha.id, delta.id, gamma.id])
+        probe.finish(1)
+        try await waitUntil { projection.items.map(\.id) == [alpha.id, delta.id, gamma.id] }
+    }
+
     @Test(arguments: [false, true])
     func requestChangeDuringDeferredInsertionUsesTheInsertedItems(throughItemsUpdate: Bool) async throws {
         let audio = makeItem("Audio")
