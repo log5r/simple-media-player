@@ -155,11 +155,14 @@ jobs:
       - name: SwiftLint
         run: ./scripts/lint.sh
 
+  # Pull requests only build for iOS Simulator; contributors run ./scripts/test-ios-simulator.sh locally.
+  # Pushes to main, the weekly run, and manual runs also boot a simulator and run the unit tests.
   ios:
     name: iOS Simulator
     runs-on: xcode-27
     env:
       UNIVERSAL_BUILD: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+      RUN_SIMULATOR_TESTS: ${{ github.event_name != 'pull_request' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -171,6 +174,7 @@ jobs:
 
       - name: Prepare iOS 27.1 iPhone simulator
         id: ios_simulator
+        if: ${{ env.RUN_SIMULATOR_TESTS == 'true' }}
         timeout-minutes: 30
         run: |
           set -euo pipefail
@@ -205,6 +209,15 @@ jobs:
           fi
           printf 'udid=%s\n' "$simulator_id" >> "$GITHUB_OUTPUT"
 
+      # Boots before the build on purpose: the build absorbs the simulator's post-boot load,
+      # which made tests started right after boot run several times slower.
+      - name: Boot iPhone simulator
+        id: ios_simulator_boot
+        if: ${{ env.RUN_SIMULATOR_TESTS == 'true' }}
+        timeout-minutes: 10
+        run: |
+          xcrun simctl bootstatus "${{ steps.ios_simulator.outputs.udid }}" -b
+
       - name: Build for iOS Simulator testing
         id: ios_build
         run: |
@@ -223,16 +236,9 @@ jobs:
             -enableCodeCoverage YES \
             CODE_SIGNING_ALLOWED=NO build-for-testing
 
-      # Boots after the build on purpose: a booting simulator competes for the runner's CPU
-      # and slowed build-for-testing several times over when it ran first.
-      - name: Boot iPhone simulator
-        id: ios_simulator_boot
-        timeout-minutes: 10
-        run: |
-          xcrun simctl bootstatus "${{ steps.ios_simulator.outputs.udid }}" -b
-
       - name: Run iOS Simulator unit tests
         id: ios_unit_tests
+        if: ${{ env.RUN_SIMULATOR_TESTS == 'true' }}
         timeout-minutes: 20
         run: |
           mkdir -p "${RUNNER_TEMP}/TestResults"
@@ -254,16 +260,24 @@ jobs:
         env:
           IOS_TESTS_OUTCOME: ${{ steps.ios_unit_tests.outcome }}
         run: |
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          if [[ "${RUN_SIMULATOR_TESTS}" == true ]]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           | Test run | Outcome |
           | --- | --- |
           | iOS Simulator unit tests | ${IOS_TESTS_OUTCOME} |
 
           Download ci-logs-coverage-test-results-ios and open the .xcresult bundles in Xcode to inspect failures.
           EOF
+          else
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          iOS Simulator unit tests do not run on pull requests.
+          They run on pushes to main, the weekly schedule, and manual runs.
+          Run ./scripts/test-ios-simulator.sh locally before pushing.
+          EOF
+          fi
 
       - name: Export test coverage
-        if: ${{ always() }}
+        if: ${{ always() && env.RUN_SIMULATOR_TESTS == 'true' }}
         run: |
           mkdir -p .build-logs/coverage
           for result_name in iOSUnitTests; do
