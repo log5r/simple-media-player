@@ -133,42 +133,6 @@ nonisolated enum MusicLibraryTrackExporter {
         }
     }
 
-    private static func runExportSession(
-        assetURL: URL, preset: String, fileType: AVFileType, to outputURL: URL
-    ) async throws {
-        let asset = AVURLAsset(url: assetURL)
-        guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
-            throw MusicLibraryTrackError.notExportable
-        }
-        let observer = observeExport
-        let observation = observer.map { observer in
-            let states = session.states()
-            return Task {
-                for await state in states {
-                    if Task.isCancelled { return }
-                    if case .exporting = state {
-                        observer(.sessionExporting, outputURL)
-                        return
-                    }
-                }
-            }
-        }
-        defer { observation?.cancel() }
-        do {
-            // `export(to:as:)` cancels the session itself when this task is cancelled. The handler
-            // only reports the cancellation.
-            try await withTaskCancellationHandler {
-                try await session.export(to: outputURL, as: fileType)
-            } onCancel: {
-                observer?(.sessionCancelled, outputURL)
-            }
-        } catch {
-            try Task.checkCancellation()
-            throw MusicLibraryTrackError.exportFailed(error.localizedDescription)
-        }
-        try Task.checkCancellation()
-    }
-
     /// MP3 packets are self-framed, so writing them in order produces a playable stream without the
     /// container the reader took them from. Runs off the caller's actor and the cooperative pool
     /// because the copy loop writes the file synchronously.
@@ -282,6 +246,90 @@ nonisolated enum MusicLibraryTrackExporter {
         // The work may finish just as the caller is cancelled; a cancelled request reports no result.
         try Task.checkCancellation()
         return try result.get()
+    }
+}
+
+/// `AVAssetExportSession` exports for the passthrough and transcode strategies.
+private nonisolated extension MusicLibraryTrackExporter {
+    /// The session writes into a private scratch directory, and the file is moved to `outputURL` only after
+    /// the export succeeded. A cancelled session can create its output file a few milliseconds after
+    /// `export(to:as:)` has thrown and never remove it (roughly 1 in 1,000 cancellations measured on macOS 27),
+    /// and nothing reports when it has stopped, so deleting the output once cannot keep the destination clean.
+    ///
+    /// `export` runs on its caller's actor, so the directory work runs on `FileSystemWorkQueue`. The creation,
+    /// the move and the removal are awaited even when the caller is cancelled: an abandoned creation would
+    /// leave its directory behind, and an abandoned move could place the file after the caller has removed
+    /// `outputURL`.
+    static func runExportSession(
+        assetURL: URL, preset: String, fileType: AVFileType, to outputURL: URL
+    ) async throws {
+        let asset = AVURLAsset(url: assetURL)
+        guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
+            throw MusicLibraryTrackError.notExportable
+        }
+        // On the destination's volume, so the move is a rename.
+        let scratchDirectory = try await FileSystemWorkQueue.run(qos: .userInitiated) {
+            Result {
+                try FileManager.default.url(
+                    for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: outputURL, create: true
+                )
+            }
+        }.get()
+        let scratchURL = scratchDirectory.appendingPathComponent(outputURL.lastPathComponent)
+        let result: Result<Void, any Error>
+        do {
+            try await runSession(session, as: fileType, to: scratchURL)
+            try await FileSystemWorkQueue.run(qos: .userInitiated) {
+                Result { try FileManager.default.moveItem(at: scratchURL, to: outputURL) }
+            }.get()
+            result = .success(())
+        } catch {
+            result = .failure(error)
+        }
+        await FileSystemWorkQueue.run(qos: .userInitiated) { removeScratchDirectory(scratchDirectory) }
+        try result.get()
+    }
+
+    static func runSession(
+        _ session: AVAssetExportSession, as fileType: AVFileType, to url: URL
+    ) async throws {
+        let observer = observeExport
+        let observation = observer.map { observer in
+            let states = session.states()
+            return Task {
+                for await state in states {
+                    if Task.isCancelled { return }
+                    if case .exporting = state {
+                        observer(.sessionExporting, url)
+                        return
+                    }
+                }
+            }
+        }
+        defer { observation?.cancel() }
+        do {
+            // `export(to:as:)` cancels the session itself when this task is cancelled. The handler
+            // only reports the cancellation.
+            try await withTaskCancellationHandler {
+                try await session.export(to: url, as: fileType)
+            } onCancel: {
+                observer?(.sessionCancelled, url)
+            }
+        } catch {
+            try Task.checkCancellation()
+            throw MusicLibraryTrackError.exportFailed(error.localizedDescription)
+        }
+        try Task.checkCancellation()
+    }
+
+    /// A session that was cancelled or failed may still create its output file while the directory is being
+    /// removed, which makes the removal fail; it is repeated until the directory is gone. After that, a late
+    /// creation fails because its parent no longer exists. Blocks on the file system.
+    static func removeScratchDirectory(_ directory: URL) {
+        for _ in 0..<5 {
+            try? FileManager.default.removeItem(at: directory)
+            if FileManager.default.fileExists(atPath: directory.path) == false { return }
+        }
     }
 }
 
