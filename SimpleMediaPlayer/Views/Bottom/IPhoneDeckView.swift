@@ -19,6 +19,7 @@ struct IPhoneDeckView: View {
     @Binding var isPresented: Bool
     @Binding var aacResultMessage: String
     @Binding var showsAACResult: Bool
+    @Binding var showsEqualizer: Bool
     var showExpandedLibrary: () -> Void = {}
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
@@ -33,7 +34,8 @@ struct IPhoneDeckView: View {
     @State private var pendingSaveItem: MediaItem?
     @State private var showsVideoFullScreen = false
     @State private var showsSettings = false
-    @State private var showsEqualizer = false
+    /// A page or control presents on its own, such as the Info page's artwork preview.
+    @State private var hasNestedPresentation = false
     @State private var informationRevision = 0
 
     var body: some View {
@@ -60,6 +62,8 @@ struct IPhoneDeckView: View {
                 }
             }
             .background(palette.panelBackground.ignoresSafeArea())
+            // Read inside the stack, which may not pass its content's preferences outward.
+            .onPreferenceChange(NestedPresentationPreferenceKey.self) { hasNestedPresentation = $0 }
             .navigationTitle(listName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { deckToolbar }
@@ -80,18 +84,12 @@ struct IPhoneDeckView: View {
         })
         .sheet(item: $lyricsItem) { item in LyricsEditorView(item: item, libraryService: libraryService) }
         .sheet(isPresented: $showsSettings) { AppSettingsView(player: player) }
-        .sheet(isPresented: $showsEqualizer) {
-            NavigationStack {
-                ScrollView { EqualizerPanelView(player: player) }
-                    .navigationTitle("Equalizer")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Close") { showsEqualizer = false }
-                        }
-                    }
-                    .disablesVerticalToolbar()
-            }
-        }
+        .modifier(IPhoneDeckEqualizerSheet(
+            isPresented: $showsEqualizer, player: player,
+            isBlocked: showsAdjustments || infoItem != nil || lyricsItem != nil || saveItem != nil
+                || pendingSaveItem != nil || showsSettings || showsVideoFullScreen || showsAACResult
+                || hasNestedPresentation
+        ))
         .sheet(item: $saveItem) { item in
             SaveTransformedCopyView(
                 item: item, player: player, libraryService: libraryService, modelContext: modelContext,

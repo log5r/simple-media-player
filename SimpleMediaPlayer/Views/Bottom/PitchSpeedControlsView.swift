@@ -46,6 +46,7 @@ struct PitchSpeedControlsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 3))
         .overlay(RoundedRectangle(cornerRadius: 3).stroke(palette.controlStroke, lineWidth: 1))
         .shadow(color: palette.buttonShadow, radius: 2, y: 1)
+        .reportsNestedPresentation(showsPitchPopover || showsSpeedPopover)
     }
 
     private var pitchButton: some View {

@@ -34,9 +34,11 @@ On the Closed outer screen, iOS 27.1 places navigation bars and the tab bar vert
 
 Keyboard playback commands depend on the providers in the focused scene, not on the device idiom. Compact and expanded layouts provide `AppMenuActions`. When the iOS player scene has no layout-specific provider, as in the Duo portrait player, Space and Command-Left/Right Arrow control the player directly. On macOS these commands stay disabled without a provider.
 
+In the compact layout, Command+Option+E shows or hides the library's equalizer sheet. Library sheets cannot present over the deck, so while the deck is shown, the command shows or hides the deck's equalizer sheet instead. While another deck sheet, popover, or full-screen video is shown, the command discards the request and does nothing.
+
 ## State and Ownership
 
-LibraryBrowsingState lives above the layout branch. It shares category, group and playlist routes, search, filters, sorting, selection, bulk editing, and scroll anchors, including when switching between the portrait player and library. iOS settings, information and lyrics editors, bulk editing, artwork previews, and export naming also have stable presenters. Deck pages and sheets, and full-screen video, are owned by their stable parent views.
+LibraryBrowsingState lives above the layout branch. It shares category, group and playlist routes, search, filters, sorting, selection, bulk editing, and scroll anchors, including when switching between the portrait player and library. iOS settings, information and lyrics editors, bulk editing, artwork previews, and export naming also have stable presenters. Deck pages and sheets, and full-screen video, are owned by their stable parent views. Keyboard commands also open the deck's equalizer sheet, so LibraryBrowsingState holds its visibility and resets it when the deck closes.
 
 LibraryListUpdates is attached once to the parent above the portrait/landscape branches. With an updater on each branch, the outgoing branch's `onDisappear` can cancel the shared projection after the incoming branch has updated it, clearing its inputs and visible items. The common parent keeps the updater alive during rotation.
 
@@ -46,7 +48,7 @@ SharedExportSession owns files prepared for sharing. Destroying the activity con
 
 ## Verification
 
-Run IPhoneDeckLayoutTests and, on Closed Duo and an ordinary portrait iPhone, IPhoneDeckLayoutUITests to check simultaneous spectrum and playback-control visibility, LED content bounds, ordinary-phone display height, and accessibility scrolling. CompactSelectionToolbarUITests checks English and Japanese selection/editing with a playing dock, including maximum accessibility text. Repeat it on both sides of Open Split View. If XCTest captures an inactive display, the selection tests skip; verify the operations directly in Device Hub. Capture the active Duo display explicitly with `simctl io <device> screenshot --display=<screen-ID> <path>`; find the screen ID with `simctl io <device> enumerate`.
+Run IPhoneDeckLayoutTests and, on Closed Duo and an ordinary portrait iPhone, IPhoneDeckLayoutUITests to check simultaneous spectrum and playback-control visibility, LED content bounds, ordinary-phone display height, and accessibility scrolling. On Closed Duo, ClosedDuoEqualizerUITests checks that Command+Option+E shows and hides the equalizer in the library and the deck with a horizontal toolbar, and does not open it over Playback Adjustments or the artwork preview. CompactSelectionToolbarUITests checks English and Japanese selection/editing with a playing dock, including maximum accessibility text. Repeat it on both sides of Open Split View. If XCTest captures an inactive display, the selection tests skip; verify the operations directly in Device Hub. Capture the active Duo display explicitly with `simctl io <device> screenshot --display=<screen-ID> <path>`; find the screen ID with `simctl io <device> enumerate`.
 
 Set `DEVELOPER_DIR` per command without changing the global Xcode selection.
 

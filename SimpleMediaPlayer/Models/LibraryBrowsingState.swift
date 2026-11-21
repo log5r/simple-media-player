@@ -69,6 +69,8 @@ final class LibraryBrowsingState {
     var showsFilters = false
     var showsDetails = false
     var showsEqualizer = false
+    /// The phone deck's own equalizer sheet. Library sheets cannot present over the deck.
+    var showsDeckEqualizer = false
     var showsVideoFullScreen = false
     var playlistToRename: Playlist?
     var playlistToDelete: Playlist?

@@ -39,18 +39,21 @@ extension MainView {
             keepsFoldedPortraitVisible: keepsFoldedPortraitVisible,
             renamePlaylist: renamePlaylist, deletePlaylist: deletePlaylist, deleteItem: deleteLibraryItem
         ))
-        .fullScreenCover(isPresented: $isPhoneDeckPresented) {
+        // A later deck must not reopen the equalizer sheet left open when this one closed.
+        .fullScreenCover(isPresented: $isPhoneDeckPresented, onDismiss: {
+            browsingState.showsDeckEqualizer = false
+        }, content: {
             IPhoneDeckView(
                 player: player, libraryService: libraryService, listName: browsingState.playingListName,
                 canCreateAACVersion: canCreateAACVersion, createAACVersion: createAACVersion,
                 isPresented: $isPhoneDeckPresented, aacResultMessage: $aacVersionResultMessage,
-                showsAACResult: $aacVersionResultPresented,
+                showsAACResult: $aacVersionResultPresented, showsEqualizer: $browsingState.showsDeckEqualizer,
                 showExpandedLibrary: {
                     showsPortraitLibrary = true
                     isPhoneDeckPresented = false
                 }
             )
-        }
+        })
         #else
         withExportPresentations(withImportPresentations(content))
         #endif

@@ -34,9 +34,11 @@ iOS 27.1のClosedの外側画面では、ナビゲーションバーとタブバ
 
 再生のキーボードコマンドは、端末のidiomではなく、フォーカス中のシーンにある操作の提供元で判断します。compactと展開の各レイアウトは`AppMenuActions`を提供します。Duoの縦向き再生画面のように、iOSの再生シーンにレイアウト固有の提供元がない場合は、SpaceとCommand+左右矢印キーでplayerを直接操作します。macOSでは提供元がなければ、これらのコマンドは無効のままです。
 
+compactのレイアウトでは、Command+Option+Eでライブラリのイコライザーのシートを開閉します。ライブラリのシートはデッキの上に表示できないため、デッキの表示中はデッキのイコライザーのシートを開閉します。デッキでほかのシート、ポップオーバー、全画面の動画を表示している間は、要求を破棄して何もしません。
+
 ## 状態と処理の所有者
 
-LibraryBrowsingStateはレイアウトの分岐より上で保持します。分類・グループ・プレイリストの経路、検索・フィルター・並び順、選択、複数編集と閲覧位置を共有し、縦向きの再生画面とライブラリの切り替えでも引き継ぎます。iOSの設定、情報・歌詞編集、複数編集、アートワーク拡大、書き出しの命名シートも、分岐で消えない提示元から開きます。デッキのページと編集シート、動画の全画面表示は、それぞれの安定した親Viewが保持します。
+LibraryBrowsingStateはレイアウトの分岐より上で保持します。分類・グループ・プレイリストの経路、検索・フィルター・並び順、選択、複数編集と閲覧位置を共有し、縦向きの再生画面とライブラリの切り替えでも引き継ぎます。iOSの設定、情報・歌詞編集、複数編集、アートワーク拡大、書き出しの命名シートも、分岐で消えない提示元から開きます。デッキのページと編集シート、動画の全画面表示は、それぞれの安定した親Viewが保持します。デッキのイコライザーのシートはキーボードコマンドからも開くため、表示状態をLibraryBrowsingStateが保持し、デッキを閉じると閉じた状態に戻します。
 
 一覧の更新を行うLibraryListUpdatesは、縦向き・横向きの分岐より上の親に1つ置きます。各枝に付けると、新しい枝が更新した後に古い枝の`onDisappear`が共通の一覧をキャンセルし、入力と表示項目を消す場合があります。共通の親に置くことで、回転中も更新元の寿命を維持します。
 
@@ -46,7 +48,7 @@ PlayerViewModelを作り直したり、開閉を理由に停止・再読み込�
 
 ## 確認方法
 
-IPhoneDeckLayoutTestsと、ClosedのDuo・通常の縦向きiPhone上のIPhoneDeckLayoutUITestsで、スペクトラムと再生操作の同時表示、LED内容の見切れ、通常iPhoneの表示高、アクセシビリティ文字サイズのスクロールを確認します。CompactSelectionToolbarUITestsは、再生ドック表示中の選択と編集を英語・日本語で確認し、最大アクセシビリティ文字サイズも使います。OpenのSplit Viewの左右でも繰り返します。XCTestのキャプチャが非表示の画面を指す場合、選択テストはskipするためDevice Hubで直接確認します。Duoの撮影では`simctl io <device> enumerate`で画面IDを調べ、`simctl io <device> screenshot --display=<screen-ID> <path>`で表示中の画面を明示します。
+IPhoneDeckLayoutTestsと、ClosedのDuo・通常の縦向きiPhone上のIPhoneDeckLayoutUITestsで、スペクトラムと再生操作の同時表示、LED内容の見切れ、通常iPhoneの表示高、アクセシビリティ文字サイズのスクロールを確認します。ClosedのDuo上のClosedDuoEqualizerUITestsで、ライブラリとデッキでのCommand+Option+Eによるイコライザーの開閉、横のツールバー、再生の調整やアートワークの拡大表示の上では開かないことを確認します。CompactSelectionToolbarUITestsは、再生ドック表示中の選択と編集を英語・日本語で確認し、最大アクセシビリティ文字サイズも使います。OpenのSplit Viewの左右でも繰り返します。XCTestのキャプチャが非表示の画面を指す場合、選択テストはskipするためDevice Hubで直接確認します。Duoの撮影では`simctl io <device> enumerate`で画面IDを調べ、`simctl io <device> screenshot --display=<screen-ID> <path>`で表示中の画面を明示します。
 
 Xcodeの全体設定を切り替えず、コマンドごとに`DEVELOPER_DIR`を指定します。
 
