@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the iOS Simulator unit tests that pull request CI skips.
+# Runs the iOS Simulator unit tests that pull request and main push CI runs skip.
 # Uses an existing iPhone simulator for IOS_TEST_RUNTIME_VERSION (default 27.1) and leaves it booted.
 
 set -o pipefail

@@ -5,9 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # The weekly run also builds x86_64, which push and pull request runs skip.
+  # The nightly run (03:00 JST) and manual runs also build x86_64 and run the iOS Simulator unit tests,
+  # which push and pull request runs skip.
   schedule:
-    - cron: '0 18 * * 0'
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 # Each run occupies two macOS runners, so a newer pull request run cancels the older one.
@@ -155,14 +156,14 @@ jobs:
       - name: SwiftLint
         run: ./scripts/lint.sh
 
-  # Pull requests only build for iOS Simulator; contributors run ./scripts/test-ios-simulator.sh locally.
-  # Pushes to main, the weekly run, and manual runs also boot a simulator and run the unit tests.
+  # Pull requests and pushes to main only build for iOS Simulator; contributors run ./scripts/test-ios-simulator.sh locally.
+  # The nightly run and manual runs also boot a simulator and run the unit tests.
   ios:
     name: iOS Simulator
     runs-on: xcode-27
     env:
       UNIVERSAL_BUILD: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-      RUN_SIMULATOR_TESTS: ${{ github.event_name != 'pull_request' }}
+      RUN_SIMULATOR_TESTS: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - uses: actions/checkout@v7
@@ -270,8 +271,8 @@ jobs:
           EOF
           else
             cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          iOS Simulator unit tests do not run on pull requests.
-          They run on pushes to main, the weekly schedule, and manual runs.
+          iOS Simulator unit tests do not run on pull requests or pushes to main.
+          They run on the nightly schedule and manual runs.
           Run ./scripts/test-ios-simulator.sh locally before pushing.
           EOF
           fi
