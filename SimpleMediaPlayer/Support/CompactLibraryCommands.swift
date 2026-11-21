@@ -91,9 +91,7 @@ struct CompactLibraryCommandContext {
             toggleLyrics: action(isEnabled: player.currentItem?.isVideo != true && canPresent) {
                 browsingState.showsDetails.toggle()
             },
-            toggleEqualizer: action(isEnabled: browsingState.isBulkEditMode == false && canPresent) {
-                browsingState.showsEqualizer.toggle()
-            },
+            toggleEqualizer: toggleEqualizer,
             toggleVideoArea: action(isEnabled: player.currentItem?.isVideo == true, requiresLibrary: false) {
                 if showsDeck.wrappedValue || browsingState.showsVideoFullScreen {
                     browsingState.showsVideoFullScreen = false
@@ -109,9 +107,26 @@ struct CompactLibraryCommandContext {
             previousTrack: action(isEnabled: canSkip(offset: -1), requiresLibrary: false) { skip(offset: -1) },
             nextTrack: action(isEnabled: canSkip(offset: 1), requiresLibrary: false) { skip(offset: 1) },
             lyricsAreVisible: browsingState.showsDetails,
-            equalizerIsVisible: browsingState.showsEqualizer,
+            equalizerIsVisible: showsDeck.wrappedValue
+                ? browsingState.showsDeckEqualizer : browsingState.showsEqualizer,
             videoAreaIsVisible: player.isVideoMode && (showsDeck.wrappedValue || browsingState.showsVideoFullScreen)
         )
+    }
+
+    /// Library sheets cannot present over the deck, so the deck's own equalizer sheet answers while it is shown.
+    /// A command captured before the deck opened or closed does nothing.
+    private var toggleEqualizer: AppMenuAction {
+        let targetsDeck = showsDeck.wrappedValue
+        let isEnabled = browsingState.isBulkEditMode == false && browsingState.showsVideoFullScreen == false
+        return action(isEnabled: isEnabled, requiresLibrary: false) {
+            guard showsDeck.wrappedValue == targetsDeck, browsingState.isBulkEditMode == false,
+                  browsingState.showsVideoFullScreen == false else { return }
+            if targetsDeck {
+                browsingState.showsDeckEqualizer.toggle()
+            } else {
+                browsingState.showsEqualizer.toggle()
+            }
+        }
     }
 
     private var adjustmentTarget: MediaItem? {

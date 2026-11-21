@@ -2,6 +2,14 @@ import SwiftUI
 import SwiftData
 
 extension LyricsPanelView {
+    var presentsArtworkPreview: Bool {
+        #if os(macOS)
+        false
+        #else
+        isArtworkPreviewPresented
+        #endif
+    }
+
     func showArtworkPreview(for item: MediaItem, data: Data) {
         #if os(macOS)
         openWindow(id: ArtworkPreviewWindow.sceneID, value: item.id)

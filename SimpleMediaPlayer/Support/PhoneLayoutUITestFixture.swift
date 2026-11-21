@@ -73,6 +73,10 @@ enum PhoneLayoutUITestFixture {
             playlist.entries.append(entry)
             context.insert(entry)
         }
+        // The deck's Info page then offers the artwork preview.
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-artwork") {
+            try ArtworkUITestFixture.addArtwork(in: context)
+        }
         try context.save()
     }
 

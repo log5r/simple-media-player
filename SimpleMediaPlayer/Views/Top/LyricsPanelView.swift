@@ -87,6 +87,7 @@ struct LyricsPanelView: View {
                 LyricsEditorView(item: lyricsItem, libraryService: libraryService)
             }
         }
+        .reportsNestedPresentation(infoItem != nil || lyricsItem != nil || presentsArtworkPreview)
     }
 
     private var selectedContentBinding: Binding<PanelContent> {
@@ -163,6 +164,7 @@ struct LyricsPanelView: View {
             .resizable()
             .scaledToFit()
             .accessibilityLabel("Artwork")
+            .accessibilityIdentifier("artworkPreviewImage")
             .padding(28)
             .frame(
                 minWidth: usesTouchControls ? 0 : 420,

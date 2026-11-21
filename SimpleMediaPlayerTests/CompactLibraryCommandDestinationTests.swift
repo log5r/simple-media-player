@@ -196,6 +196,131 @@ struct CompactLibraryCommandDestinationTests {
     }
 }
 
+/// Command+Option+E opens the library's equalizer sheet, or the deck's own sheet while the deck is shown.
+extension CompactLibraryCommandDestinationTests {
+    @Test func equalizerCommandTogglesTheDeckSheetWhileTheDeckIsShown() {
+        let player = makePlayerFixture().player
+        let state = LibraryBrowsingState()
+        let context = makeContext(
+            player: player, state: state, items: [makeSong()],
+            presentation: CompactCommandPresentationState(showsDeck: true)
+        )
+        let commands = context.appMenuActions
+        #expect(commands.toggleEqualizer.isEnabled)
+        #expect(!commands.equalizerIsVisible)
+
+        commands.toggleEqualizer()
+
+        #expect(state.showsDeckEqualizer)
+        #expect(!state.showsEqualizer)
+        let shownCommands = context.appMenuActions
+        #expect(shownCommands.equalizerIsVisible)
+        #expect(shownCommands.toggleEqualizer.isEnabled)
+
+        shownCommands.toggleEqualizer()
+
+        #expect(!state.showsDeckEqualizer)
+        #expect(!state.showsEqualizer)
+        #expect(!context.appMenuActions.equalizerIsVisible)
+
+        // The library sheet cannot be shown under the deck, so its state is not reported there.
+        state.showsEqualizer = true
+        #expect(!context.appMenuActions.equalizerIsVisible)
+    }
+
+    @Test func equalizerCommandTogglesTheLibrarySheetWithoutTheDeck() {
+        let player = makePlayerFixture().player
+        let state = LibraryBrowsingState()
+        let context = makeContext(
+            player: player, state: state, items: [makeSong()], presentation: CompactCommandPresentationState()
+        )
+        let commands = context.appMenuActions
+        #expect(commands.toggleEqualizer.isEnabled)
+
+        commands.toggleEqualizer()
+
+        #expect(state.showsEqualizer)
+        #expect(!state.showsDeckEqualizer)
+        let shownCommands = context.appMenuActions
+        #expect(shownCommands.equalizerIsVisible)
+
+        shownCommands.toggleEqualizer()
+
+        #expect(!state.showsEqualizer)
+        #expect(!state.showsDeckEqualizer)
+        state.showsDeckEqualizer = true
+        #expect(!context.appMenuActions.equalizerIsVisible)
+    }
+
+    @Test(arguments: [false, true])
+    func equalizerCommandsCapturedBeforeTheDeckChangesDoNothing(_ capturedWithDeck: Bool) {
+        let player = makePlayerFixture().player
+        let state = LibraryBrowsingState()
+        let presentation = CompactCommandPresentationState(showsDeck: capturedWithDeck)
+        let context = makeContext(
+            player: player, state: state, items: [makeSong()], presentation: presentation
+        )
+        let commands = context.appMenuActions
+        #expect(commands.toggleEqualizer.isEnabled)
+        presentation.showsDeck.toggle()
+
+        commands.toggleEqualizer()
+
+        #expect(!state.showsEqualizer)
+        #expect(!state.showsDeckEqualizer)
+        #expect(!context.appMenuActions.equalizerIsVisible)
+    }
+
+    @Test(arguments: [false, true])
+    func equalizerCommandsCapturedBeforeBulkEditingBeganDoNothing(_ showsDeck: Bool) {
+        let player = makePlayerFixture().player
+        let state = LibraryBrowsingState()
+        let context = makeContext(
+            player: player, state: state, items: [makeSong()],
+            presentation: CompactCommandPresentationState(showsDeck: showsDeck)
+        )
+        let commands = context.appMenuActions
+        #expect(commands.toggleEqualizer.isEnabled)
+        state.isBulkEditMode = true
+
+        commands.toggleEqualizer()
+
+        #expect(!state.showsEqualizer)
+        #expect(!state.showsDeckEqualizer)
+        #expect(state.isBulkEditMode)
+    }
+
+    @Test func bulkEditingAndInheritedFullScreenVideoDisableTheDeckEqualizerCommand() {
+        let player = makePlayerFixture().player
+        let state = LibraryBrowsingState()
+        let context = makeContext(
+            player: player, state: state, items: [makeSong()],
+            presentation: CompactCommandPresentationState(showsDeck: true)
+        )
+        let unobscuredCommands = context.appMenuActions
+        #expect(unobscuredCommands.toggleEqualizer.isEnabled)
+
+        state.isBulkEditMode = true
+        let bulkCommands = context.appMenuActions
+        #expect(!bulkCommands.toggleEqualizer.isEnabled)
+        bulkCommands.toggleEqualizer()
+        #expect(!state.showsDeckEqualizer)
+        state.isBulkEditMode = false
+
+        state.showsVideoFullScreen = true
+        let fullScreenCommands = context.appMenuActions
+        #expect(!fullScreenCommands.toggleEqualizer.isEnabled)
+        fullScreenCommands.toggleEqualizer()
+        unobscuredCommands.toggleEqualizer()
+        #expect(!state.showsDeckEqualizer)
+        #expect(!state.showsEqualizer)
+    }
+
+    private func makeSong() -> MediaItem {
+        MediaItem(title: "Song", duration: 30, isVideo: false, bookmarkData: Data([3]), fileName: "Song")
+    }
+}
+
 @MainActor
 private struct CompactPlayingMovieFixture {
     let player: PlayerViewModel
