@@ -70,6 +70,10 @@ The More menu holds Save adjusted copy, Create AAC Version, and Edit Information
 Every row, including the LED, shares one content column 16 pt inside the safe area.
 The LED plate keeps its size at accessibility text sizes, so its text stops growing at `.xxxLarge` and stays inside the column; the lamps shrink their values to one line.
 The control rows other than the LED (seek, lamps, transport, volume, and page switcher) are 44 pt tall, 8 pt apart, with 16 pt between the groups: the LED, seek and lamps, transport and volume, and the page switcher.
+At accessibility text sizes, the lamps and the page switcher grow taller than 44 pt to fit their text.
+This is intended: 44 pt is the minimum touch target, and shrinking the text would defeat the larger text size.
+At those sizes, the seek row puts the elapsed and remaining times on a line below the slider so they are not truncated.
+In landscape with a compact height, the Lyrics, Info, and Up Next pages keep the times on the slider's line to leave room for the page content.
 The transport bar spans the column and divides it into Stop, Previous Track, Play/Pause, and Next Track cells at a 1:1:2:1 width ratio.
 Play/Pause keeps the row height and stands out through its cell width and a 24 pt symbol.
 The volume number is not part of the row; it appears over the slider only while dragging, and its accessibility value always reports it.

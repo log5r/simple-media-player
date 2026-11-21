@@ -24,6 +24,7 @@ struct IPhoneDeckView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var heightClass
     @State private var page = IPhoneDeckPage.display
     @State private var showsAdjustments = false
     @State private var infoItem: MediaItem?
@@ -276,7 +277,7 @@ private extension IPhoneDeckView {
                     .padding(.horizontal, IPhoneDeckLayout.gutter)
             }
             .padding(.vertical, IPhoneDeckLayout.groupSpacing)
-            SeekBarView(player: player, drawsOnPanel: true)
+            SeekBarView(player: player, drawsOnPanel: true, stacksTimesAtAccessibilitySizes: heightClass != .compact)
                 .padding(.horizontal, IPhoneDeckLayout.gutter)
             DeckSafeRow(height: IPhoneDeckLayout.rowHeight) {
                 IPhoneTransportBar(player: player).padding(.horizontal, IPhoneDeckLayout.gutter)
@@ -289,7 +290,7 @@ private extension IPhoneDeckView {
     var displayControls: some View {
         VStack(spacing: IPhoneDeckLayout.groupSpacing) {
             VStack(spacing: IPhoneDeckLayout.rowSpacing) {
-                SeekBarView(player: player, drawsOnPanel: true)
+                SeekBarView(player: player, drawsOnPanel: true, stacksTimesAtAccessibilitySizes: true)
                     #if DEBUG
                     .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckSeek"))
                     #endif

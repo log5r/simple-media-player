@@ -67,6 +67,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         try assertSingleColumn(in: app, display: display)
         let gap = app.buttons["phonePage.Display"].frame.minY - app.buttons["phoneMute"].frame.maxY
         XCTAssertEqual(gap, 16, accuracy: 1, "No empty band may remain between the volume row and the page switcher")
+        assertInlineSeekTimes(in: app)
         attachScreenshot(in: app, name: "Ordinary iPhone deck display")
     }
 
@@ -106,7 +107,8 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
     }
 
     @MainActor func testAccessibilityDeckKeepsTheFullDisplayAndScrollableControls() throws {
-        let app = launch(contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL")
+        let category = UIContentSizeCategory.accessibilityExtraExtraExtraLarge
+        let app = launch(contentSizeCategory: category.rawValue)
         let geometry = try rootMetrics(in: app)
         try XCTSkipUnless(
             geometry["horizontalSizeClass"] as? String == "compact",
@@ -119,6 +121,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         let content = try regionFrame("phoneDeckLEDContentMetrics", in: app)
         XCTAssertTrue(display.contains(content), "LED text must fit the plate instead of widening the column")
         try assertSingleColumn(in: app, display: display, accessibilityText: true)
+        try assertStackedSeekTimes(in: app, display: display, contentSizeCategory: category)
         let mute = app.buttons["phoneMute"]
         for _ in 0..<3 where !mute.isHittable { app.swipeUp() }
         assertTouchTarget(mute, in: app)
@@ -165,7 +168,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
     }
 
     /// The LED and every control row share one column; the rows are 44 pt and Play/Pause is twice as wide.
-    /// Accessibility text may make the lamps and the page menu taller, but not wider.
+    /// Accessibility text may make the lamps, the page menu, and the seek row taller, but not wider.
     @MainActor private func assertSingleColumn(
         in app: XCUIApplication, display: CGRect, accessibilityText: Bool = false
     ) throws {
@@ -180,7 +183,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
             ("volume", buttons["phoneMute"].frame.union(routePicker(in: app).frame)),
             ("pages", pages)
         ]
-        let textRows: Set = ["lamps", "pages"]
+        let textRows: Set = ["seek", "lamps", "pages"]
         for (name, frame) in rows {
             XCTAssertEqual(frame.minX, display.minX, accuracy: 1, "\(name) leading edge")
             XCTAssertEqual(frame.maxX, display.maxX, accuracy: 1, "\(name) trailing edge")
@@ -235,6 +238,54 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         screenshot.name = name
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+}
+
+private extension IPhoneDeckLayoutUITests {
+    /// At the default text size the times share the slider's row.
+    @MainActor func assertInlineSeekTimes(in app: XCUIApplication) {
+        let slider = app.sliders["Playback Position"].frame
+        for identifier in ["seekElapsedTime", "seekRemainingTime"] {
+            let time = app.staticTexts[identifier]
+            XCTAssertTrue(time.exists, identifier)
+            XCTAssertLessThan(time.frame.minY, slider.maxY, identifier)
+            XCTAssertGreaterThan(time.frame.maxY, slider.minY, identifier)
+        }
+    }
+
+    /// At accessibility text sizes the slider keeps a full-width 44 pt row, and the times sit below it untruncated.
+    @MainActor func assertStackedSeekTimes(
+        in app: XCUIApplication, display: CGRect, contentSizeCategory: UIContentSizeCategory
+    ) throws {
+        let slider = app.sliders["Playback Position"].frame
+        XCTAssertEqual(slider.minX, display.minX, accuracy: 1, "Slider leading edge")
+        XCTAssertEqual(slider.maxX, display.maxX, accuracy: 1, "Slider trailing edge")
+        XCTAssertEqual(slider.height, 44, accuracy: 1, "Slider height")
+        let seek = try regionFrame("phoneDeckSeekMetrics", in: app).insetBy(dx: -1, dy: -1)
+        let elapsed = app.staticTexts["seekElapsedTime"]
+        let remaining = app.staticTexts["seekRemainingTime"]
+        for time in [elapsed, remaining] {
+            XCTAssertTrue(time.exists, time.identifier)
+            XCTAssertGreaterThanOrEqual(time.frame.minY, slider.maxY - 1, time.identifier)
+            XCTAssertGreaterThanOrEqual(time.frame.minX, display.minX - 1, time.identifier)
+            XCTAssertLessThanOrEqual(time.frame.maxX, display.maxX + 1, time.identifier)
+            XCTAssertTrue(seek.contains(time.frame), time.identifier)
+            // A truncated label draws narrower than its full string.
+            let expected = fullTextSize(time.label, contentSizeCategory: contentSizeCategory)
+            XCTAssertGreaterThanOrEqual(time.frame.width, expected.width - 1, "\(time.identifier) is truncated")
+            XCTAssertGreaterThanOrEqual(time.frame.height, expected.height - 1, "\(time.identifier) height")
+        }
+        XCTAssertFalse(elapsed.frame.intersects(remaining.frame), "The times must not overlap")
+        attachScreenshot(in: app, name: "Accessibility deck seek times")
+    }
+
+    /// The size of the whole string in the seek row's monospaced-digit footnote font.
+    func fullTextSize(_ text: String, contentSizeCategory: UIContentSizeCategory) -> CGSize {
+        let traits = UITraitCollection(preferredContentSizeCategory: contentSizeCategory)
+        let pointSize = UIFont.preferredFont(forTextStyle: .footnote, compatibleWith: traits).pointSize
+        let font = UIFont.monospacedDigitSystemFont(ofSize: pointSize, weight: .regular)
+        let size = (text as NSString).size(withAttributes: [.font: font])
+        return CGSize(width: ceil(size.width), height: ceil(size.height))
     }
 }
 #endif
