@@ -84,7 +84,7 @@ struct IPhoneTrackListView: View {
             }
         }
         .modifier(LibraryListUpdates(
-            projection: listProjection, items: items, playlist: playlist,
+            projection: listProjection, libraryService: libraryService, items: items, playlist: playlist,
             request: LibraryListRequest(
                 section: section, searchText: searchText, searchFilter: searchFilter,
                 sortField: browsingState.sortField, sortDirection: browsingState.sortDirection

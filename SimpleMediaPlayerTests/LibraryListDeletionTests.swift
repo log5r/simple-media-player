@@ -138,6 +138,28 @@ struct LibraryListDeletionTests {
         #expect(projection.selectedItem(id: fixture.beta.id) === fixture.beta)
     }
 
+    @Test func playlistSwitchDuringDeferredInsertionPublishesItsEntryOrder() async throws {
+        let fixture = try LibraryListDeletionFixture()
+        let probe = LibraryListComputationProbe()
+        let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
+        defer { projection.cancel(); probe.finishAll() }
+        let request = LibraryListRequest(sortField: .title, sortDirection: .descending)
+        let batch = UUID()
+        projection.update(items: [fixture.alpha], playlist: nil, request: request, importBatch: batch)
+        try await waitUntil { probe.count == 1 }
+        let oldCompletion = try #require(projection.pendingCompletion)
+
+        projection.update(items: fixture.items, playlist: nil, request: request, importBatch: batch)
+        projection.update(items: fixture.items, playlist: fixture.playlist, request: request, importBatch: batch)
+        try await waitUntil { probe.count == 2 }
+        probe.finish(1)
+        let expected = [fixture.alphaID, fixture.beta.id]
+        try await waitUntil { projection.items.map(\.id) == expected }
+        probe.finish(0, identifiers: [fixture.alphaID])
+        await oldCompletion.value
+        #expect(projection.items.map(\.id) == expected)
+    }
+
     private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
         let deadline = ContinuousClock.now + .seconds(5)
         while condition() == false, ContinuousClock.now < deadline {
