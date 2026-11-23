@@ -133,9 +133,13 @@ nonisolated extension AudioEngineService {
                 guard continuePlayback(ifCurrent: requestID) else { return }
                 try startScheduledPlayer()
             }
+            // Read the node outside stateLock. Some taps supply only sample time.
+            let lastRender = outputProtection.outputNode.lastRenderTime
+            let lastSample = lastRender.flatMap { $0.isSampleTimeValid ? $0.sampleTime : nil }
             let didPublish = stateLock.withLock {
                 guard activePlaybackRequestID == requestID else { return false }
                 displayIsPlaying = true
+                analysisStartTime = (mach_absolute_time(), lastSample)
                 return true
             }
             if didPublish == false { _ = continuePlayback(ifCurrent: requestID) }

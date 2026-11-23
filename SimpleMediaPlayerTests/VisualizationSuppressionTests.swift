@@ -11,18 +11,19 @@ struct SpectrumAnalyzerSuppressionTests {
     @Test(arguments: VisualizerResponseMode.allCases)
     func disablingDropsScheduledChunksAndIgnoresLaterTaps(mode: VisualizerResponseMode) async throws {
         let analyzer = SpectrumAnalyzer()
+        let tap = TestSpectrumAudioTap(analyzer)
         var frames: [AudioFrameData] = []
         analyzer.onFrame = { frames.append($0) }
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
         // One second of input schedules chunks that would arrive after the analyzer is disabled.
-        analyzer.analyze(try toneBuffer(frameCount: 44_100), currentTime: 1, isPlaying: true)
+        tap.submit(try toneBuffer(frameCount: 44_100), currentTime: 1, isPlaying: true)
         try await waitUntil { frames.contains { $0.isPlaying && !$0.isSilent } }
         analyzer.setAnalysisEnabled(false)
         let count = frames.count
 
         for time in 2..<40 {
-            analyzer.analyze(try toneBuffer(), currentTime: TimeInterval(time), isPlaying: true)
+            tap.submit(try toneBuffer(), currentTime: TimeInterval(time), isPlaying: true)
         }
         // A stop while disabled must not start the decay animation either.
         analyzer.setPlaybackActive(false, currentTime: 50)
@@ -33,10 +34,11 @@ struct SpectrumAnalyzerSuppressionTests {
     @Test(arguments: [true, false])
     func enablingPublishesSilenceOnceThenFollowsNewInput(isPlaying: Bool) async throws {
         let analyzer = SpectrumAnalyzer()
+        let tap = TestSpectrumAudioTap(analyzer)
         var frames: [AudioFrameData] = []
         analyzer.onFrame = { frames.append($0) }
         analyzer.setPlaybackActive(true, currentTime: 0)
-        analyzer.analyze(try toneBuffer(), currentTime: 1, isPlaying: true)
+        tap.submit(try toneBuffer(), currentTime: 1, isPlaying: true)
         try await waitUntil { frames.contains { !$0.isSilent } }
         analyzer.setAnalysisEnabled(false)
         if isPlaying == false { analyzer.setPlaybackActive(false, currentTime: 2) }
@@ -53,7 +55,7 @@ struct SpectrumAnalyzerSuppressionTests {
             #expect(frames.count == disabledAt + 1)
             return
         }
-        analyzer.analyze(try toneBuffer(), currentTime: 20, isPlaying: true)
+        tap.submit(try toneBuffer(), currentTime: 20, isPlaying: true)
         try await waitUntil { frames.last.map { !$0.isSilent && $0.currentTime >= 20 } == true }
         #expect(frames.dropFirst(disabledAt + 1).allSatisfy { $0.isPlaying && $0.currentTime >= 20 })
     }
@@ -61,16 +63,17 @@ struct SpectrumAnalyzerSuppressionTests {
     @Test(arguments: [VisualizerResponseMode.normal, .fast])
     func rapidDisableAndEnableDiscardsEveryOlderResult(mode: VisualizerResponseMode) async throws {
         let analyzer = SpectrumAnalyzer()
+        let tap = TestSpectrumAudioTap(analyzer)
         var frames: [AudioFrameData] = []
         analyzer.onFrame = { frames.append($0) }
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
-        analyzer.analyze(try toneBuffer(frameCount: 44_100), currentTime: 1, isPlaying: true)
+        tap.submit(try toneBuffer(frameCount: 44_100), currentTime: 1, isPlaying: true)
         try await waitUntil { frames.contains { $0.isPlaying } }
         analyzer.setAnalysisEnabled(false)
         analyzer.setAnalysisEnabled(true)
         let enabledAt = frames.count
-        analyzer.analyze(try toneBuffer(), currentTime: 50, isPlaying: true)
+        tap.submit(try toneBuffer(), currentTime: 50, isPlaying: true)
         try await waitUntil { frames.last.map { $0.currentTime >= 50 && !$0.isSilent } == true }
         try await Task.sleep(for: .milliseconds(300))
 
@@ -100,17 +103,17 @@ struct SpectrumAnalyzerSuppressionTests {
         var frames: [AudioFrameData] = []
         analyzer.onFrame = { frames.append($0) }
         analyzer.setPlaybackActive(true, currentTime: 0)
-        let previous = analyzer.realtimeVideoGeneration
+        let previous = analyzer.realtimeAnalysisGeneration
         #expect(previous != 0)
 
         // The tap stamps generation 0 while disabled, which the sample ring rejects before copying.
         analyzer.setAnalysisEnabled(false)
-        #expect(analyzer.realtimeVideoGeneration == 0)
+        #expect(analyzer.realtimeAnalysisGeneration == 0)
         analyzer.setPlaybackActive(true, currentTime: 1)
-        #expect(analyzer.realtimeVideoGeneration == 0)
+        #expect(analyzer.realtimeAnalysisGeneration == 0)
 
         analyzer.setAnalysisEnabled(true)
-        let current = analyzer.realtimeVideoGeneration
+        let current = analyzer.realtimeAnalysisGeneration
         #expect(current != 0 && current != previous)
         try await waitUntil { frames.count == 1 }
 
@@ -198,6 +201,7 @@ struct PlayerVisualizationSuppressionTests {
 
     @Test func analysisRunsOnlyWhileAVisibleConsumerIsInTheForeground() async throws {
         let fixture = SuppressionFixture()
+        let tap = TestSpectrumAudioTap(fixture.analyzer)
         let player = fixture.player
         #expect(player.isVisualizationSuspended)
         let consumer = UUID()
@@ -207,7 +211,7 @@ struct PlayerVisualizationSuppressionTests {
         player.addVisualizationConsumer(other)
         #expect(player.isVisualizationSuspended == false)
         fixture.play()
-        fixture.analyzer.analyze(try toneBuffer(), currentTime: 1, isPlaying: true)
+        tap.submit(try toneBuffer(), currentTime: 1, isPlaying: true)
         try await waitUntil { player.audioFrame.isSilent == false }
 
         player.setInBackground(true)
@@ -217,14 +221,14 @@ struct PlayerVisualizationSuppressionTests {
         #expect(player.audioFrame.isPlaying)
         #expect(player.spectrumFrameRate == 0)
         for time in 2..<20 {
-            fixture.analyzer.analyze(try toneBuffer(), currentTime: TimeInterval(time), isPlaying: true)
+            tap.submit(try toneBuffer(), currentTime: TimeInterval(time), isPlaying: true)
         }
         try await Task.sleep(for: .milliseconds(250))
         #expect(player.audioFrame.isSilent)
 
         player.setInBackground(false)
         #expect(player.isVisualizationSuspended == false)
-        fixture.analyzer.analyze(try toneBuffer(), currentTime: 30, isPlaying: true)
+        tap.submit(try toneBuffer(), currentTime: 30, isPlaying: true)
         try await waitUntil { player.audioFrame.isSilent == false && player.audioFrame.currentTime >= 30 }
 
         // Registering the same view twice still needs only one removal.

@@ -283,7 +283,7 @@ nonisolated private final class VideoAudioTapProcessor: @unchecked Sendable {
         // Capture validity before fetching audio, so a concurrent transport change
         // cannot assign old source audio to a new playback epoch.
         let sourceEpoch = processor.state.epoch.load(ordering: .acquiring)
-        let analysisGeneration = processor.analyzer.realtimeVideoGeneration
+        let analysisGeneration = processor.analyzer.realtimeAnalysisGeneration
         var timeRange = CMTimeRange.invalid
         let status = MTAudioProcessingTapGetSourceAudio(
             tap,
