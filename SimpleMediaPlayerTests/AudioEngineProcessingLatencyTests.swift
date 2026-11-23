@@ -39,6 +39,66 @@ struct AudioEngineProcessingLatencyTests {
         #expect(fixture.finishCount == 0)
         #expect(fixture.errors.isEmpty)
     }
+
+    @Test func seekRejectsPendingAndLateTapBuffers() async throws {
+        let fixture = try await RealtimeClockFixture()
+        defer { fixture.remove() }
+        let service = fixture.service
+        try await fixture.startVisualization()
+        let oldTapTime = AVAudioTime(hostTime: mach_absolute_time())
+        let oldRender = try #require(service.outputProtection.outputNode.lastRenderTime)
+        try #require(oldRender.isSampleTimeValid)
+        let oldSampleTime = AVAudioTime(sampleTime: oldRender.sampleTime, atRate: oldRender.sampleRate)
+        #expect(fixture.generation(at: oldTapTime) != 0)
+
+        // Hold the engine on the first segment while the UI has already moved to the seek target.
+        service.controlQueue.suspend()
+        service.seek(to: 3, autoPlay: true)
+        service.analyzer.setPlaybackActive(true, currentTime: 3)
+        let duringSeek = fixture.generation(at: oldTapTime)
+        service.controlQueue.resume()
+        #expect(duringSeek == 0)
+        try #require(await service.isEngineRunning)
+        #expect(fixture.generation(at: oldTapTime) == 0)
+        #expect(fixture.generation(at: oldSampleTime) == 0)
+        let buffered = AVAudioTime(
+            hostTime: mach_absolute_time(), sampleTime: oldRender.sampleTime, atRate: oldRender.sampleRate
+        )
+        #expect(fixture.generation(at: buffered) == 0)
+        let seekBoundary = fixture.frames.count
+        try fixture.probe.renderSecond()
+        try await fixture.waitUntil { fixture.frames.count > seekBoundary }
+        #expect(fixture.frames.dropFirst(seekBoundary).allSatisfy { $0.currentTime >= 3 && $0.isPlaying })
+    }
+
+    @Test func queuedStopAndTrackSwitchRejectOldTapBuffers() async throws {
+        let fixture = try await RealtimeClockFixture()
+        defer { fixture.remove() }
+        let service = fixture.service
+        let replacement = try PitchProcessingSource(
+            sampleRate: 48_000, channelCount: 1, samples: [Float](repeating: 0, count: 144_000)
+        )
+        defer { replacement.remove() }
+        try await fixture.startVisualization(at: 3)
+        let oldTapTime = AVAudioTime(hostTime: mach_absolute_time())
+        // A stop and a track switch can both be queued before the engine services the stop.
+        service.controlQueue.suspend()
+        service.stop(reset: true)
+        let duringStop = fixture.generation(at: oldTapTime)
+        service.load(url: replacement.url)
+        service.play()
+        service.analyzer.setPlaybackActive(true, currentTime: 0)
+        let duringSwitch = fixture.generation(at: oldTapTime)
+        service.controlQueue.resume()
+        #expect(duringStop == 0)
+        #expect(duringSwitch == 0)
+        try await fixture.waitUntil { fixture.generation(at: AVAudioTime(hostTime: mach_absolute_time())) != 0 }
+        #expect(fixture.generation(at: oldTapTime) == 0)
+        let switchBoundary = fixture.frames.count
+        try fixture.probe.renderSecond()
+        try await fixture.waitUntil { fixture.frames.count > switchBoundary }
+        #expect(fixture.frames.dropFirst(switchBoundary).allSatisfy { $0.isPlaying && $0.currentTime < 3 })
+    }
 }
 
 @MainActor
@@ -50,6 +110,7 @@ private final class RealtimeClockFixture {
     private var loaded = false
     private(set) var finishCount = 0
     private(set) var errors: [String] = []
+    private(set) var frames: [AudioFrameData] = []
 
     init() async throws {
         source = try PitchProcessingSource(
@@ -80,7 +141,20 @@ private final class RealtimeClockFixture {
         #expect(abs(service.currentTime - expected) < tolerance)
     }
 
-    private func waitUntil(_ condition: () -> Bool) async throws {
+    func startVisualization(at time: TimeInterval = 0) async throws {
+        service.analyzer.onFrame = { [weak self] in self?.frames.append($0) }
+        service.seek(to: time, autoPlay: true)
+        try #require(await service.isEngineRunning)
+        service.analyzer.setPlaybackActive(true, currentTime: time)
+        try probe.renderSecond()
+        try await waitUntil { self.frames.contains { $0.isPlaying && $0.currentTime >= time } }
+    }
+
+    func generation(at time: AVAudioTime) -> Int {
+        service.advanceDisplayClock(byFrames: 0, sampleRate: 48_000, capturedAt: time).analysisGeneration
+    }
+
+    func waitUntil(_ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
         while !condition(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
         try #require(condition())

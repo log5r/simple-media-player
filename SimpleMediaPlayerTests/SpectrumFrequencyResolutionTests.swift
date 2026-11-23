@@ -27,7 +27,7 @@ struct SpectrumFrequencyResolutionTests {
         analyzer.onFrame = { frames.append($0) }
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
-        let generation = analyzer.realtimeVideoGeneration
+        let generation = analyzer.realtimeAnalysisGeneration
         let chunkFrames = Int(48_000 / mode.framesPerSecond)
         var sourceTime = 0.0
         for index in 0..<8 {
@@ -82,7 +82,7 @@ struct SpectrumFrequencyResolutionTests {
         analyzer.onFrame = { frames.append($0) }
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
-        let generation = analyzer.realtimeVideoGeneration
+        let generation = analyzer.realtimeAnalysisGeneration
         let sampleCount = Int(sampleRate * 0.6)
         let bufferSize = sampleRate <= 48_000 ? 512 : 1_024
         let chunkFrames = Int(sampleRate / mode.framesPerSecond)

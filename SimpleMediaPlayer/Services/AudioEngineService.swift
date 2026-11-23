@@ -61,6 +61,8 @@ nonisolated final class AudioEngineService: @unchecked Sendable {
     var displayElapsedTime: TimeInterval = 0
     var displayLatencyRemaining: TimeInterval = 0
     var displayIsPlaying = false
+    // Cleared as soon as a transport request supersedes the segment still audible on the control queue.
+    var analysisStartTime: (hostTime: UInt64, lastRenderedSample: AVAudioFramePosition?)?
     var displayRate: Double = 1.0
     var cachedDuration: TimeInterval = 0
     var pendingSeek: PendingSeek?

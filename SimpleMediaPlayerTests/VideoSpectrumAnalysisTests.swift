@@ -14,7 +14,7 @@ struct VideoSpectrumAnalysisTests {
         analyzer.setResponseMode(mode)
         analyzer.setPlaybackActive(true, currentTime: 0)
         let sampleRate = 48_000.0
-        let generation = analyzer.realtimeVideoGeneration
+        let generation = analyzer.realtimeAnalysisGeneration
         var offset = 0
         while offset < 48_000 {
             let count = min(bufferSize, 48_000 - offset)
@@ -48,7 +48,7 @@ struct VideoSpectrumAnalysisTests {
         let samples = Array(repeating: Float(0.4), count: 48_000)
         analyzer.analyzeVideoSamples(.init(
             left: samples, right: samples, sampleRate: 48_000,
-            time: 0, analysisGeneration: analyzer.realtimeVideoGeneration,
+            time: 0, analysisGeneration: analyzer.realtimeAnalysisGeneration,
             sourceEpoch: epoch, startsStream: true
         )) { state.epoch.load(ordering: .acquiring) == epoch }
         try await waitUntil { !frames.isEmpty }
@@ -63,9 +63,9 @@ struct VideoSpectrumAnalysisTests {
         let analyzer = SpectrumAnalyzer()
         var frames: [AudioFrameData] = []
         analyzer.onFrame = { frames.append($0) }
-        #expect(analyzer.realtimeVideoGeneration == 0)
+        #expect(analyzer.realtimeAnalysisGeneration == 0)
         analyzer.setPlaybackActive(true, currentTime: 0)
-        let oldGeneration = analyzer.realtimeVideoGeneration
+        let oldGeneration = analyzer.realtimeAnalysisGeneration
         let partial = Array(repeating: Float(0.5), count: 1_024)
         analyzer.analyzeVideoSamples(.init(
             left: partial, right: partial, sampleRate: 48_000,
@@ -75,13 +75,13 @@ struct VideoSpectrumAnalysisTests {
         let samples = Array(repeating: Float(0.25), count: 1_600)
         analyzer.analyzeVideoSamples(.init(
             left: samples, right: samples, sampleRate: 48_000,
-            time: 20, analysisGeneration: analyzer.realtimeVideoGeneration,
+            time: 20, analysisGeneration: analyzer.realtimeAnalysisGeneration,
             sourceEpoch: 5, startsStream: true
         )) { true }
         try await waitUntil { !frames.isEmpty }
         #expect(frames.allSatisfy { $0.currentTime == 20 })
         analyzer.setPlaybackActive(false, currentTime: 20)
-        #expect(analyzer.realtimeVideoGeneration == 0)
+        #expect(analyzer.realtimeAnalysisGeneration == 0)
     }
 
     @Test func newSourceDoesNotInheritSpectrumOrHeldMeterPeaks() async throws {
@@ -95,14 +95,14 @@ struct VideoSpectrumAnalysisTests {
         }
         analyzer.analyzeVideoSamples(.init(
             left: samples, right: samples, sampleRate: 48_000,
-            time: 0, analysisGeneration: analyzer.realtimeVideoGeneration,
+            time: 0, analysisGeneration: analyzer.realtimeAnalysisGeneration,
             sourceEpoch: 3, startsStream: true
         )) { true }
         try await waitUntil { frames.contains { !$0.isSilent } }
         let silence = Array(repeating: Float(0), count: 1_600)
         analyzer.analyzeVideoSamples(.init(
             left: silence, right: silence, sampleRate: 48_000,
-            time: 20, analysisGeneration: analyzer.realtimeVideoGeneration,
+            time: 20, analysisGeneration: analyzer.realtimeAnalysisGeneration,
             sourceEpoch: 5, startsStream: true
         )) { true }
         try await waitUntil { frames.last?.currentTime == 20 }
@@ -120,7 +120,7 @@ struct VideoSpectrumAnalysisTests {
         // can be published. This reproduces validity changing during FFT work.
         analyzer.analyzeVideoSamples(.init(
             left: samples, right: samples, sampleRate: 48_000,
-            time: 0, analysisGeneration: analyzer.realtimeVideoGeneration,
+            time: 0, analysisGeneration: analyzer.realtimeAnalysisGeneration,
             sourceEpoch: 3, startsStream: true
         )) {
             validations.withLock { count in
@@ -133,7 +133,7 @@ struct VideoSpectrumAnalysisTests {
         let silence = Array(repeating: Float(0), count: 1_600)
         analyzer.analyzeVideoSamples(.init(
             left: silence, right: silence, sampleRate: 48_000,
-            time: 20, analysisGeneration: analyzer.realtimeVideoGeneration,
+            time: 20, analysisGeneration: analyzer.realtimeAnalysisGeneration,
             sourceEpoch: 5, startsStream: true
         )) { true }
         try await waitUntil { !frames.isEmpty }

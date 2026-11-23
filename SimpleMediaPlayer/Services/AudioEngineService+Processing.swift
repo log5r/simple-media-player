@@ -190,17 +190,24 @@ nonisolated extension AudioEngineService {
     func renewPlaybackRequestLocked() -> UUID {
         let requestID = UUID()
         activePlaybackRequestID = requestID
+        analysisStartTime = nil
         return requestID
     }
 
     func installTap() throws {
         let outputNode = outputProtection.outputNode
-        try outputNode.installAudioTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, _ in
+        // AVAudioNode delivers taps in batches of up to 400 ms even when fewer frames are requested.
+        let sampleRate = outputNode.outputFormat(forBus: 0).sampleRate
+        let samples = AudioTapSamples(capacity: max(512, Int(ceil(sampleRate * 0.4))))
+        try outputNode.installAudioTap(onBus: 0, bufferSize: 512, format: nil) { [weak self] buffer, when in
             guard let self else { return }
             let clock = self.advanceDisplayClock(
-                byFrames: AVAudioFrameCount(buffer.frameLength), sampleRate: buffer.format.sampleRate
+                byFrames: AVAudioFrameCount(buffer.frameLength), sampleRate: buffer.format.sampleRate,
+                capturedAt: when
             )
-            self.analyzer.analyze(buffer, currentTime: clock.time, isPlaying: clock.isPlaying)
+            self.analyzer.analyze(
+                buffer, using: samples, currentTime: clock.time, generation: clock.analysisGeneration
+            )
         }
     }
 
@@ -226,8 +233,9 @@ nonisolated extension AudioEngineService {
 
     func advanceDisplayClock(
         byFrames frames: AVAudioFrameCount,
-        sampleRate: Double
-    ) -> (time: TimeInterval, isPlaying: Bool) {
+        sampleRate: Double,
+        capturedAt time: AVAudioTime
+    ) -> (time: TimeInterval, analysisGeneration: Int) {
         stateLock.lock()
         defer { stateLock.unlock() }
         if displayIsPlaying, sampleRate > 0 {
@@ -239,7 +247,15 @@ nonisolated extension AudioEngineService {
                 displayElapsedTime + (renderedDuration - delayedDuration) * displayRate
             )
         }
-        return (displayBaseTime + displayElapsedTime, displayIsPlaying)
+        let position = displayBaseTime + displayElapsedTime
+        // Batches collected by the old segment can arrive after the next segment starts.
+        guard displayIsPlaying, let start = analysisStartTime,
+              time.isHostTimeValid || time.isSampleTimeValid else { return (position, 0) }
+        if time.isHostTimeValid, time.hostTime < start.hostTime { return (position, 0) }
+        if time.isSampleTimeValid, let lastSample = start.lastRenderedSample, time.sampleTime <= lastSample {
+            return (position, 0)
+        }
+        return (position, analyzer.realtimeAnalysisGeneration)
     }
 }
 

@@ -4,7 +4,7 @@ import Foundation
 import Synchronization
 
 nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
-    private let queue = DispatchQueue(label: "SimpleMediaPlayer.SpectrumAnalyzer", qos: .userInitiated)
+    private let queue: DispatchQueue
     private let stateLock = NSLock()
     private var requestedBandCount = 16
     private var levelsL = Array(repeating: Float(0), count: 16)
@@ -19,20 +19,17 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
     private var peakRmsR: Float = 0
     private var rmsPeakAgeL = 0
     private var rmsPeakAgeR = 0
-    private var analysisInFlight = false
     private var playbackActive = false
     // False while no one draws the frames, such as in the background. Guarded by stateLock.
     private var analysisEnabled = true
     private var generation = 0
-    // Read by the real-time video tap without entering stateLock.
-    private let videoAnalysisGeneration = Atomic<Int>(0)
+    // Read by the audio and video taps without entering stateLock.
+    private let tapGeneration = Atomic<Int>(0)
     private let videoSamples = VideoSpectrumAccumulator()
 
-    var realtimeVideoGeneration: Int {
-        videoAnalysisGeneration.load(ordering: .acquiring)
+    var realtimeAnalysisGeneration: Int {
+        tapGeneration.load(ordering: .acquiring)
     }
-    private var lastAcceptedAnalysisTime = TimeInterval.zero
-    private let minimumAnalysisInterval = 1.0 / 60.0
     private var responseMode = VisualizerResponseMode.normal
     private var chunkHistoryL: [Float] = []
     private var chunkHistoryR: [Float] = []
@@ -40,24 +37,27 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
     private var lastFrameTime: TimeInterval = 0
     var onFrame: (@MainActor (AudioFrameData) -> Void)?
 
+    init(queue: DispatchQueue = DispatchQueue(label: "SimpleMediaPlayer.SpectrumAnalyzer", qos: .userInitiated)) {
+        self.queue = queue
+    }
+
     func setPlaybackActive(_ active: Bool, currentTime: TimeInterval) {
-        let (generation, enabled) = stateLock.withLock {
+        stateLock.withLock {
             playbackActive = active
-            return (advanceGenerationLocked(), analysisEnabled)
-        }
-        queue.async {
-            guard self.isCurrent(generation) else { return }
-            self.chunkHistoryL.removeAll()
-            self.chunkHistoryR.removeAll()
-            self.videoSamples.reset()
-            if active { self.resetAnalysisState() }
-            // While disabled nothing decays; enabling starts again from silence.
-            if active == false, enabled {
-                self.decayUntilSilent(
-                    currentTime: currentTime,
-                    generation: generation,
-                    deadline: ProcessInfo.processInfo.systemUptime + 3
-                )
+            let enabled = analysisEnabled
+            advanceGenerationLocked { generation in
+                self.chunkHistoryL.removeAll()
+                self.chunkHistoryR.removeAll()
+                self.videoSamples.reset()
+                if active { self.resetAnalysisState() }
+                // While disabled nothing decays; enabling starts again from silence.
+                if active == false, enabled {
+                    self.decayUntilSilent(
+                        currentTime: currentTime,
+                        generation: generation,
+                        deadline: ProcessInfo.processInfo.systemUptime + 3
+                    )
+                }
             }
         }
     }
@@ -138,35 +138,16 @@ nonisolated final class SpectrumAnalyzer: @unchecked Sendable {
         }
     }
 
-    private func beginAnalysisIfNeeded() -> Int? {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-
-        let now = ProcessInfo.processInfo.systemUptime
-        guard playbackActive,
-              analysisEnabled,
-              analysisInFlight == false,
-              now - lastAcceptedAnalysisTime >= minimumAnalysisInterval else {
-            return nil
-        }
-
-        analysisInFlight = true
-        lastAcceptedAnalysisTime = now
-        return generation
-    }
-
-    // Call with stateLock held. Invalidates queued work and stamps later video taps only while analyzing.
-    private func advanceGenerationLocked() -> Int {
+    // Call with stateLock held. Queue the reset before allowing a tap to submit
+    // the new generation, so its first FFT cannot inherit the previous history.
+    private func advanceGenerationLocked(_ reset: @escaping @Sendable (Int) -> Void) {
         generation += 1
-        videoAnalysisGeneration.store(playbackActive && analysisEnabled ? generation : 0, ordering: .releasing)
-        lastAcceptedAnalysisTime = 0
-        return generation
-    }
-
-    private func finishAnalysis() {
-        stateLock.lock()
-        analysisInFlight = false
-        stateLock.unlock()
+        let next = generation
+        queue.async {
+            guard self.isCurrent(next) else { return }
+            reset(next)
+        }
+        tapGeneration.store(playbackActive && analysisEnabled ? next : 0, ordering: .releasing)
     }
 
     private func isCurrent(_ generation: Int) -> Bool {
@@ -269,18 +250,16 @@ nonisolated extension SpectrumAnalyzer {
     /// chunks, decay steps, and undelivered frames are invalidated. Enabling starts from silence and
     /// publishes it once, so a returning display neither freezes nor shows the old levels.
     func setAnalysisEnabled(_ enabled: Bool) {
-        let state: (generation: Int, isPlaying: Bool)? = stateLock.withLock {
-            guard analysisEnabled != enabled else { return nil }
+        stateLock.withLock {
+            guard analysisEnabled != enabled else { return }
             analysisEnabled = enabled
-            return (advanceGenerationLocked(), playbackActive)
-        }
-        guard let state else { return }
-        queue.async {
-            guard self.isCurrent(state.generation) else { return }
-            self.videoSamples.reset()
-            self.resetAnalysisState()
-            guard enabled else { return }
-            self.emit(currentTime: self.lastFrameTime, isPlaying: state.isPlaying, generation: state.generation)
+            let isPlaying = playbackActive
+            advanceGenerationLocked { generation in
+                self.videoSamples.reset()
+                self.resetAnalysisState()
+                guard enabled else { return }
+                self.emit(currentTime: self.lastFrameTime, isPlaying: isPlaying, generation: generation)
+            }
         }
     }
 
@@ -298,39 +277,29 @@ nonisolated extension SpectrumAnalyzer {
         return timer
     }
 
-    func analyze(_ buffer: AVReadOnlyAudioPCMBuffer, currentTime: TimeInterval, isPlaying: Bool) {
-        // Paused taps can still deliver the reverb tail. They need neither PCM copies nor FFT.
-        guard isPlaying, let generation = beginAnalysisIfNeeded() else { return }
-        let rightIndex = buffer.format.channelCount > 1 ? 1 : 0
-        guard buffer.frameLength > 0,
-              let left = Self.floatSamples(of: buffer, channel: 0),
-              let right = Self.floatSamples(of: buffer, channel: rightIndex) else {
-            finishAnalysis()
-            return
-        }
+    func analyze(
+        _ buffer: AVReadOnlyAudioPCMBuffer, using samples: AudioTapSamples,
+        currentTime: TimeInterval, generation: Int
+    ) {
+        guard generation != 0, generation == realtimeAnalysisGeneration,
+              samples.copyIfAvailable(buffer, generation: generation) else { return }
         let sampleRate = Float(buffer.format.sampleRate)
-
         queue.async {
-            defer { self.finishAnalysis() }
+            defer { samples.release() }
             guard self.isCurrent(generation) else { return }
             let mode = self.responseMode
-            if mode != .slow {
-                self.scheduleChunkedAnalysis(
-                    left: left,
-                    right: right,
-                    sampleRate: sampleRate,
-                    currentTime: currentTime,
-                    isPlaying: isPlaying,
-                    mode: mode,
-                    generation: generation
+            if mode == .slow {
+                let (left, right) = samples.channels(in: 0..<samples.frameCount)
+                self.processChunk(
+                    chunkL: left, chunkR: right, sampleRate: sampleRate,
+                    currentTime: currentTime, isPlaying: true, params: .slow, generation: generation
                 )
-                return
+            } else {
+                self.scheduleChunkedAnalysis(
+                    samples: samples, sampleRate: sampleRate, currentTime: currentTime,
+                    mode: mode, generation: generation
+                )
             }
-            self.processChunk(
-                chunkL: left, chunkR: right, sampleRate: sampleRate,
-                currentTime: currentTime, isPlaying: isPlaying,
-                params: .slow, generation: generation
-            )
         }
     }
 
@@ -365,17 +334,16 @@ nonisolated extension SpectrumAnalyzer {
     // 通常・高速モードでは指定fps分のチャンクに分割し、実再生タイミングに
     // 合わせて時間差で解析・発光する。
     private func scheduleChunkedAnalysis(
-        left: [Float], right: [Float], sampleRate: Float,
-        currentTime: TimeInterval, isPlaying: Bool, mode: VisualizerResponseMode, generation: Int
+        samples: AudioTapSamples, sampleRate: Float, currentTime: TimeInterval,
+        mode: VisualizerResponseMode, generation: Int
     ) {
         let updateRate = mode.framesPerSecond
         let chunkFrames = max(1, Int(Double(sampleRate) / updateRate))
-        let chunkCount = max(1, left.count / chunkFrames)
+        let chunkCount = max(1, samples.frameCount / chunkFrames)
         for index in 0..<chunkCount {
             let start = index * chunkFrames
-            let end = index == chunkCount - 1 ? left.count : start + chunkFrames
-            let chunkL = Array(left[start..<end])
-            let chunkR = Array(right[start..<end])
+            let end = index == chunkCount - 1 ? samples.frameCount : start + chunkFrames
+            let (chunkL, chunkR) = samples.channels(in: start..<end)
             let chunkTime = currentTime + Double(start) / Double(sampleRate)
             queue.asyncAfter(deadline: .now() + Double(index) / updateRate) {
                 guard self.responseMode == mode, self.isCurrent(generation) else { return }
@@ -384,7 +352,7 @@ nonisolated extension SpectrumAnalyzer {
                     chunkR: chunkR,
                     sampleRate: sampleRate,
                     currentTime: chunkTime,
-                    isPlaying: isPlaying,
+                    isPlaying: true,
                     params: SpectrumSmoothing.parameters(for: mode),
                     generation: generation
                 )
