@@ -58,6 +58,7 @@ final class LibraryService {
     @ObservationIgnored nonisolated let importFileLimiter = FileSystemWorkLimiter(limit: 2)
     @ObservationIgnored var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored var importTask: (id: UUID, task: Task<MediaImportSummary, Never>)?
+    @ObservationIgnored var latestImportInsertion: (batch: UUID, item: MediaItem)?
     /// Deleted items can stay in import snapshots while their files are removed in the background.
     @ObservationIgnored var deletedItemIDs: Set<UUID> = []
 

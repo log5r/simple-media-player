@@ -245,9 +245,10 @@ extension LibraryListProjectionTests {
         let projection = LibraryListProjection(insertionCaptureInterval: .milliseconds(200), compute: probe.compute)
         defer { projection.cancel(); probe.finishAll() }
         let request = LibraryListRequest(sortField: .title)
+        let batch = UUID()
         projection.update(items: [alpha], playlist: nil, request: request)
-        projection.update(items: [alpha, beta], playlist: nil, request: request)
-        projection.update(items: [alpha, beta, gamma], playlist: nil, request: request)
+        projection.update(items: [alpha, beta], playlist: nil, request: request, importBatch: batch)
+        projection.update(items: [alpha, beta, gamma], playlist: nil, request: request, importBatch: batch)
 
         try await waitUntil { probe.count == 2 }
         #expect(probe.snapshot(at: 1).identifiers() == [alpha.id, beta.id, gamma.id])
@@ -308,46 +309,63 @@ extension LibraryListProjectionTests {
         #expect(LibraryListInsertion.isStrictSubset([alpha], of: [makeItem("Alpha"), beta]) == false)
     }
 
-    @Test func replacementWithMoreItemsCapturesImmediately() async throws {
+    @Test(arguments: [false, true])
+    func netGrowthWithARemovalDuringDeferredInsertionReplacesThePendingResult(newBatch: Bool) async throws {
         let alpha = makeItem("Alpha")
         let beta = makeItem("Beta")
         let gamma = makeItem("Gamma")
         let delta = makeItem("Delta")
+        let echo = makeItem("Echo")
         let probe = LibraryListComputationProbe()
         let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
         defer { projection.cancel(); probe.finishAll() }
         let request = LibraryListRequest(sortField: .title)
-        projection.update(items: [alpha, beta], playlist: nil, request: request)
+        let batch = UUID()
+        projection.update(items: [alpha, beta], playlist: nil, request: request, importBatch: batch)
         try await waitUntil { probe.count == 1 }
-        projection.update(items: [alpha, gamma, delta], playlist: nil, request: request)
+        let oldCompletion = try #require(projection.pendingCompletion)
+        projection.update(items: [alpha, beta, gamma], playlist: nil, request: request, importBatch: batch)
+        projection.update(items: [gamma, echo, alpha, delta], playlist: nil, request: request,
+                          importBatch: newBatch ? UUID() : nil)
 
         try await waitUntil { probe.count == 2 }
-        #expect(probe.snapshot(at: 1).identifiers() == [alpha.id, delta.id, gamma.id])
+        let expected = [alpha.id, delta.id, echo.id, gamma.id]
+        #expect(probe.snapshot(at: 1).identifiers() == expected)
         probe.finish(1)
-        try await waitUntil { projection.items.map(\.id) == [alpha.id, delta.id, gamma.id] }
+        try await waitUntil { projection.items.map(\.id) == expected }
+        probe.finish(0, identifiers: [alpha.id, beta.id])
+        await oldCompletion.value
+        #expect(projection.items.map(\.id) == expected)
+        #expect(projection.selectedItem(id: beta.id) == nil)
     }
 
-    @Test(arguments: [false, true])
-    func requestChangeDuringDeferredInsertionUsesTheInsertedItems(throughItemsUpdate: Bool) async throws {
+    @Test(arguments: [false, true], [LibraryListRequest(section: .allVideos), LibraryListRequest(searchText: "video")])
+    func requestChangeDuringDeferredInsertionUsesTheInsertedItems(
+        throughItemsUpdate: Bool, request: LibraryListRequest
+    ) async throws {
         let audio = makeItem("Audio")
         let video = makeItem("Video", isVideo: true)
         let probe = LibraryListComputationProbe()
         let projection = LibraryListProjection(insertionCaptureInterval: .seconds(60), compute: probe.compute)
         defer { projection.cancel(); probe.finishAll() }
-        projection.update(items: [audio], playlist: nil, request: LibraryListRequest(section: .allSongs))
+        let batch = UUID()
+        projection.update(items: [audio], playlist: nil, request: LibraryListRequest(), importBatch: batch)
         try await waitUntil { probe.count == 1 }
-        projection.update(items: [audio, video], playlist: nil, request: LibraryListRequest(section: .allSongs))
-        let videos = LibraryListRequest(section: .allVideos)
+        let oldCompletion = try #require(projection.pendingCompletion)
+        projection.update(items: [audio, video], playlist: nil, request: LibraryListRequest(), importBatch: batch)
         if throughItemsUpdate {
-            projection.update(items: [audio, video], playlist: nil, request: videos)
+            projection.update(items: [audio, video], playlist: nil, request: request, importBatch: batch)
         } else {
-            projection.update(request: videos)
+            projection.update(request: request)
         }
 
         try await waitUntil { probe.count == 2 }
         #expect(probe.snapshot(at: 1).identifiers() == [video.id])
         probe.finish(1)
         try await waitUntil { projection.items.map(\.id) == [video.id] }
+        probe.finish(0, identifiers: [audio.id])
+        await oldCompletion.value
+        #expect(projection.items.map(\.id) == [video.id])
     }
 
     @Test func metadataChangeDuringDeferredInsertionCapturesImmediately() async throws {

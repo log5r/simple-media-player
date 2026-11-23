@@ -52,14 +52,15 @@ final class LibraryListProjection {
         return item
     }
 
-    func update(items: [MediaItem], playlist: Playlist?, request: LibraryListRequest) {
+    func update(items: [MediaItem], playlist: Playlist?, request: LibraryListRequest, importBatch: UUID? = nil) {
         let sameSource = inputs?.hasSameSource(items: items, playlist: playlist) == true
         let generationIsCurrent = sourceGeneration.isCurrent(observedGeneration)
         if sameSource, generationIsCurrent, inputs?.request == request { return }
         let onlyInserts = sameSource == false && generationIsCurrent
-            && inputs?.request == request && inputs?.isStrictSubset(of: items, playlist: playlist) == true
+            && inputs?.request == request
+            && inputs?.onlyInserted(into: items, playlist: playlist, importBatch: importBatch) == true
         clearItemsIfDestinationChanged(playlist: playlist, request: request)
-        inputs = Inputs(items: items, playlist: playlist, request: request)
+        inputs = Inputs(items: items, playlist: playlist, request: request, importBatch: importBatch)
         if sameSource, snapshotIsCurrent {
             startComputation()
         } else if onlyInserts {
@@ -272,20 +273,25 @@ final class LibraryListProjection {
         let registrations: [ObjectIdentifier: any PersistentModel]
         let entriesByID: [UUID: PlaylistEntry]
     }
+}
 
-    private struct Inputs {
+private extension LibraryListProjection {
+    struct Inputs {
         let items: [MediaItem]
         let playlist: Playlist?
         var request: LibraryListRequest
+        let importBatch: UUID?
 
         func hasSameSource(items: [MediaItem], playlist: Playlist?) -> Bool {
             self.playlist === playlist && self.items.count == items.count
                 && zip(self.items, items).allSatisfy { $0 === $1 }
         }
 
-        /// True when `items` keeps every current model and only adds new ones.
-        func isStrictSubset(of items: [MediaItem], playlist: Playlist?) -> Bool {
-            self.playlist === playlist && LibraryListInsertion.isStrictSubset(self.items, of: items)
+        func onlyInserted(into items: [MediaItem], playlist: Playlist?, importBatch: UUID?) -> Bool {
+            guard self.playlist === playlist, self.items.count < items.count else { return false }
+            // Both full query results include an insertion from the same uninterrupted batch.
+            if let importBatch, self.importBatch == importBatch { return true }
+            return LibraryListInsertion.isStrictSubset(self.items, of: items)
         }
     }
 }
@@ -293,8 +299,8 @@ final class LibraryListProjection {
 nonisolated enum LibraryListInsertion {
     /// True when `next` contains every model in `current`, by identity, and at least one more.
     ///
-    /// The projection runs this on the MainActor for every query change during an import. The
-    /// query is sorted, and inserting models does not reorder the existing ones, so a pure
+    /// Used when the import cannot vouch for both query results. The query is sorted,
+    /// and inserting models does not reorder the existing ones, so a pure
     /// insertion keeps `current` as an in-order subsequence of `next`; check that first without
     /// allocating. A changed sort key can reorder models without removing any, so fall back to an
     /// identity set before treating the change as a removal.

@@ -39,6 +39,7 @@ extension LibraryService {
         // Imports are serialized, so `lastImportErrors` belongs to this request until it returns.
         var summary = MediaImportSummary()
         defer {
+            latestImportInsertion = nil
             summary.errors = lastImportErrors
             finishImportProgress()
         }
@@ -129,8 +130,17 @@ extension LibraryService {
             throw CancellationError()
         }
         context.insert(item)
+        latestImportInsertion = (latestImportInsertion?.batch ?? UUID(), item)
         index.insert(item)
         return item
+    }
+
+    /// A full addedAt-sorted query containing this newly registered model was fetched
+    /// after the batch began. A delayed query or an unusual sort order may lack this anchor.
+    func importBatch(for items: [MediaItem], in context: ModelContext) -> UUID? {
+        guard let insertion = latestImportInsertion, items.last === insertion.item,
+              insertion.item.modelContext === context else { return nil }
+        return insertion.batch
     }
 
     private func importItems(_ existing: [MediaItem], in context: ModelContext) throws -> [MediaItem] {

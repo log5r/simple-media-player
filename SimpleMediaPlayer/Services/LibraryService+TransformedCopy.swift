@@ -74,7 +74,7 @@ extension LibraryService {
         do {
             try context.save()
         } catch {
-            context.delete(item)
+            deleteLibraryModel(item, from: context)
             throw error
         }
         didRegister = true

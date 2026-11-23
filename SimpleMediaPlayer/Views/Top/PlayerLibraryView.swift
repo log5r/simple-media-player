@@ -233,6 +233,7 @@ extension MainView {
     var libraryListUpdates: LibraryListUpdates {
         LibraryListUpdates(
             projection: listProjection,
+            libraryService: libraryService,
             items: items,
             playlist: selectedPlaylist,
             request: LibraryListRequest(

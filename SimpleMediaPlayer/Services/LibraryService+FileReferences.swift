@@ -28,7 +28,7 @@ extension LibraryService {
         )
         deletedItemIDs.insert(itemID)
         removalJournal.add(removal)
-        context.delete(item)
+        deleteLibraryModel(item, from: context)
         try? context.save()
         // Managed file names are unique per item, so a late removal cannot reach a newer import.
         return Task.detached(priority: .utility) { [self] in
@@ -50,13 +50,19 @@ extension LibraryService {
         for (item, removal) in zip(items, removals) {
             deletedItemIDs.insert(item.id)
             removalJournal.add(removal)
-            context.delete(item)
+            deleteLibraryModel(item, from: context)
         }
         Task.detached(priority: .utility) { [self] in
             await FileSystemWorkQueue.run { [self] in
                 for removal in removals { removeFile(for: removal) }
             }
         }
+    }
+
+    /// End the insertion-only interval before any MediaItem removal, including failed saves.
+    func deleteLibraryModel(_ item: MediaItem, from context: ModelContext) {
+        latestImportInsertion = nil
+        context.delete(item)
     }
 
     /// Finishes removals recorded by earlier launches; call once when the app starts.
