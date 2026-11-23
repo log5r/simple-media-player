@@ -67,19 +67,6 @@ final class DuoPlayerDesignUITests: XCTestCase {
         attach(app, name: "Duo portrait playback after Library and Settings")
     }
 
-    /// The portrait player publishes no layout-specific menu actions, so the scene's direct playback commands apply.
-    @MainActor func testPortraitPlayerSpaceTogglesPlayback() throws {
-        let app = try launch(portrait: true)
-        XCTAssertTrue(app.buttons["duoShowLibrary"].exists)
-        let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
-        for state in ["\"paused\":true", "\"playing\":true"] {
-            app.typeKey(" ", modifierFlags: [])
-            wait(for: [XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "value CONTAINS %@", state), object: playback
-            )], timeout: 10)
-        }
-    }
-
     @MainActor func testLibrarySurvivesRealRotationFromPortrait() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["DUO_INTERACTIVE_ORIENTATION_TESTS"] == "1",
                           "Enable interactive Device Hub rotation for this case.")
@@ -263,6 +250,46 @@ final class DuoPlayerDesignUITests: XCTestCase {
         }
     }
 }
+
+extension DuoPlayerDesignUITests {
+    /// The portrait player publishes no layout-specific menu actions, so the scene's direct playback commands apply.
+    @MainActor func testPortraitPlayerCommandRightPlaysNextTrack() throws {
+        let app = try launch(portrait: true)
+        XCTAssertTrue(app.buttons["duoShowLibrary"].exists)
+        let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
+        XCTAssertEqual(try metrics(playback)["title"] as? String, "Layout Track 1")
+        // The Simulator can discard the first key event after launch.
+        app.typeKey(.F19, modifierFlags: [])
+        app.typeKey(.rightArrow, modifierFlags: .command)
+        let nextTrackPlaying = NSPredicate(format: "value CONTAINS %@ AND value CONTAINS %@",
+                                           "\"title\":\"Layout Track 2\"", "\"playing\":true")
+        wait(for: [XCTNSPredicateExpectation(predicate: nextTrackPlaying, object: playback)], timeout: 10)
+    }
+
+    @MainActor func testPortraitPlayerSpaceTogglesPlayback() throws {
+        let interactive = ProcessInfo.processInfo.environment["DUO_INTERACTIVE_KEYBOARD_TESTS"] == "1"
+        #if targetEnvironment(simulator)
+        try XCTSkipUnless(interactive, "Enable interactive keyboard input and press Space in Device Hub.")
+        #endif
+        let app = try launch(portrait: true)
+        XCTAssertTrue(app.buttons["duoShowLibrary"].exists)
+        let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
+        let itemID = try XCTUnwrap(try metrics(playback)["itemID"] as? String)
+        for state in ["paused", "playing"] {
+            if interactive {
+                print("DuoKeyboardStep Press Space for \(state)")
+                fflush(nil)
+            } else {
+                app.typeKey(.space, modifierFlags: [])
+            }
+            let expected = NSPredicate(format: "value CONTAINS %@", "\"\(state)\":true")
+            let transition = XCTNSPredicateExpectation(predicate: expected, object: playback)
+            wait(for: [transition], timeout: interactive ? 45 : 10)
+            XCTAssertEqual(try metrics(playback)["itemID"] as? String, itemID)
+        }
+    }
+}
+
 extension DuoPlayerDesignUITests {
     @MainActor func testPartiallyFoldedPortraitDoesNotReserveACenterGap() throws {
         let app = try launch(portrait: true)
