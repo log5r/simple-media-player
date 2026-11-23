@@ -120,22 +120,18 @@ final class IPhoneInformationAccessibilityUITests: XCTestCase {
     }
 
     @MainActor private func scrollTo(_ element: XCUIElement, in scrollView: XCUIElement) {
-        let scrollFrame = scrollView.frame
-        let visibleFrame = scrollFrame.insetBy(dx: 0, dy: 4)
         for _ in 0..<30 {
+            // Scrolling can collapse the navigation title and increase the height available to the text.
+            let scrollFrame = scrollView.frame
             let exists = element.exists
             let frame = exists ? element.frame : .zero
             let hasFrame = exists && frame.height > 0
-            if hasFrame, element.isHittable, visibleFrame.contains(frame) { return }
-            if hasFrame, frame.height > visibleFrame.height {
-                break
-            }
-            let scrollsDown = hasFrame && frame.minY < visibleFrame.minY
-            let overflow = scrollsDown
-                ? visibleFrame.minY - frame.minY
-                : frame.maxY - visibleFrame.maxY
+            if hasFrame, element.isHittable, scrollFrame.contains(frame) { return }
+            // Center the value so either edge has room when it nearly fills the viewport.
+            let offset = frame.midY - scrollFrame.midY
+            let scrollsDown = hasFrame && offset < 0
             let distance = hasFrame
-                ? min(0.4, max(0.05, (overflow + 8) / scrollFrame.height))
+                ? min(0.4, max(0.05, (abs(offset) + 8) / scrollFrame.height))
                 : 0.4
             let startY = scrollsDown ? 0.2 : 0.8
             let endY = startY + (scrollsDown ? distance : -distance)
@@ -147,8 +143,8 @@ final class IPhoneInformationAccessibilityUITests: XCTestCase {
         let exists = element.exists
         let frame = exists ? element.frame : .zero
         let label = exists ? element.label : "missing"
-        let diagnostics = "Element: \(label), frame: \(frame), scroll view: \(scrollFrame), "
-            + "visible: \(visibleFrame), hittable: \(exists && element.isHittable)"
+        let diagnostics = "Element: \(label), frame: \(frame), scroll view: \(scrollView.frame), "
+            + "hittable: \(exists && element.isHittable)"
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = diagnostics
         attachment.lifetime = .keepAlways

@@ -220,12 +220,15 @@ final class LEDSettingsLayoutUITests: XCTestCase {
     }
 
     @MainActor private func scrollTo(_ element: XCUIElement, in app: XCUIApplication, preferUp: Bool = false) {
-        let visibleFrame = app.frame.insetBy(dx: 8, dy: 80)
+        // The form scrolls underneath the settings sheet's navigation bar.
+        let navigationBar = app.navigationBars.containing(.button, identifier: "settingsCloseButton").firstMatch
+        let visibleTop = navigationBar.frame.maxY
+        let visibleBottom = app.frame.maxY - 80
         for _ in 0..<24 {
             let frame = element.exists ? element.frame : .zero
             if frame.height > 0, element.isHittable,
-               frame.minY >= visibleFrame.minY, frame.maxY <= visibleFrame.maxY { return }
-            let scrollsUp = frame.height > 0 ? frame.minY < visibleFrame.minY : preferUp
+               frame.minY >= visibleTop, frame.maxY <= visibleBottom { return }
+            let scrollsUp = frame.height > 0 ? frame.minY < visibleTop : preferUp
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: scrollsUp ? 0.5 : 0.75))
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: scrollsUp ? 0.75 : 0.5))
             start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
