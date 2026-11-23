@@ -73,6 +73,41 @@ struct SpectrumFrequencyResolutionTests {
         }
     }
 
+    @Test func switchingResponseModeAndSampleRateKeepsStereoBandsIndependent() async throws {
+        let analyzer = SpectrumAnalyzer()
+        var frames: [AudioFrameData] = []
+        analyzer.onFrame = { frames.append($0) }
+        analyzer.setPlaybackActive(true, currentTime: 0)
+        let generation = analyzer.realtimeAnalysisGeneration
+        var sourceTime = 0.0
+        let phases: [(mode: VisualizerResponseMode, rate: Double)] = [
+            (.slow, 48_000), (.fast, 48_000), (.fast, 96_000), (.normal, 96_000)
+        ]
+        for (index, phase) in phases.enumerated() {
+            analyzer.setResponseMode(phase.mode)
+            let firstFrame = frames.count
+            // Four updates grow the FFT during warm-up. Switching from slow to
+            // fast then shrinks the window; the rate change alone starts it again.
+            let sampleCount = 4 * Int(phase.rate / phase.mode.framesPerSecond)
+            let toneOnLeft = index.isMultiple(of: 2)
+            let frequency = toneOnLeft ? 750.0 : 3_000.0
+            let signal = tone(frequency: frequency, sampleRate: phase.rate, range: 0..<sampleCount)
+            let silence = Array(repeating: Float.zero, count: sampleCount)
+            analyzer.analyzeVideoSamples(.init(
+                left: toneOnLeft ? signal : silence, right: toneOnLeft ? silence : signal,
+                sampleRate: phase.rate, time: sourceTime, analysisGeneration: generation,
+                sourceEpoch: 1, startsStream: firstFrame == 0
+            )) { true }
+            try await waitUntil { frames.count == firstFrame + 4 }
+            for frame in frames[firstFrame...] {
+                expectDominantBand(toneOnLeft ? frame.bandsL : frame.bandsR, frequency: frequency)
+                let silentBands = toneOnLeft ? frame.bandsR : frame.bandsL
+                #expect(silentBands.allSatisfy { $0 == 0 })
+            }
+            sourceTime += Double(sampleCount) / phase.rate
+        }
+    }
+
     private func analyzedFrame(
         leftFrequency: Double, rightFrequency: Double,
         mode: VisualizerResponseMode, sampleRate: Double

@@ -4,9 +4,12 @@ import Foundation
 // Confined to SpectrumAnalyzer's serial analysis queue.
 nonisolated final class SpectrumFFT {
     private static let minimumFrequency: Float = 20
-    private var cachedFFTSize = 0
     private var cachedFFTWindow: [Float] = []
     private var cachedFFTSetup: FFTSetup?
+    private var windowed: [Float] = []
+    private var real: [Float] = []
+    private var imaginary: [Float] = []
+    private var magnitudesSquared: [Float] = []
 
     deinit {
         if let cachedFFTSetup {
@@ -30,19 +33,12 @@ nonisolated final class SpectrumFFT {
         let fftSize = 1 << Int(floor(log2(Double(samples.count))))
         let halfSize = fftSize / 2
         let log2n = vDSP_Length(log2(Float(fftSize)))
-        guard ensureFFTResources(fftSize: fftSize, log2n: log2n),
-              let setup = cachedFFTSetup
-        else {
+        guard let setup = fftSetup(for: fftSize, log2n: log2n) else {
             return Array(repeating: 0, count: bandCount)
         }
 
-        let input = samples.count == fftSize ? samples : Array(samples.suffix(fftSize))
-        var windowed = [Float](repeating: 0, count: fftSize)
-        vDSP.multiply(input, cachedFFTWindow, result: &windowed)
-
-        var real = [Float](repeating: 0, count: halfSize)
-        var imaginary = [Float](repeating: 0, count: halfSize)
-        let magnitudes: [Float] = real.withUnsafeMutableBufferPointer { realBuffer in
+        vDSP.multiply(samples.suffix(fftSize), cachedFFTWindow, result: &windowed)
+        real.withUnsafeMutableBufferPointer { realBuffer in
             imaginary.withUnsafeMutableBufferPointer { imaginaryBuffer in
                 var split = DSPSplitComplex(realp: realBuffer.baseAddress!, imagp: imaginaryBuffer.baseAddress!)
                 windowed.withUnsafeBufferPointer { pointer in
@@ -53,15 +49,7 @@ nonisolated final class SpectrumFFT {
 
                 vDSP_fft_zrip(setup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
 
-                var magnitudesSquared = [Float](repeating: 0, count: halfSize)
                 vDSP_zvmags(&split, 1, &magnitudesSquared, 1, vDSP_Length(halfSize))
-
-                var magnitudes = [Float](repeating: 0, count: halfSize)
-                var count = Int32(halfSize)
-                vvsqrtf(&magnitudes, magnitudesSquared, &count)
-                var scale = Float(1.0 / Float(fftSize))
-                vDSP_vsmul(magnitudes, 1, &scale, &magnitudes, 1, vDSP_Length(halfSize))
-                return magnitudes
             }
         }
 
@@ -78,30 +66,31 @@ nonisolated final class SpectrumFFT {
             let endBin = min(halfSize, Int(ceil(endFrequency / sampleRate * Float(fftSize))))
             let count = endBin - startBin
             guard count > 0 else { return Float(0) }
-            var peak = Float(0)
-            magnitudes.withUnsafeBufferPointer { pointer in
-                vDSP_maxv(pointer.baseAddress! + startBin, 1, &peak, vDSP_Length(count))
+            var peakSquared = Float(0)
+            magnitudesSquared.withUnsafeBufferPointer { pointer in
+                vDSP_maxv(pointer.baseAddress! + startBin, 1, &peakSquared, vDSP_Length(count))
             }
+            // Square root and scaling preserve order, so only the band's peak needs conversion.
+            let peak = sqrt(peakSquared) / Float(fftSize)
             return min(1, Self.normalizedDB(peak) * 1.18)
         }
     }
 
-    private func ensureFFTResources(fftSize: Int, log2n: vDSP_Length) -> Bool {
-        guard cachedFFTSize != fftSize || cachedFFTSetup == nil else {
-            return true
-        }
+    private func fftSetup(for fftSize: Int, log2n: vDSP_Length) -> FFTSetup? {
+        if cachedFFTWindow.count == fftSize { return cachedFFTSetup }
+        guard let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else { return nil }
 
         if let cachedFFTSetup {
             vDSP_destroy_fftsetup(cachedFFTSetup)
         }
-
-        cachedFFTSize = 0
-        cachedFFTSetup = nil
+        cachedFFTSetup = setup
         cachedFFTWindow = [Float](repeating: 0, count: fftSize)
         vDSP_hann_window(&cachedFFTWindow, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
-        cachedFFTSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
-        cachedFFTSize = cachedFFTSetup == nil ? 0 : fftSize
-        return cachedFFTSetup != nil
+        windowed = [Float](repeating: 0, count: fftSize)
+        real = [Float](repeating: 0, count: fftSize / 2)
+        imaginary = [Float](repeating: 0, count: fftSize / 2)
+        magnitudesSquared = [Float](repeating: 0, count: fftSize / 2)
+        return setup
     }
 
     static func normalizedDB(_ value: Float) -> Float {
