@@ -193,7 +193,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += [
             "--ui-testing-multiple-selection",
-            "-ApplePersistenceIgnoreState", "YES"
+            "-ApplePersistenceIgnoreState", "YES", "-mediaListColumnCustomization", "", "-showLyricsPanel", "YES"
         ]
         app.launch()
         app.activate()
@@ -226,19 +226,19 @@ final class SimpleMediaPlayerUITests: XCTestCase {
             XCTAssertTrue(header.waitForExistence(timeout: 2))
         }
 
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 2))
-
+        let table = app.scrollViews.containing(.any, identifier: "mediaRow.1").firstMatch
+        XCTAssertTrue(table.exists)
         for (offset, pair) in zip(rows, headers).enumerated() {
             let (row, header) = pair
-            let boundaryCoordinate = window.coordinate(withNormalizedOffset: .zero)
-                .withOffset(
-                    CGVector(
-                        dx: header.frame.minX - window.frame.minX,
-                        dy: row.frame.midY - window.frame.minY
-                    )
-                )
-            boundaryCoordinate.click()
+            // AppKit exposes headers even when the details panel leaves their columns offscreen.
+            let viewport = table.frame
+            if !viewport.contains(CGPoint(x: header.frame.minX, y: row.frame.midY)) {
+                row.scroll(byDeltaX: viewport.midX - header.frame.minX, deltaY: 0)
+            }
+            let boundary = CGPoint(x: header.frame.minX, y: row.frame.midY)
+            XCTAssertTrue(viewport.contains(boundary), "Column boundary outside the visible table: \(boundary)")
+            table.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: boundary.x - viewport.minX, dy: boundary.y - viewport.minY)).click()
 
             let expectedCount = "\(offset + 1)"
             expectation(

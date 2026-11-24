@@ -72,8 +72,10 @@ final class TableBulkSelectionInputView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        // Let the underlying scroll view receive wheel and trackpad scrolling over selectable rows.
         guard isEnabled,
               isPassingThroughHitTest == false,
+              NSApp.currentEvent?.type != .scrollWheel,
               bounds.contains(point),
               let window,
               tableRow(at: convert(point, to: nil), in: window) != nil
