@@ -30,6 +30,26 @@ final class IPadLayoutUITests: XCTestCase {
         app.buttons["settingsCloseButton"].tap()
     }
 
+    @MainActor func testSeekTimesFitAtLargestAccessibilitySize() {
+        setDeviceOrientation(.landscapeLeft)
+        let category = UIContentSizeCategory.accessibilityExtraExtraExtraLarge
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-duo-autoplay-probe",
+            "-UIPreferredContentSizeCategoryName", category.rawValue,
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-volumeNormalizationEnabled", "NO"
+        ]
+        app.launch()
+        let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
+        let playing = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS %@", "\"playing\":true"), object: playback
+        )
+        wait(for: [playing], timeout: 10)
+        let slider = app.sliders["Playback Position"]
+        XCTAssertTrue(slider.isHittable)
+        assertSeekTimesFit(in: app, contentSizeCategory: category, within: app.frame)
+    }
+
     @MainActor func testLEDGlassPickerAtLargestAccessibilitySize() {
         let app = XCUIApplication()
         app.launchArguments = [

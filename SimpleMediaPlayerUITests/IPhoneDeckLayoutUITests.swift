@@ -261,31 +261,9 @@ private extension IPhoneDeckLayoutUITests {
         XCTAssertEqual(slider.minX, display.minX, accuracy: 1, "Slider leading edge")
         XCTAssertEqual(slider.maxX, display.maxX, accuracy: 1, "Slider trailing edge")
         XCTAssertEqual(slider.height, 44, accuracy: 1, "Slider height")
-        let seek = try regionFrame("phoneDeckSeekMetrics", in: app).insetBy(dx: -1, dy: -1)
-        let elapsed = app.staticTexts["seekElapsedTime"]
-        let remaining = app.staticTexts["seekRemainingTime"]
-        for time in [elapsed, remaining] {
-            XCTAssertTrue(time.exists, time.identifier)
-            XCTAssertGreaterThanOrEqual(time.frame.minY, slider.maxY - 1, time.identifier)
-            XCTAssertGreaterThanOrEqual(time.frame.minX, display.minX - 1, time.identifier)
-            XCTAssertLessThanOrEqual(time.frame.maxX, display.maxX + 1, time.identifier)
-            XCTAssertTrue(seek.contains(time.frame), time.identifier)
-            // A truncated label draws narrower than its full string.
-            let expected = fullTextSize(time.label, contentSizeCategory: contentSizeCategory)
-            XCTAssertGreaterThanOrEqual(time.frame.width, expected.width - 1, "\(time.identifier) is truncated")
-            XCTAssertGreaterThanOrEqual(time.frame.height, expected.height - 1, "\(time.identifier) height")
-        }
-        XCTAssertFalse(elapsed.frame.intersects(remaining.frame), "The times must not overlap")
+        let seek = try regionFrame("phoneDeckSeekMetrics", in: app)
+        assertSeekTimesFit(in: app, contentSizeCategory: contentSizeCategory, within: seek)
         attachScreenshot(in: app, name: "Accessibility deck seek times")
-    }
-
-    /// The size of the whole string in the seek row's monospaced-digit footnote font.
-    func fullTextSize(_ text: String, contentSizeCategory: UIContentSizeCategory) -> CGSize {
-        let traits = UITraitCollection(preferredContentSizeCategory: contentSizeCategory)
-        let pointSize = UIFont.preferredFont(forTextStyle: .footnote, compatibleWith: traits).pointSize
-        let font = UIFont.monospacedDigitSystemFont(ofSize: pointSize, weight: .regular)
-        let size = (text as NSString).size(withAttributes: [.font: font])
-        return CGSize(width: ceil(size.width), height: ceil(size.height))
     }
 }
 #endif

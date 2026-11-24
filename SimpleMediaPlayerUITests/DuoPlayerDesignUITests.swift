@@ -113,8 +113,10 @@ final class DuoPlayerDesignUITests: XCTestCase {
         try assertPlaybackPreserved(original, in: app)
         attach(app, name: "Duo portrait library after landscape return")
     }
+}
 
-    @MainActor private func launch(portrait: Bool) throws -> XCUIApplication {
+extension DuoPlayerDesignUITests {
+    @MainActor func launchPlayer(contentSizeCategory: UIContentSizeCategory? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-reset-led-settings",
@@ -124,7 +126,17 @@ final class DuoPlayerDesignUITests: XCTestCase {
             "-mediaListVisibleColumns", "index,title,artist,album,duration",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-volumeNormalizationEnabled", "NO"
         ]
+        if let contentSizeCategory {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSizeCategory.rawValue]
+        }
         app.launch()
+        return app
+    }
+
+    @MainActor func launch(
+        portrait: Bool, contentSizeCategory: UIContentSizeCategory? = nil
+    ) throws -> XCUIApplication {
+        let app = launchPlayer(contentSizeCategory: contentSizeCategory)
         let layout = duoDiagnostic("duoLayoutMetrics", in: app)
         XCTAssertTrue(layout.waitForExistence(timeout: 10))
         let geometry = try metrics(layout)
@@ -252,7 +264,7 @@ final class DuoPlayerDesignUITests: XCTestCase {
         return app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    @MainActor private func metrics(_ element: XCUIElement) throws -> [String: Any] {
+    @MainActor func metrics(_ element: XCUIElement) throws -> [String: Any] {
         let value = try XCTUnwrap(element.value as? String)
         let data = try XCTUnwrap(value.data(using: .utf8))
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
