@@ -2,7 +2,7 @@
 import UIKit
 import XCTest
 
-/// These cases verify the expanded browsing operations. Device Hub supplies the Open posture.
+/// Compact browsing runs on ordinary iPhones and Duo's outer screen. Expanded browsing requires Duo's Open posture.
 /// Closed/Open transitions are additionally inspected using duoBrowsingMetrics and duoEditorMetrics.
 final class DuoBrowsingUITests: XCTestCase {
     override func setUpWithError() throws {
@@ -95,31 +95,30 @@ final class DuoBrowsingUITests: XCTestCase {
 
     @MainActor func testCompactPlaylistMovesTheDisplayedTrackAfterSearching() throws {
         let app = try launchExpanded(compact: true)
-        let searchTab = tab("Search", in: app)
+        let searchTab = app.tabButton("Search")
         XCTAssertTrue(searchTab.waitForExistence(timeout: 5), app.debugDescription)
         searchTab.tap()
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
-        search.typeText("Layout Track 2")
-        tab("Playlists", in: app).tap()
+        search.typeText("Layout Track 2\n")
+        let playlistsTab = app.tabButton("Playlists")
+        playlistsTab.tap()
         app.buttons["Layout Playlist"].tap()
-        let visible = app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.' AND label CONTAINS 'Layout Track 2'")
-        ).firstMatch
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'"))
+        let visible = rows.matching(NSPredicate(format: "label CONTAINS 'Layout Track 2'")).firstMatch
         XCTAssertTrue(visible.waitForExistence(timeout: 10))
-        XCTAssertEqual(
-            app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'")).count, 3
-        )
+        XCTAssertEqual(rows.count, 3)
         visible.press(forDuration: 1)
         app.buttons["Move Down"].tap()
 
         searchTab.tap()
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        search.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Layout Track 2".count))
-        tab("Playlists", in: app).tap()
-        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'"))
+        XCTAssertEqual(search.value as? String, "Layout Track 2")
+        search.tap()
+        app.buttons["Close"].tap()
+        XCTAssertTrue(rows.element(boundBy: 2).waitForExistence(timeout: 10))
+        playlistsTab.tap()
         XCTAssertTrue(rows.element(boundBy: 2).waitForExistence(timeout: 10))
         XCTAssertEqual(rows.count, 3)
         waitForLabel("Layout Track 1", in: rows.element(boundBy: 0))
@@ -129,7 +128,7 @@ final class DuoBrowsingUITests: XCTestCase {
 
     @MainActor func testCompactPlaylistBackClearsTheExpandedDestination() throws {
         let app = try launchExpanded(compact: true)
-        tab("Playlists", in: app).tap()
+        app.tabButton("Playlists").tap()
         app.buttons["Layout Playlist"].tap()
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
@@ -146,7 +145,7 @@ final class DuoBrowsingUITests: XCTestCase {
 
     @MainActor func testCompactDeletingTheLastAlbumTrackReturnsToAlbums() throws {
         let app = try launchExpanded(compact: true)
-        tab("Library", in: app).tap()
+        app.tabButton("Library").tap()
         app.buttons["Albums"].tap()
         let album = app.buttons["libraryGroup.albums.Layout Album"]
         XCTAssertTrue(album.waitForExistence(timeout: 10))
@@ -232,13 +231,6 @@ final class DuoBrowsingUITests: XCTestCase {
         let text = app.staticTexts[title].firstMatch
         if text.exists { return text }
         return app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", title)).firstMatch
-    }
-
-    @MainActor private func tab(_ title: String, in app: XCUIApplication) -> XCUIElement {
-        // Standard tabs can move into a vertical bar on a regular-width Duo screen.
-        let button = app.buttons[title].firstMatch
-        if button.exists { return button }
-        return app.otherElements[title].firstMatch
     }
 
     @MainActor private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
