@@ -261,21 +261,20 @@ enum RapidBulkSelectionUITestDriver {
         Task { @MainActor in
             let clock = ContinuousClock()
             let startedAt = clock.now
-            let startedDate = Date()
 
             for (offset, rowIndex) in rowIndices.enumerated() {
                 if offset > 0 {
                     let deadline = startedAt.advanced(
                         by: .milliseconds(clickIntervalMilliseconds * offset)
                     )
-                    try? await clock.sleep(until: deadline)
+                    try? await clock.sleep(until: deadline, tolerance: .zero)
                 }
 
                 guard rowIDs.indices.contains(rowIndex - 1) else { return }
                 selection.toggle(rowIDs[rowIndex - 1])
             }
 
-            completion(Date().timeIntervalSince(startedDate))
+            completion(startedAt.duration(to: clock.now) / .seconds(1))
         }
     }
 }

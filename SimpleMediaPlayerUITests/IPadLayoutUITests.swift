@@ -24,7 +24,7 @@ final class IPadLayoutUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settingsCloseButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Edit Columns"].exists)
         let panelLayout = app.segmentedControls.containing(.button, identifier: "Classic").firstMatch
-        scrollTo(panelLayout, in: app)
+        scrollToSetting(panelLayout, in: app)
         XCTAssertTrue(panelLayout.isHittable, "Standard tablet settings must retain the segmented panel picker")
         XCTAssertTrue(panelLayout.buttons["LED Half"].exists)
         app.buttons["settingsCloseButton"].tap()
@@ -70,7 +70,7 @@ final class IPadLayoutUITests: XCTestCase {
         let labels = ["Off", "Cylindrical", "CRT Bulge", "Bevel"]
         for index in values.indices {
             let button = app.buttons["ledPicker.ledGlassStyle.\(values[index])"]
-            scrollTo(button, in: app)
+            scrollToSetting(button, in: app)
             verifyLabel(button, title: labels[index], font: font, in: app)
             XCTAssertEqual(button.isSelected, index == 0, "Off must be the only initial glass selection")
         }
@@ -104,21 +104,6 @@ final class IPadLayoutUITests: XCTestCase {
             textFrame.height, max(font.lineHeight, requiredSize.height) - 2, "Glass title is clipped: \(title)"
         )
         XCTAssertTrue(button.frame.contains(textFrame), "Glass title extends beyond its button: \(title)")
-    }
-
-    @MainActor private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
-        let form = app.collectionViews.firstMatch
-        let visibleFrame = (form.exists ? form.frame : app.frame).insetBy(dx: 8, dy: 40)
-        for _ in 0..<30 {
-            if element.exists, element.isHittable,
-               element.frame.minY >= visibleFrame.minY, element.frame.maxY <= visibleFrame.maxY { return }
-            let scrollsUp = element.exists && element.frame.height > 0 && element.frame.minY < visibleFrame.minY
-            let container = form.exists ? form : app
-            let start = container.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: scrollsUp ? 0.4 : 0.8))
-            let end = container.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: scrollsUp ? 0.8 : 0.4))
-            start.press(forDuration: 0.05, thenDragTo: end)
-        }
-        XCTFail("Could not bring tablet setting fully into view: \(element)")
     }
 }
 #endif

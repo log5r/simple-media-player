@@ -79,7 +79,7 @@ struct MediaInfoView: View {
             }
             .padding(16)
         }
-        .platformEditorFrame(width: 680, height: 720)
+        .platformEditorFrame(width: 680, height: EditorLayoutMetrics.mediaInfoHeight)
         .alert("Tags have been changed. Close without saving?", isPresented: $isDiscardChangesConfirmationPresented) {
             Button("Close Without Saving", role: .destructive) {
                 dismiss()

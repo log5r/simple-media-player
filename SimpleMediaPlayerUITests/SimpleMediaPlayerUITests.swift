@@ -50,7 +50,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
     }
 
     @MainActor
-    func testFourItemsPerSecondKeepsEverySelectedRow() throws {
+    func testFourItemsPerSecondKeepsEverySelectedRow() async throws {
         let app = XCUIApplication()
         app.launchArguments += [
             "--ui-testing-multiple-selection",
@@ -78,13 +78,13 @@ final class SimpleMediaPlayerUITests: XCTestCase {
         let rows = rowOrder.map { app.descendants(matching: .any)["mediaRow.\($0)"] }
 
         rapidSelectionButton.click()
-        expectation(
-            for: NSPredicate(format: "value != %@", "pending"),
-            evaluatedWith: rapidSelectionDuration
-        )
-        // A large table makes macOS accessibility snapshots slow even though the
-        // in-app click cadence remains 250 ms, so allow time for the updated value to surface.
-        waitForExpectations(timeout: 15)
+        // Accessibility snapshots of the large table compete with the app's input processing.
+        // Let the app finish the timed sequence before requesting any more snapshots.
+        try await Task.sleep(for: .seconds(2))
+        await fulfillment(of: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", "pending"),
+            object: rapidSelectionDuration
+        )], timeout: 15)
 
         XCTAssertEqual(status.value as? String, "\(rowOrder.count)")
         let elapsedMilliseconds = try XCTUnwrap(rapidSelectionDuration.value as? String)

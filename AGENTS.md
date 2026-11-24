@@ -20,6 +20,11 @@
 - プルリクエスト向けの変更を push する前に `./scripts/test-ios-simulator.sh` を実行し、成功を確認する。その結果をプルリクエストの「確認」に記載する。実行できなかった場合はその旨を記載する。
 - 手元の Xcode のバージョンは CI が固定するものと異なる場合がある。CI と同じ結果であることが必要な場合は、確認に使ったバージョンを記載する。
 
+## macOS UI テスト
+
+- ワークフローが既定ブランチに入ったら、GitHub Actions の「macOS UI Tests」で「Run workflow」を開き、対象ブランチを選んで実行する。GitHub ホスト上でスイートを順次実行するため、作業中の Mac の入力ソース設定に影響しない。
+- 実行結果の `ci-logs-test-results-macos-ui` にログと `.xcresult` が保存される。
+
 ## プルリクエストのマージ
 
 - ドラフトは先に Ready for review にし、GitHub の「Codex Review Summary」で、マージするコミットの Code Review が完了したことを確認してからマージする。指摘を受けて修正を push した場合は、修正後のコミットについてもレビュー完了を待つ。

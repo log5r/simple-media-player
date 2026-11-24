@@ -52,7 +52,10 @@ final class DuoLayoutUITests: XCTestCase {
         toolbarButton("settingsButton", in: app).tap()
         XCTAssertTrue(app.buttons["settingsCloseButton"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Edit Columns"].exists)
-        XCTAssertTrue(app.segmentedControls.containing(.button, identifier: "Classic").firstMatch.exists)
+        let panelLayout = app.segmentedControls.containing(.button, identifier: "Classic").firstMatch
+        scrollToSetting(panelLayout, in: app)
+        XCTAssertTrue(panelLayout.isHittable)
+        XCTAssertTrue(panelLayout.buttons["LED Half"].exists)
         attachDiagnostics(in: app, name: "Duo expanded settings")
         app.buttons["settingsCloseButton"].tap()
     }
@@ -108,7 +111,7 @@ final class DuoLayoutUITests: XCTestCase {
         let cancel = app.buttons["Cancel"]
         XCTAssertTrue(save.isEnabled)
         XCTAssertTrue(cancel.isHittable)
-        XCTAssertTrue(app.frame.contains(cancel.frame))
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(cancel.frame))
         attachDiagnostics(in: app, name: "Duo export names portrait keyboard")
         rotateDuo(
             to: .landscapeLeft, in: app, layoutIdentifier: "duoEditorLayoutMetrics", portraitKey: "scenePortrait"
@@ -155,7 +158,7 @@ final class DuoLayoutUITests: XCTestCase {
         }
         if button.waitForExistence(timeout: 2) { return button }
         let labels = [
-            "settingsButton": "Settings", "lyricsButton": "Details", "exportToFinderButton": "Export"
+            "settingsButton": "Settings", "lyricsButton": "Details", "exportToFinderButton": "Export…"
         ]
         let nativeMenuItem = app.buttons[labels[identifier] ?? identifier].firstMatch
         XCTAssertTrue(nativeMenuItem.waitForExistence(timeout: 5), identifier)
@@ -183,7 +186,7 @@ final class DuoLayoutUITests: XCTestCase {
         XCTAssertTrue(element.exists, element.identifier)
         XCTAssertGreaterThanOrEqual(element.frame.width, 44, element.identifier)
         XCTAssertGreaterThanOrEqual(element.frame.height, 44, element.identifier)
-        XCTAssertTrue(app.frame.contains(element.frame), element.identifier)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(element.frame), element.identifier)
     }
 
     @MainActor private func attachDiagnostics(in app: XCUIApplication, name: String) {

@@ -23,7 +23,8 @@ final class DuoFullScreenVideoUITests: XCTestCase {
         let geometry = try metrics(layout)
         try XCTSkipUnless(geometry["portrait"] as? Bool == true && geometry["hasActiveDivision"] as? Bool == true,
                           "Select partially folded portrait in Device Hub.")
-        try verifyScreenCoordinates(app.frame, geometry: geometry)
+        let window = app.windows.firstMatch.frame
+        try verifyScreenCoordinates(window, geometry: geometry)
         let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
         await fulfillment(of: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value CONTAINS %@", "\"playing\":true"), object: playback
@@ -35,8 +36,8 @@ final class DuoFullScreenVideoUITests: XCTestCase {
         let video = duoDiagnostic("fullScreenVideoMetrics", in: app)
         XCTAssertTrue(video.waitForExistence(timeout: 5))
         let frame = try metrics(video)
-        try assertUpperVideoArea(frame, screen: app.frame, geometry: geometry)
-        try assertLowerControls(in: app, video: frame, geometry: geometry)
+        try assertUpperVideoArea(frame, screen: window, geometry: geometry)
+        try assertLowerControls(in: app, video: frame, screen: window, geometry: geometry)
         assertTransportAndClosing(in: app, showVideo: showVideo, language: language)
     }
 
@@ -61,16 +62,16 @@ final class DuoFullScreenVideoUITests: XCTestCase {
     }
 
     @MainActor private func assertLowerControls(
-        in app: XCUIApplication, video: [String: Any], geometry: [String: Any]
+        in app: XCUIApplication, video: [String: Any], screen: CGRect, geometry: [String: Any]
     ) throws {
-        let division = try activeDivisionFrame(screen: app.frame, geometry: geometry)
+        let division = try activeDivisionFrame(screen: screen, geometry: geometry)
         let videoFrame = CGRect(x: try number("x", in: video), y: try number("y", in: video),
                                width: try number("width", in: video), height: try number("height", in: video))
         for identifier in ["videoFullScreenPlayPauseButton", "videoFullScreenCloseButton"] {
             let button = app.buttons[identifier]
             XCTAssertTrue(button.isHittable, identifier)
             let frame = button.frame
-            XCTAssertTrue(app.frame.contains(frame), identifier)
+            XCTAssertTrue(screen.contains(frame), identifier)
             XCTAssertGreaterThanOrEqual(frame.minY, division.maxY, identifier)
             XCTAssertGreaterThanOrEqual(frame.width, 44, identifier)
             XCTAssertGreaterThanOrEqual(frame.height, 44, identifier)

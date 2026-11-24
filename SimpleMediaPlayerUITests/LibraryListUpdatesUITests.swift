@@ -62,6 +62,7 @@ final class LibraryListUpdatesUITests: XCTestCase {
         #if os(iOS)
         if UIDevice.current.userInterfaceIdiom == .phone {
             app.tabButton("Library").tap()
+            XCTAssertTrue(app.buttons["All Songs"].waitForExistence(timeout: 5))
             app.tabButton("Search").tap()
             XCTAssertTrue(track(number: 2999, in: app).waitForExistence(timeout: 10))
             waitForValue("UI Test Track 2999", of: app.searchFields.firstMatch)
@@ -90,12 +91,12 @@ final class LibraryListUpdatesUITests: XCTestCase {
         press(search)
         #if os(macOS)
         app.typeKey(.rightArrow, modifierFlags: .command)
+        search.typeText("9")
         #else
         // The seeded query is shorter than the field; tap its trailing blank space.
         search.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)).tap()
+        search.typeText("9\n")
         #endif
-        search.typeText("9")
-        dismissSearchKeyboard(in: app)
     }
 
     @MainActor
@@ -159,6 +160,12 @@ final class LibraryListUpdatesUITests: XCTestCase {
     @MainActor
     private func track(number: Int, in app: XCUIApplication) -> XCUIElement {
         let title = "UI Test Track \(number)"
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneTrack.'"))
+                .containing(.staticText, identifier: title).firstMatch
+        }
+        #endif
         return app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", title, title)).firstMatch
     }

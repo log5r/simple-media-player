@@ -248,7 +248,9 @@ extension MainView {
 
     /// A placement attaches search to the detail column: portrait hides the sidebar column,
     /// and the phone's vertical toolbar has no room for a search field.
-    func libraryNavigation(detailSearchPlacement: SearchFieldPlacement? = nil) -> some View {
+    func libraryNavigation(
+        detailSearchPlacement: SearchFieldPlacement? = nil, detailBottomSafeAreaPadding: CGFloat = 0
+    ) -> some View {
             NavigationSplitView {
                 SidebarView(
                     selection: Binding(get: { selection }, set: { browsingState.select($0) }),
@@ -264,6 +266,7 @@ extension MainView {
             } detail: {
                 if let detailSearchPlacement {
                     libraryDetail
+                        .safeAreaPadding(.bottom, detailBottomSafeAreaPadding)
                         .searchable(text: $browsingState.searchText, placement: detailSearchPlacement, prompt: "Search")
                 } else {
                     libraryDetail

@@ -116,9 +116,19 @@ final class DuoBrowsingUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         XCTAssertEqual(search.value as? String, "Layout Track 2")
         search.tap()
-        app.buttons["Close"].tap()
+        search.buttons["Clear text"].tap()
         XCTAssertTrue(rows.element(boundBy: 2).waitForExistence(timeout: 10))
-        playlistsTab.tap()
+        let closeSearch = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "Close")).firstMatch
+        XCTAssertTrue(closeSearch.waitForExistence(timeout: 5))
+        closeSearch.tap()
+        // Search can move the tabs between the bottom bar and the vertical toolbar.
+        let playlistTabs = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "Playlists", "BackButton"
+        ))
+        XCTAssertTrue(playlistTabs.firstMatch.waitForExistence(timeout: 5))
+        let returnedPlaylistsTab = try XCTUnwrap(playlistTabs.allElementsBoundByIndex.first(where: \.isHittable))
+        returnedPlaylistsTab.tap()
+        waitForValue("\"tab\":1", in: element("duoBrowsingMetrics", in: app))
         XCTAssertTrue(rows.element(boundBy: 2).waitForExistence(timeout: 10))
         XCTAssertEqual(rows.count, 3)
         waitForLabel("Layout Track 1", in: rows.element(boundBy: 0))
