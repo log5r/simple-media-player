@@ -95,16 +95,16 @@ final class ExpandedGroupFilteringUITests: XCTestCase {
             reveal.tap()
         }
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        if let current = search.value as? String, current.isEmpty == false, current != search.placeholderValue {
-            let clear = search.buttons.firstMatch
+        search.tap()
+        if query.isEmpty {
+            let clear = search.buttons["Clear text"]
             XCTAssertTrue(clear.waitForExistence(timeout: 5))
             clear.tap()
+            app.typeKey(.escape, modifierFlags: [])
+        } else {
+            search.typeText(query + "\n")
         }
-        if query.isEmpty == false {
-            search.tap()
-            search.typeText(query)
-        }
-        dismissKeyboard(in: app)
+        waitForExpandedContent(in: app)
         waitForValue(query.isEmpty ? "\"search\":\"\"" : "\"search\":\"\(query)\"",
                      in: duoDiagnostic("duoSearchMetrics", in: app))
     }
@@ -114,7 +114,14 @@ final class ExpandedGroupFilteringUITests: XCTestCase {
         let field = app.textFields["Title"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         replaceText(title, in: field, app: app)
-        dismissKeyboard(in: app)
+        // The filter popover needs its full height for Done to receive the tap.
+        let hide = app.buttons["Hide keyboard"].firstMatch
+        if hide.waitForExistence(timeout: 2), hide.frame.intersects(app.frame) {
+            let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: hide)
+            wait(for: [hittable], timeout: 5)
+            hide.tap()
+        }
+        waitForExpandedContent(in: app)
         let done = app.buttons["advancedSearchDoneButton"]
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         done.tap()
@@ -153,18 +160,9 @@ final class ExpandedGroupFilteringUITests: XCTestCase {
         wait(for: [expectation], timeout: 10)
     }
 
-    @MainActor private func dismissKeyboard(in app: XCUIApplication) {
-        // The system key can appear as a button without a Keyboard parent in the AX tree.
-        let hide = app.buttons["Hide keyboard"].firstMatch
-        // A closed keyboard can leave its preview button below the window in the AX tree.
-        if hide.waitForExistence(timeout: 2), hide.frame.intersects(app.frame) {
-            let hittable = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: hide)
-            wait(for: [hittable], timeout: 5)
-            hide.tap()
-            waitForDisappearance(hide)
-        }
+    @MainActor private func waitForExpandedContent(in app: XCUIApplication) {
+        // The group's rows may be outside the accessibility tree while the keyboard shrinks the list.
         let layout = duoDiagnostic("duoLayoutMetrics", in: app)
-        add(XCTAttachment(screenshot: XCUIScreen.main.screenshot()))
         let minimumHeight = Double(expandedHeight) * 0.9
         let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             guard let value = layout.value as? String, let data = value.data(using: .utf8),
