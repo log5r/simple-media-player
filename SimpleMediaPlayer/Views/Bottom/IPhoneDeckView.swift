@@ -288,7 +288,7 @@ private extension IPhoneDeckView {
     var displayControls: some View {
         VStack(spacing: IPhoneDeckLayout.groupSpacing) {
             VStack(spacing: IPhoneDeckLayout.rowSpacing) {
-                SeekBarView(player: player, drawsOnPanel: true, stacksTimesAtAccessibilitySizes: true)
+                SeekBarView(player: player, drawsOnPanel: true)
                     #if DEBUG
                     .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckSeek"))
                     #endif

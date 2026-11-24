@@ -5,8 +5,8 @@ struct SeekBarView: View {
     var avoidsDisplayDivision = true
     /// The phone deck draws the seek row directly on its panel and aligns the times to its content column.
     var drawsOnPanel = false
-    /// The phone deck moves the times under the slider at accessibility text sizes instead of truncating them.
-    var stacksTimesAtAccessibilitySizes = false
+    /// Height-constrained deck pages can opt out of the extra row for Dynamic Type.
+    var stacksTimesAtAccessibilitySizes = true
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var timesHeight: CGFloat = 0
     @State private var dragValue: TimeInterval?
@@ -159,7 +159,11 @@ struct SeekBarView: View {
     }
 
     private var stacksTimes: Bool {
+        #if os(iOS)
         stacksTimesAtAccessibilitySizes && dynamicTypeSize.isAccessibilitySize
+        #else
+        false
+        #endif
     }
 
     private var displayTime: TimeInterval {
