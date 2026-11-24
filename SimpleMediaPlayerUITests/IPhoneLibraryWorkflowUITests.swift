@@ -94,10 +94,14 @@ final class IPhoneLibraryWorkflowUITests: XCTestCase {
         app.buttons["Export"].tap()
         let shareSheet = app.otherElements["ActivityListView"]
         XCTAssertTrue(shareSheet.waitForExistence(timeout: 15), app.debugDescription)
-        let close = app.buttons["header.closeButton"]
+        let close = shareSheet.buttons["header.closeButton"]
         XCTAssertTrue(close.waitForExistence(timeout: 5))
         close.tap()
-        // The system overflow button can already be found while the share sheet is dismissing.
+        // On a cold launch, the system share service can ignore a tap during presentation on Duo.
+        // Retry only its own close button if the sheet is still onscreen and interactive.
+        if !shareSheet.waitForNonExistence(timeout: 3), close.exists, close.isHittable {
+            close.tap()
+        }
         waitForDisappearance(shareSheet)
         XCTAssertTrue(app.openToolbarOverflowMenu(item: "Export…").isEnabled)
     }

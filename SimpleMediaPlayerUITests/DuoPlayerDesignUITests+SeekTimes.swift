@@ -46,7 +46,8 @@ extension DuoPlayerDesignUITests {
         let player = app.otherElements["duoLandscapePlayer"]
         XCTAssertTrue(player.waitForExistence(timeout: 120))
         let controls = player.otherElements["expandedControlsRegion"]
-        assertSeekTimesFit(in: controls, contentSizeCategory: category, within: controls.frame.intersection(app.frame))
+        let visibleControls = controls.frame.intersection(app.windows.firstMatch.frame)
+        assertSeekTimesFit(in: controls, contentSizeCategory: category, within: visibleControls)
 
         close.tap()
         XCTAssertTrue(layout.waitForExistence(timeout: 5))

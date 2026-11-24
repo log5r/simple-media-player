@@ -55,7 +55,9 @@ final class TextEditingShortcutsUITests: XCTestCase {
         waitForValue("1Xab2 ZcY3", of: title)
 
         let sheetClose = app.sheets.buttons["Close"]
-        (sheetClose.exists ? sheetClose : app.buttons["Close"].firstMatch).click()
+        let close = sheetClose.exists ? sheetClose : app.buttons["Close"].firstMatch
+        XCTAssertTrue(close.isHittable)
+        close.click()
         let discard = app.windows.buttons["Close Without Saving"].firstMatch
         XCTAssertTrue(discard.waitForExistence(timeout: 3))
         discard.click()

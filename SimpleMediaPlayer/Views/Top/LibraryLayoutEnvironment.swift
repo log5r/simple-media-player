@@ -23,7 +23,9 @@ extension View {
 enum EditorLayoutMetrics {
     #if os(iOS)
     static let minimumScrollHeight: CGFloat = 0
+    static let mediaInfoHeight: CGFloat = 720
     #else
     static let minimumScrollHeight: CGFloat = 420
+    static let mediaInfoHeight: CGFloat = 600
     #endif
 }

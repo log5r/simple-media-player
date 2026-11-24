@@ -1,0 +1,49 @@
+name: macOS UI Tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-ui:
+    runs-on: xcode-27
+    timeout-minutes: 50
+    steps:
+      - name: Require a GitHub-hosted runner
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: test "$RUNNER_ENVIRONMENT" = github-hosted
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-xcode-build
+
+      - name: Run macOS UI tests serially
+        run: |
+          ./scripts/ci-xcodebuild.sh macOS-UI \
+            -project SimpleMediaPlayer.xcodeproj \
+            -scheme SimpleMediaPlayer \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .build/DerivedData \
+            -clonedSourcePackagesDirPath .build/SourcePackages \
+            -skipPackagePluginValidation \
+            -only-testing:SimpleMediaPlayerUITests \
+            -parallel-testing-enabled NO \
+            -resultBundlePath "${RUNNER_TEMP}/macOS-UI.xcresult" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= test
+
+      - name: Upload CI logs and test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-logs-test-results-macos-ui
+          include-hidden-files: true
+          path: |
+            .build-logs/**/*.log
+            ${{ runner.temp }}/macOS-UI.xcresult
+          retention-days: 14
+          if-no-files-found: warn

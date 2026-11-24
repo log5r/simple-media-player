@@ -115,6 +115,8 @@ final class CompactLibraryCommandsUITests: XCTestCase {
         XCTAssertTrue(playback.waitForExistence(timeout: 10))
         waitForValue("\"title\":\"Layout Track 1\"", in: playback)
         waitForValue("\"playing\":true", in: playback)
+        // Simulator can drop the first key after launch. Send an unassigned key before exercising any command.
+        app.typeKey(.F19, modifierFlags: [])
         return app
     }
 

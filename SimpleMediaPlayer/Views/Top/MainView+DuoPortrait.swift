@@ -40,8 +40,8 @@ extension MainView {
     private func portraitLibrary(isBelowFold: Bool) -> some View {
         let cornerRadius: CGFloat = isBelowFold ? 16 : 0
         return VStack(spacing: 0) {
-            // The floating search field adds a bottom safe area, so the last row still scrolls above it.
-            libraryNavigation(detailSearchPlacement: .toolbar)
+            // The floating search toolbar's hit region extends above the search field.
+            libraryNavigation(detailSearchPlacement: .toolbar, detailBottomSafeAreaPadding: 32)
             Button { showsPortraitLibrary = false } label: {
                 Label("Close", systemImage: "chevron.down")
                     .frame(maxWidth: .infinity, minHeight: 44)

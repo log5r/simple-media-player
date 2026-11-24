@@ -50,7 +50,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
     }
 
     @MainActor
-    func testFourItemsPerSecondKeepsEverySelectedRow() throws {
+    func testFourItemsPerSecondKeepsEverySelectedRow() async throws {
         let app = XCUIApplication()
         app.launchArguments += [
             "--ui-testing-multiple-selection",
@@ -78,13 +78,13 @@ final class SimpleMediaPlayerUITests: XCTestCase {
         let rows = rowOrder.map { app.descendants(matching: .any)["mediaRow.\($0)"] }
 
         rapidSelectionButton.click()
-        expectation(
-            for: NSPredicate(format: "value != %@", "pending"),
-            evaluatedWith: rapidSelectionDuration
-        )
-        // A large table makes macOS accessibility snapshots slow even though the
-        // in-app click cadence remains 250 ms, so allow time for the updated value to surface.
-        waitForExpectations(timeout: 15)
+        // Accessibility snapshots of the large table compete with the app's input processing.
+        // Let the app finish the timed sequence before requesting any more snapshots.
+        try await Task.sleep(for: .seconds(2))
+        await fulfillment(of: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value != %@", "pending"),
+            object: rapidSelectionDuration
+        )], timeout: 15)
 
         XCTAssertEqual(status.value as? String, "\(rowOrder.count)")
         let elapsedMilliseconds = try XCTUnwrap(rapidSelectionDuration.value as? String)
@@ -193,7 +193,7 @@ final class SimpleMediaPlayerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += [
             "--ui-testing-multiple-selection",
-            "-ApplePersistenceIgnoreState", "YES"
+            "-ApplePersistenceIgnoreState", "YES", "-mediaListColumnCustomization", "", "-showLyricsPanel", "YES"
         ]
         app.launch()
         app.activate()
@@ -226,19 +226,19 @@ final class SimpleMediaPlayerUITests: XCTestCase {
             XCTAssertTrue(header.waitForExistence(timeout: 2))
         }
 
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 2))
-
+        let table = app.scrollViews.containing(.any, identifier: "mediaRow.1").firstMatch
+        XCTAssertTrue(table.exists)
         for (offset, pair) in zip(rows, headers).enumerated() {
             let (row, header) = pair
-            let boundaryCoordinate = window.coordinate(withNormalizedOffset: .zero)
-                .withOffset(
-                    CGVector(
-                        dx: header.frame.minX - window.frame.minX,
-                        dy: row.frame.midY - window.frame.minY
-                    )
-                )
-            boundaryCoordinate.click()
+            // AppKit exposes headers even when the details panel leaves their columns offscreen.
+            let viewport = table.frame
+            if !viewport.contains(CGPoint(x: header.frame.minX, y: row.frame.midY)) {
+                row.scroll(byDeltaX: viewport.midX - header.frame.minX, deltaY: 0)
+            }
+            let boundary = CGPoint(x: header.frame.minX, y: row.frame.midY)
+            XCTAssertTrue(viewport.contains(boundary), "Column boundary outside the visible table: \(boundary)")
+            table.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: boundary.x - viewport.minX, dy: boundary.y - viewport.minY)).click()
 
             let expectedCount = "\(offset + 1)"
             expectation(

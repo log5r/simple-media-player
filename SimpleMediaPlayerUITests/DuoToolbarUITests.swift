@@ -16,7 +16,8 @@ final class DuoToolbarUITests: XCTestCase {
         let filters = app.buttons["advancedSearchButton"]
         XCTAssertTrue(filters.waitForExistence(timeout: 5))
         XCTAssertTrue(filters.isHittable)
-        XCTAssertTrue(app.frame.contains(filters.frame))
+        let window = app.windows.firstMatch.frame
+        XCTAssertTrue(window.contains(filters.frame), "Filters \(filters.frame) should be inside \(window)")
         filters.tap()
         let done = app.buttons["advancedSearchDoneButton"]
         XCTAssertTrue(done.waitForExistence(timeout: 5))

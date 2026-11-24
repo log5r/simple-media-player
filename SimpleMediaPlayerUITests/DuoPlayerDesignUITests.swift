@@ -178,7 +178,7 @@ extension DuoPlayerDesignUITests {
         // Ignore subpixel floating-point roundoff at fractional Book coordinates.
         XCTAssertGreaterThanOrEqual(element.frame.width + 0.001, 44, element.identifier)
         XCTAssertGreaterThanOrEqual(element.frame.height + 0.001, 44, element.identifier)
-        XCTAssertTrue(app.frame.insetBy(dx: -1, dy: -1).contains(element.frame), element.identifier)
+        XCTAssertTrue(app.windows.firstMatch.frame.insetBy(dx: -1, dy: -1).contains(element.frame), element.identifier)
         if let frame {
             XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(element.frame), element.identifier)
         }
@@ -228,9 +228,10 @@ extension DuoPlayerDesignUITests {
         let bottom = try number("bottom", in: safeArea)
         let leading = try number("leading", in: safeArea)
         let trailing = try number("trailing", in: safeArea)
-        try XCTSkipUnless(abs(app.frame.width - width - leading - trailing) < 2 &&
-            abs(app.frame.height - height - top - bottom) < 2, "Root and screen coordinate bounds differ.")
-        return CGRect(x: app.frame.minX + CGFloat(leading), y: app.frame.minY + CGFloat(top),
+        let window = app.windows.firstMatch.frame
+        try XCTSkipUnless(abs(window.width - width - leading - trailing) < 2 &&
+            abs(window.height - height - top - bottom) < 2, "Root and window coordinate bounds differ.")
+        return CGRect(x: window.minX + CGFloat(leading), y: window.minY + CGFloat(top),
                       width: width, height: height)
     }
 
