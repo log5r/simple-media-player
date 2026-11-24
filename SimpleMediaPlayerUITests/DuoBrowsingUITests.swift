@@ -180,8 +180,6 @@ final class DuoBrowsingUITests: XCTestCase {
     }
 
     @MainActor private func launchExpanded(compact: Bool = false) throws -> XCUIApplication {
-        // Forced compact cases are independent of the simulator's orientation, so only expanded cases rotate.
-        if compact == false { setDuoOrientation(.landscapeLeft) }
         let app = XCUIApplication()
         app.launchArguments = [
             "--ui-testing-phone-layout", "--ui-testing-duo-layout", "--ui-testing-reset-led-settings",
@@ -192,13 +190,16 @@ final class DuoBrowsingUITests: XCTestCase {
         app.launch()
         let layout = element("duoLayoutMetrics", in: app)
         XCTAssertTrue(layout.waitForExistence(timeout: 10))
-        if compact == false { rotateDuo(to: .landscapeLeft, in: app) }
-        let geometry = try metrics(layout)
         if compact == false {
-            try XCTSkipIf(
-                (geometry["division"] as? [[String: Any]] ?? []).isEmpty, "Select Duo's Open posture in Device Hub."
-            )
+            let requiresOpen = "Expanded browsing requires iPhone Duo's Open posture in Device Hub."
+            guard #available(iOS 27.1, *) else { throw XCTSkip(requiresOpen) }
+            let geometry = try metrics(layout)
+            let divisions = try XCTUnwrap(geometry["division"] as? [[String: Any]])
+            let hasActiveDivision = try XCTUnwrap(geometry["hasActiveDivision"] as? Bool)
+            try XCTSkipIf(divisions.isEmpty || hasActiveDivision, requiresOpen)
+            rotateDuo(to: .landscapeLeft, in: app)
         }
+        let geometry = try metrics(layout)
         XCTAssertEqual(geometry["layout"] as? String, compact ? "compact" : "expanded")
         XCTAssertTrue(element("duoBrowsingMetrics", in: app).waitForExistence(timeout: 5))
         return app
