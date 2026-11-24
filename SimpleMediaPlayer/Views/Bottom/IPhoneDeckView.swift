@@ -25,7 +25,6 @@ struct IPhoneDeckView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.verticalSizeClass) private var heightClass
     @State private var page = IPhoneDeckPage.display
     @State private var showsAdjustments = false
     @State private var infoItem: MediaItem?
@@ -53,7 +52,7 @@ struct IPhoneDeckView: View {
                             }
                         }
                     } else {
-                        pageLayout
+                        IPhoneDeckPageLayout(player: player) { pageContent }
                     }
                     DeckSafeRow(
                         height: (dynamicTypeSize.isAccessibilitySize ? 64 : IPhoneDeckLayout.rowHeight)
@@ -202,7 +201,7 @@ struct IPhoneDeckView: View {
                 Button { player.play(item: item, in: player.queue) } label: {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text(item.title).lineLimit(1)
+                            Text(item.title).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                             Text(item.displayArtist).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -258,33 +257,6 @@ struct IPhoneDeckView: View {
 }
 
 private extension IPhoneDeckView {
-    /// Lyrics, Info, and Up Next keep the Display page's column, rows, and transport bar.
-    var pageLayout: some View {
-        VStack(spacing: 0) {
-            DeckSafeRow(height: 90) {
-                LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                    .clipShape(RoundedRectangle(cornerRadius: IPhoneDeckLayout.displayCornerRadius))
-                    .padding(.horizontal, IPhoneDeckLayout.gutter)
-            }
-            DeckSafeContentRegion { _ in
-                pageContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.background)
-                    .clipShape(RoundedRectangle(cornerRadius: IPhoneDeckLayout.cardCornerRadius))
-                    .padding(.horizontal, IPhoneDeckLayout.gutter)
-            }
-            .padding(.vertical, IPhoneDeckLayout.groupSpacing)
-            SeekBarView(player: player, drawsOnPanel: true, stacksTimesAtAccessibilitySizes: heightClass != .compact)
-                .padding(.horizontal, IPhoneDeckLayout.gutter)
-            DeckSafeRow(height: IPhoneDeckLayout.rowHeight) {
-                IPhoneTransportBar(player: player).padding(.horizontal, IPhoneDeckLayout.gutter)
-            }
-            .padding(.top, IPhoneDeckLayout.rowSpacing)
-            .padding(.bottom, IPhoneDeckLayout.groupSpacing)
-        }
-    }
-
     var displayControls: some View {
         VStack(spacing: IPhoneDeckLayout.groupSpacing) {
             VStack(spacing: IPhoneDeckLayout.rowSpacing) {

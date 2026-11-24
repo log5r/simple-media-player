@@ -110,6 +110,60 @@ struct IPhoneDeckArrangementView<Display: View, Controls: View>: View {
     }
 }
 
+/// Lays out Lyrics, Info, and Up Next above the deck's page switcher.
+struct IPhoneDeckPageLayout<Content: View>: View {
+    let player: PlayerViewModel
+    @ViewBuilder let content: () -> Content
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var heightClass
+
+    /// In short landscapes, large text needs the height of a column for the page's scrolling content.
+    var body: some View {
+        let usesColumns = heightClass == .compact && dynamicTypeSize.isAccessibilitySize
+        let layout = usesColumns ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+            : AnyLayout(VStackLayout(spacing: 0))
+        return VStack(spacing: 0) {
+            if !usesColumns {
+                DeckSafeRow(height: 90) {
+                    LEDDisplayView(player: player, height: 90, layout: .phoneStrip)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .clipShape(RoundedRectangle(cornerRadius: IPhoneDeckLayout.displayCornerRadius))
+                        .padding(.horizontal, IPhoneDeckLayout.gutter)
+                }
+            }
+            layout {
+                DeckSafeContentRegion { _ in
+                    content()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.background)
+                        .clipShape(RoundedRectangle(cornerRadius: IPhoneDeckLayout.cardCornerRadius))
+                        .padding(.horizontal, IPhoneDeckLayout.gutter)
+                }
+                .padding(.vertical, IPhoneDeckLayout.groupSpacing)
+                if usesColumns {
+                    ScrollView { playbackControls }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .padding(.top, IPhoneDeckLayout.groupSpacing)
+                } else {
+                    playbackControls
+                }
+            }
+        }
+    }
+
+    private var playbackControls: some View {
+        VStack(spacing: 0) {
+            SeekBarView(player: player, drawsOnPanel: true)
+                .padding(.horizontal, IPhoneDeckLayout.gutter)
+            DeckSafeRow(height: IPhoneDeckLayout.rowHeight) {
+                IPhoneTransportBar(player: player).padding(.horizontal, IPhoneDeckLayout.gutter)
+            }
+            .padding(.top, IPhoneDeckLayout.rowSpacing)
+            .padding(.bottom, IPhoneDeckLayout.groupSpacing)
+        }
+    }
+}
+
 struct DeckSafeRow<Content: View>: View {
     let height: CGFloat
     @ViewBuilder let content: () -> Content

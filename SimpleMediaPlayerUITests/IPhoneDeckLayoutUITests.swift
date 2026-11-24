@@ -42,7 +42,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
             XCTAssertLessThanOrEqual(button.frame.maxY, page.frame.minY, identifier)
         }
         assertTouchTarget(routePicker(in: app), in: app)
-        attachScreenshot(in: app, name: "Duo Closed deck before scrolling")
+        attachScreenshot(name: "Duo Closed deck before scrolling")
         playPause.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.08)).tap()
         XCTAssertEqual(playPause.label, "Play")
         playPause.tap()
@@ -68,7 +68,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         let gap = app.buttons["phonePage.Display"].frame.minY - app.buttons["phoneMute"].frame.maxY
         XCTAssertEqual(gap, 16, accuracy: 1, "No empty band may remain between the volume row and the page switcher")
         assertInlineSeekTimes(in: app)
-        attachScreenshot(in: app, name: "Ordinary iPhone deck display")
+        attachScreenshot(name: "Ordinary iPhone deck display")
     }
 
     /// The landscape deck places the controls on the left and the LED on the right without scrolling.
@@ -103,7 +103,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         XCTAssertEqual(ledFrame.minX - app.buttons["phoneNext"].frame.maxX, 16, accuracy: 1)
         XCTAssertEqual(page.frame.minY - ledFrame.maxY, 16, accuracy: 1)
         XCTAssertEqual(routePicker(in: app).frame.maxX, app.buttons["phoneNext"].frame.maxX, accuracy: 1)
-        attachScreenshot(in: app, name: "Compact landscape deck")
+        attachScreenshot(name: "Compact landscape deck")
     }
 
     @MainActor func testAccessibilityDeckKeepsTheFullDisplayAndScrollableControls() throws {
@@ -126,7 +126,7 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         for _ in 0..<3 where !mute.isHittable { app.swipeUp() }
         assertTouchTarget(mute, in: app)
         XCTAssertTrue(mute.isHittable)
-        attachScreenshot(in: app, name: "Accessibility deck controls after scrolling")
+        attachScreenshot(name: "Accessibility deck controls after scrolling")
     }
 
     @MainActor private func launch(contentSizeCategory: String = "UICTContentSizeCategoryL") -> XCUIApplication {
@@ -233,8 +233,8 @@ final class IPhoneDeckLayoutUITests: XCTestCase {
         XCTAssertTrue(app.frame.contains(element.frame), element.identifier)
     }
 
-    @MainActor private func attachScreenshot(in app: XCUIApplication, name: String) {
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
+    @MainActor private func attachScreenshot(name: String) {
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = name
         screenshot.lifetime = .keepAlways
         add(screenshot)
@@ -263,7 +263,101 @@ private extension IPhoneDeckLayoutUITests {
         XCTAssertEqual(slider.height, 44, accuracy: 1, "Slider height")
         let seek = try regionFrame("phoneDeckSeekMetrics", in: app)
         assertSeekTimesFit(in: app, contentSizeCategory: contentSizeCategory, within: seek)
-        attachScreenshot(in: app, name: "Accessibility deck seek times")
+        attachScreenshot(name: "Accessibility deck seek times")
+    }
+}
+
+extension IPhoneDeckLayoutUITests {
+    @MainActor func testLandscapeAccessibilityPagesShowFullSeekTimesAndReadableContent() throws {
+        setDeviceOrientation(.portrait)
+        let category = UIContentSizeCategory.accessibilityExtraExtraExtraLarge
+        let app = launch(contentSizeCategory: category.rawValue)
+        let geometry = try rootMetrics(in: app)
+        let safeArea = geometry["safeArea"] as? [String: Double] ?? [:]
+        try XCTSkipUnless(
+            geometry["horizontalSizeClass"] as? String == "compact"
+                && (geometry["division"] as? [[String: Any]] ?? []).isEmpty
+                && safeArea["leading", default: 0] + safeArea["trailing", default: 0] == 0,
+            "Run this case on an ordinary iPhone that supports landscape rotation."
+        )
+        openDeck(in: app)
+        setDeviceOrientation(.landscapeLeft)
+        let landscape = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.frame.width > app.frame.height
+        }, object: nil)
+        wait(for: [landscape], timeout: 5)
+
+        selectLandscapePage("Lyrics", in: app, category: category)
+        let playPause = app.buttons["phonePlayPause"]
+        playPause.tap()
+        XCTAssertEqual(playPause.label, "Play")
+        app.sliders["Playback Position"].adjust(toNormalizedSliderPosition: 0.5)
+        let secondLyric = app.staticTexts["Second lyric"]
+        let selected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "selected == true"), object: secondLyric
+        )
+        wait(for: [selected], timeout: 5)
+        assertReadable(secondLyric, in: app.scrollViews.containing(.staticText, identifier: "Second lyric").firstMatch)
+
+        selectLandscapePage("Info", in: app, category: category)
+        let information = app.scrollViews.containing(.staticText, identifier: "1").firstMatch
+        assertReadable(information.staticTexts["1"], in: information)
+        information.swipeUp()
+        XCTAssertFalse(information.staticTexts["1"].isHittable)
+
+        selectLandscapePage("Up Next", in: app, category: category)
+        verifyQueuePlayback(in: app, category: category)
+    }
+
+    @MainActor private func verifyQueuePlayback(in app: XCUIApplication, category: UIContentSizeCategory) {
+        let title = "Layout Track 1"
+        let queue = app.collectionViews.containing(.staticText, identifier: title).firstMatch
+        let queuedTrack = queue.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'phoneQueue.'"))
+            .containing(.staticText, identifier: title).firstMatch
+        let trackTitle = queuedTrack.staticTexts[title]
+        assertReadable(trackTitle, in: queue)
+        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: UITraitCollection(
+            preferredContentSizeCategory: category
+        ))
+        if (title as NSString).size(withAttributes: [.font: font]).width > trackTitle.frame.width + 1 {
+            XCTAssertGreaterThanOrEqual(trackTitle.frame.height, 2 * font.lineHeight - 2, "The queue title must wrap")
+        }
+        queuedTrack.tap()
+        let playing = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == 'Playing'"), object: queuedTrack
+        )
+        wait(for: [playing], timeout: 5)
+    }
+
+    @MainActor private func selectLandscapePage(
+        _ name: String, in app: XCUIApplication, category: UIContentSizeCategory
+    ) {
+        let menu = app.buttons["phonePageMenu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5))
+        menu.tap()
+        let pageButton = NSPredicate(format: "identifier BEGINSWITH 'phonePage.'")
+        let choices = app.collectionViews.containing(pageButton).firstMatch
+        let target = choices.buttons["phonePage.\(name)"]
+        XCTAssertTrue(choices.waitForExistence(timeout: 5))
+        // The system opens this menu at the bottom. At AX5 its top choices need a scroll.
+        if !target.exists || target.frame.minY < choices.frame.minY { choices.swipeDown() }
+        target.tap()
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", name), object: menu)
+        wait(for: [selected], timeout: 5)
+        assertSeekTimesFit(in: app, contentSizeCategory: category, within: app.frame)
+        for control in [app.sliders["Playback Position"], app.buttons["phonePlayPause"], menu] {
+            XCTAssertTrue(control.isHittable)
+            assertTouchTarget(control, in: app)
+        }
+        attachScreenshot(name: "Landscape accessibility \(name)")
+    }
+
+    @MainActor private func assertReadable(_ text: XCUIElement, in viewport: XCUIElement) {
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            text.isHittable && viewport.frame.insetBy(dx: -1, dy: -1).contains(text.frame)
+        }, object: nil)
+        wait(for: [visible], timeout: 5)
     }
 }
 #endif

@@ -72,8 +72,9 @@ The LED plate keeps its size at accessibility text sizes, so its text stops grow
 The control rows other than the LED (seek, lamps, transport, volume, and page switcher) are 44 pt tall, 8 pt apart, with 16 pt between the groups: the LED, seek and lamps, transport and volume, and the page switcher.
 At accessibility text sizes, the lamps and the page switcher grow taller than 44 pt to fit their text.
 This is intended: 44 pt is the minimum touch target, and shrinking the text would defeat the larger text size.
-At those sizes, the seek row puts the elapsed and remaining times on a line below the slider so they are not truncated.
-In landscape with a compact height, the Lyrics, Info, and Up Next pages keep the times on the slider's line to leave room for the page content.
+At those sizes, the seek bar shows the elapsed and remaining times below the slider. Each time gets its own line if the two do not fit side by side.
+In compact-height landscape at accessibility text sizes, the Lyrics, Info, and Up Next pages omit the 90 pt LED strip. The page content scrolls in the left column. The seek bar and transport controls share the right column, which scrolls if the controls exceed its height.
+Track titles in Up Next wrap at accessibility text sizes.
 The transport bar spans the column and divides it into Stop, Previous Track, Play/Pause, and Next Track cells at a 1:1:2:1 width ratio.
 Play/Pause keeps the row height and stands out through its cell width and a 24 pt symbol.
 The volume number is not part of the row; it appears over the slider only while dragging, and its accessibility value always reports it.
