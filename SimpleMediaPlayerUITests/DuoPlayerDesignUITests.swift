@@ -69,14 +69,26 @@ final class DuoPlayerDesignUITests: XCTestCase {
 
     /// The portrait player publishes no layout-specific menu actions, so the scene's direct playback commands apply.
     @MainActor func testPortraitPlayerSpaceTogglesPlayback() throws {
+        let interactive = ProcessInfo.processInfo.environment["DUO_INTERACTIVE_KEYBOARD_TESTS"] == "1"
+        #if targetEnvironment(simulator)
+        // On Duo, XCTest can synthesize Space without delivering a key event to the app.
+        try XCTSkipUnless(interactive, "Enable interactive keyboard input and press Space in Device Hub.")
+        #endif
         let app = try launch(portrait: true)
         XCTAssertTrue(app.buttons["duoShowLibrary"].exists)
         let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
-        for state in ["\"paused\":true", "\"playing\":true"] {
-            app.typeKey(" ", modifierFlags: [])
-            wait(for: [XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "value CONTAINS %@", state), object: playback
-            )], timeout: 10)
+        let itemID = try XCTUnwrap(try metrics(playback)["itemID"] as? String)
+        for state in ["paused", "playing"] {
+            if interactive {
+                print("DuoKeyboardStep Press Space for \(state)")
+                fflush(nil)
+            } else {
+                app.typeKey(.space, modifierFlags: [])
+            }
+            let expected = NSPredicate(format: "value CONTAINS %@", "\"\(state)\":true")
+            let transition = XCTNSPredicateExpectation(predicate: expected, object: playback)
+            wait(for: [transition], timeout: interactive ? 45 : 10)
+            XCTAssertEqual(try metrics(playback)["itemID"] as? String, itemID)
         }
     }
 
