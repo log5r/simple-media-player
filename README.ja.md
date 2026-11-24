@@ -27,7 +27,7 @@ LEDパネルの表記（`EQ`、`KEY`、`SPEED`、`VOLUME`、`ON`／`OFF`）、`B
 
 ## ビルドとテスト
 
-ビルド時にSwiftLintが自動実行されます。`start.sh` を含む初回ビルドの前に、Xcodeでプロジェクトを開いてパッケージを解決し、プラグインの **Trust & Enable** を選択してください。
+ビルド時にSwiftLintが自動実行されます。Xcode、`start.sh`、`install.sh` のいずれを使う場合も、初回ビルドの前にXcodeでプロジェクトを開いてパッケージを解決し、プラグインの **Trust & Enable** を選択してください。
 lintの実行方法や設定は[SwiftLintガイド](docs/swiftlint.ja.md)を参照してください。
 
 ```sh
@@ -60,6 +60,23 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer test
 
 配布用のmacOSアプリを作成するには、Xcodeで `SimpleMediaPlayer` スキームを選び、**Product > Archive** からアーカイブを作成して、アプリを書き出してください。
 iPhone・iPad向けのビルドは署名が必要で、Xcode、Finder、Apple Configuratorなどを通じてインストールします。macOSアプリのように、単体の実行ファイルとして起動することはできません。
+
+## macOSアプリをインストールする
+
+リポジトリのルートで次のコマンドを実行すると、Release版をアドホック署名でビルドし、`~/Applications` にインストールします。
+
+```sh
+./install.sh --scheme SimpleMediaPlayer
+```
+
+`./start.sh` でRelease版をビルド済みなら、そのアプリを直接インストールできます。
+
+```sh
+./install.sh --app .build/DerivedData/Build/Products/Release/SimpleMediaPlayer.app
+```
+
+インストール直前に、スクリプトは同じバンドルIDで起動中のアプリをすべて強制終了します。インストール後は `~/Applications` から手動で起動してください。
+インストール先は `--destination DIR` で変更できます。すべてのオプションは `./install.sh --help` で確認できます。
 
 ## iPhone・iPadでのMusicライブラリ
 

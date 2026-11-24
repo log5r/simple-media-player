@@ -30,10 +30,10 @@ descriptions separately. Language-independent catalog entries use
 
 ## Build and Test
 
-The build runs SwiftLint automatically. Before the first build (including
-`start.sh`), open the project in Xcode, let it resolve packages, and choose
-**Trust & Enable** for the plugin. See the [SwiftLint guide](docs/swiftlint.md)
-for lint commands and configuration.
+The build runs SwiftLint automatically. Before your first build, open the project
+in Xcode, let it resolve packages, and choose **Trust & Enable** for the plugin.
+This also applies when building with `start.sh` or `install.sh`. See the
+[SwiftLint guide](docs/swiftlint.md) for lint commands and configuration.
 
 ```sh
 xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer build
@@ -71,6 +71,26 @@ For a distributable macOS build, use Xcode's Product > Archive flow with the
 must be signed and installed through Xcode, Finder, Apple Configurator, or an
 equivalent deployment workflow; they are not launched as standalone executable
 files like a macOS app.
+
+## Install the macOS App
+
+From the repository root, run this command to build the Release app with ad hoc
+signing and install it in `~/Applications`.
+
+```sh
+./install.sh --scheme SimpleMediaPlayer
+```
+
+If you already built Release with `./start.sh`, you can install that copy directly.
+
+```sh
+./install.sh --app .build/DerivedData/Build/Products/Release/SimpleMediaPlayer.app
+```
+
+Just before installation, the script force-quits any running copies with the
+same bundle ID. You can then open the app from `~/Applications`.
+Use `--destination DIR` to choose another folder. Run `./install.sh --help`
+to list all options.
 
 ## Music Library on iPhone and iPad
 
