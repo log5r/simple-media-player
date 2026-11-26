@@ -115,7 +115,9 @@ struct LyricsPanelView: View {
                             .padding(.top, 36)
                     } else {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(Array(parsed.lines.enumerated()), id: \.offset) { index, line in
+                            // Iterate the indices directly so each playback clock update does not copy every line.
+                            ForEach(parsed.lines.indices, id: \.self) { index in
+                                let line = parsed.lines[index]
                                 Text(line.text.isEmpty ? " " : line.text)
                                     .font(usesTouchControls ? .title3 : .system(size: 13))
                                     .fontWeight(activeIndex == index ? .bold : .regular)
@@ -151,7 +153,7 @@ struct LyricsPanelView: View {
 
     private var activeLyricIndex: Int? {
         guard parsed.hasTimeTags, let playbackTime = playbackPlayer?.currentTime else { return nil }
-        return parsed.lines.lastIndex { ($0.timestamp ?? .infinity) <= playbackTime }
+        return parsed.activeLineIndex(at: playbackTime)
     }
 
     private var lyricsButtonTitle: LocalizedStringKey {
