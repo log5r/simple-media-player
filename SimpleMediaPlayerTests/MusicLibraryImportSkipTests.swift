@@ -109,7 +109,7 @@ struct MusicLibraryImportSkipTests {
         defer { fixture.remove() }
         let cacheDirectory = fixture.directory.appendingPathComponent("AnalysisCache", isDirectory: true)
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-        let session = try MusicLibraryTemporaryFiles.makeDirectory(for: .playback, in: fixture.temporaryDirectory)
+        let session = try await MusicLibraryTemporaryFiles.makeDirectory(for: .playback, in: fixture.temporaryDirectory)
         let file = session.appendingPathComponent("song.mp3")
         try Data("audio".utf8).write(to: file)
         let entry = try #require(MusicAnalysisCache.entryURL(for: file, in: cacheDirectory))

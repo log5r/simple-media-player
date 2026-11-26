@@ -16,6 +16,10 @@ nonisolated enum MusicLibraryTrackExporter {
         case mpegPacketWritten
         case validationStarted
         case validationFinished
+        /// The output path was cleared of any earlier file before writing.
+        case staleOutputRemoved
+        /// The output path was cleared after the export failed or was cancelled.
+        case failedOutputRemoved
     }
 
     // Task-scoped seams keep concurrent exports independent while allowing tests to observe actual I/O.
@@ -64,7 +68,7 @@ nonisolated enum MusicLibraryTrackExporter {
 
         let (format, isTranscoded) = outputFormat(for: strategy)
         let outputURL = directory.appendingPathComponent(baseName).appendingPathExtension(format.rawValue)
-        try? FileManager.default.removeItem(at: outputURL)
+        await removeOutput(at: outputURL, reporting: .staleOutputRemoved)
         do {
             switch strategy {
             case .copyMPEGFrames:
@@ -83,8 +87,19 @@ nonisolated enum MusicLibraryTrackExporter {
         } catch {
             // An abandoned validation may still be opening the file. Unlinking it is safe: the open handle
             // keeps reading the unlinked file on APFS and its result is discarded.
-            try? FileManager.default.removeItem(at: outputURL)
+            await removeOutput(at: outputURL, reporting: .failedOutputRemoved)
             throw error
+        }
+    }
+
+    /// `export` runs on its caller's actor, so the removal runs on `FileSystemWorkQueue`. It is awaited even
+    /// when the caller is cancelled: a stale file must be gone before the new output is written, and a failed
+    /// output must be gone before the caller reports the failure or exports another song under the same name.
+    private static func removeOutput(at url: URL, reporting event: Event) async {
+        let observer = observeExport
+        await FileSystemWorkQueue.run(qos: .userInitiated) {
+            try? FileManager.default.removeItem(at: url)
+            observer?(event, url)
         }
     }
 

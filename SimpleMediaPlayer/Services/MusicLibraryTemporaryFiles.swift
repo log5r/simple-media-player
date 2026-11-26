@@ -12,13 +12,25 @@ nonisolated enum MusicLibraryTemporaryFiles {
         temporaryDirectory.appendingPathComponent("MusicLibrary", isDirectory: true)
     }
 
+    /// Lets tests see where each directory was created. Called on the file system queue after the creation.
+    @TaskLocal static var observeDirectoryCreation: (@Sendable (URL) -> Void)?
+
+    /// Callers run on the main actor, so the creation runs on `FileSystemWorkQueue`. It is awaited even when
+    /// the caller is cancelled: the caller then knows the directory exists and removes it, and no creation is
+    /// left to finish after the caller has returned.
     static func makeDirectory(
         for kind: Kind, in temporaryDirectory: URL = FileManager.default.temporaryDirectory
-    ) throws -> URL {
+    ) async throws -> URL {
         let directory = rootDirectory(in: temporaryDirectory)
             .appendingPathComponent(kind.rawValue, isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let observer = observeDirectoryCreation
+        try await FileSystemWorkQueue.run(qos: .userInitiated) {
+            Result {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                observer?(directory)
+            }
+        }.get()
         return directory
     }
 
