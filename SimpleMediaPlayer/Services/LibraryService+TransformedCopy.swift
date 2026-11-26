@@ -33,52 +33,45 @@ extension LibraryService {
         try validateTransformedSource(source, in: context)
         let id = UUID()
         let copiedURL = try await copyTransformedFileIntoMediaDirectory(renderedFileURL, id: id)
-        var didRegister = false
-        defer {
-            if didRegister == false { try? FileManager.default.removeItem(at: copiedURL) }
-        }
-        try Task.checkCancellation()
-        try validateTransformedSource(source, in: context)
-        #if os(macOS)
-        let bookmarkOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
-        #else
-        let bookmarkOptions: URL.BookmarkCreationOptions = []
-        #endif
-        let bookmark = try copiedURL.bookmarkData(
-            options: bookmarkOptions,
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        )
-        let item = MediaItem(
-            id: id,
-            title: title,
-            artist: source.metadata.artist,
-            album: source.metadata.album,
-            genre: source.metadata.genre,
-            year: source.metadata.year,
-            trackNumber: source.metadata.trackNumber,
-            comment: source.metadata.comment,
-            albumArtist: source.metadata.albumArtist,
-            composer: source.metadata.composer,
-            discNumber: source.metadata.discNumber,
-            isCompilation: source.metadata.isCompilation,
-            duration: duration.isFinite ? duration : 0,
-            isVideo: false,
-            lyricsRaw: source.lyricsRaw,
-            bookmarkData: bookmark,
-            artworkData: source.artworkData,
-            fileName: copiedURL.lastPathComponent
-        )
-        try source.applyEditedMetadata(to: item, title: title)
-        context.insert(item)
         do {
-            try context.save()
+            let bookmark = try await makeManagedFileBookmark(for: copiedURL)
+            // The export may be cancelled, or its source deleted, while the copy and the bookmark run.
+            try Task.checkCancellation()
+            try validateTransformedSource(source, in: context)
+            let item = MediaItem(
+                id: id,
+                title: title,
+                artist: source.metadata.artist,
+                album: source.metadata.album,
+                genre: source.metadata.genre,
+                year: source.metadata.year,
+                trackNumber: source.metadata.trackNumber,
+                comment: source.metadata.comment,
+                albumArtist: source.metadata.albumArtist,
+                composer: source.metadata.composer,
+                discNumber: source.metadata.discNumber,
+                isCompilation: source.metadata.isCompilation,
+                duration: duration.isFinite ? duration : 0,
+                isVideo: false,
+                lyricsRaw: source.lyricsRaw,
+                bookmarkData: bookmark,
+                artworkData: source.artworkData,
+                fileName: copiedURL.lastPathComponent
+            )
+            try source.applyEditedMetadata(to: item, title: title)
+            context.insert(item)
+            do {
+                try context.save()
+            } catch {
+                deleteLibraryModel(item, from: context)
+                throw error
+            }
+            return item
         } catch {
-            deleteLibraryModel(item, from: context)
+            // Awaited on the queue, so the unregistered copy is gone once the caller sees the error.
+            await FileSystemWorkQueue.run(qos: .userInitiated) { try? FileManager.default.removeItem(at: copiedURL) }
             throw error
         }
-        didRegister = true
-        return item
     }
 
     private func validateTransformedSource(_ source: TransformedTrackSourceSnapshot, in context: ModelContext) throws {

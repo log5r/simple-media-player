@@ -2,8 +2,9 @@ import AVFoundation
 import Foundation
 import UniformTypeIdentifiers
 
-/// The synchronous file operations an import runs off the main actor. Tests replace them to observe where
-/// they run or to hold one while the import waits for it.
+/// The synchronous file operations an import runs off the main actor. `makeBookmark` also bookmarks the files
+/// that transformed exports and Music library playback write. Tests replace them to observe where they run or to
+/// hold one while the import waits for it.
 nonisolated struct ImportFileOperations: Sendable {
     var isVideoFile: @Sendable (URL) -> Bool = Self.isVideoContent
     /// Throws when AVAudioFile cannot read the file, which rejects it from the import.

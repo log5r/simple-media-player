@@ -321,7 +321,10 @@ final class MusicLibraryFixture {
     let context: ModelContext
     let service: LibraryService
 
-    init(saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() }) throws {
+    init(
+        saveContext: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() },
+        importFileOperations: ImportFileOperations = ImportFileOperations()
+    ) throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("MusicLibraryImportTests-\(UUID().uuidString)", isDirectory: true)
         mediaDirectory = directory.appendingPathComponent("Media", isDirectory: true)
@@ -337,7 +340,7 @@ final class MusicLibraryFixture {
             mediaDirectoryURL: mediaDirectory, temporaryDirectoryURL: temporaryDirectory,
             musicMetadataProvider: MusicLibraryMetadataProvider(loadSnapshot: {
                 .loaded(MusicLibraryMetadataSnapshot(tracks: []))
-            }), saveContext: saveContext
+            }), importFileOperations: importFileOperations, saveContext: saveContext
         )
     }
 

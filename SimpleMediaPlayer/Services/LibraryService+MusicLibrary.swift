@@ -129,7 +129,7 @@ private extension LibraryService {
             // Music artwork is already bounded to a 600 px JPEG, so it is passed to the item as-is.
             let artwork = await track.resolvedArtworkData()
             try Task.checkCancellation()
-            let item = try makeTransientItem(for: track, output: output, artworkData: artwork)
+            let item = try await makeTransientItem(for: track, output: output, artworkData: artwork)
             return TransientPlaybackSession(directory: directory, items: [item])
         } catch {
             MusicLibraryTemporaryFiles.removeDirectoryInBackground(directory)
@@ -137,17 +137,12 @@ private extension LibraryService {
         }
     }
 
+    /// Throws `CancellationError` once the preparation is cancelled or replaced, so the caller removes the
+    /// session directory instead of returning the item.
     func makeTransientItem(
         for track: MusicLibraryTrack, output: MusicLibraryTrackExporter.Output, artworkData: Data?
-    ) throws -> MediaItem {
-        #if os(macOS)
-        let bookmarkOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
-        #else
-        let bookmarkOptions: URL.BookmarkCreationOptions = []
-        #endif
-        let bookmark = try output.url.bookmarkData(
-            options: bookmarkOptions, includingResourceValuesForKeys: nil, relativeTo: nil
-        )
+    ) async throws -> MediaItem {
+        let bookmark = try await makeManagedFileBookmark(for: output.url)
         let values = track.metadataValues
         return MediaItem(
             title: values.title ?? track.displayTitle,

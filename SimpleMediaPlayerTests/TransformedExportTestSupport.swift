@@ -16,7 +16,10 @@ final class TransformedExportFixture {
     let service: LibraryService
     let source: MediaItem
 
-    init(artworkLoader: LibraryArtworkLoader = .shared) throws {
+    init(
+        artworkLoader: LibraryArtworkLoader = .shared,
+        importFileOperations: ImportFileOperations = ImportFileOperations()
+    ) throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("TransformedExportTests-\(UUID().uuidString)", isDirectory: true)
         mediaDirectory = directory.appendingPathComponent("Media", isDirectory: true)
@@ -29,7 +32,9 @@ final class TransformedExportFixture {
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         container = try ModelContainer(for: schema, configurations: [configuration])
         context = container.mainContext
-        service = LibraryService(mediaDirectoryURL: mediaDirectory, artworkLoader: artworkLoader)
+        service = LibraryService(
+            mediaDirectoryURL: mediaDirectory, artworkLoader: artworkLoader, importFileOperations: importFileOperations
+        )
         source = MediaItem(
             title: "Original",
             artist: "Artist",
