@@ -56,6 +56,10 @@ final class LibraryService {
     /// the Music pre-check's limit; work left blocked by cancelled imports keeps its slot, so cancel-and-retry
     /// cycles on a stalled file provider cannot pile up blocked workers.
     @ObservationIgnored nonisolated let importFileLimiter = FileSystemWorkLimiter(limit: 2)
+    /// Shared by the bookmarks of transformed copies and Music library playback files. A bookmark left blocked by
+    /// a cancelled caller keeps its slot until it finishes, so cancel-and-retry cycles cannot pile up blocked
+    /// workers. Kept apart from `importFileLimiter` so a stalled import cannot hold up playback.
+    @ObservationIgnored nonisolated let managedFileBookmarkLimiter = FileSystemWorkLimiter(limit: 2)
     @ObservationIgnored var lyricsLoadRequests: [UUID: UUID] = [:]
     @ObservationIgnored var importTask: (id: UUID, task: Task<MediaImportSummary, Never>)?
     @ObservationIgnored var latestImportInsertion: (batch: UUID, item: MediaItem)?
