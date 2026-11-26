@@ -9,6 +9,26 @@ struct ParsedLyrics {
         var text: String
         var timestamp: TimeInterval?
     }
+
+    /// Returns the last timed line at or before `time`.
+    ///
+    /// `LyricsParser.parse` places timed lines first in ascending order and untimed lines after them,
+    /// so a binary search over that order selects the same line as scanning from the end: the last of
+    /// several lines sharing a timestamp, and never an untimed line.
+    func activeLineIndex(at time: TimeInterval) -> Int? {
+        guard time.isNaN == false else { return nil }
+        var lower = lines.startIndex
+        var upper = lines.endIndex
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if let timestamp = lines[middle].timestamp, timestamp <= time {
+                lower = middle + 1
+            } else {
+                upper = middle
+            }
+        }
+        return lower > lines.startIndex ? lower - 1 : nil
+    }
 }
 
 enum LyricsParser {
@@ -90,6 +110,8 @@ enum LyricsParser {
         } else {
             fraction = 0
         }
-        return minutes * 60 + seconds + fraction
+        let time = minutes * 60 + seconds + fraction
+        // `Double` accepts "nan" and "inf", which cannot be ordered against real timestamps.
+        return time.isFinite ? time : nil
     }
 }
