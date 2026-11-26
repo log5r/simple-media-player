@@ -169,11 +169,11 @@ struct MusicLibraryImportTests {
     @Test func startupCleanupLeavesDirectoriesCreatedAfterwardsAlone() async throws {
         let fixture = try MusicLibraryFixture()
         defer { fixture.remove() }
-        let leftover = try MusicLibraryTemporaryFiles.makeDirectory(for: .playback, in: fixture.temporaryDirectory)
+        let leftover = try await fixture.makeTemporaryDirectory(for: .playback)
         try Data("stale".utf8).write(to: leftover.appendingPathComponent("stale.wav"))
 
         let cleanup = MusicLibraryTemporaryFiles.removeLeftoversInBackground(in: fixture.temporaryDirectory)
-        let fresh = try MusicLibraryTemporaryFiles.makeDirectory(for: .importStaging, in: fixture.temporaryDirectory)
+        let fresh = try await fixture.makeTemporaryDirectory(for: .importStaging)
         try Data("live".utf8).write(to: fresh.appendingPathComponent("live.wav"))
         await cleanup.value
 
@@ -354,6 +354,10 @@ final class MusicLibraryFixture {
 
     func items() throws -> [MediaItem] {
         try context.fetch(FetchDescriptor<MediaItem>())
+    }
+
+    func makeTemporaryDirectory(for kind: MusicLibraryTemporaryFiles.Kind) async throws -> URL {
+        try await MusicLibraryTemporaryFiles.makeDirectory(for: kind, in: temporaryDirectory)
     }
 
     func managedFiles() throws -> [String] {

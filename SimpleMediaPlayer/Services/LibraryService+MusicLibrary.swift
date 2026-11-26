@@ -62,10 +62,20 @@ extension LibraryService {
         let preparation = beginMusicLibraryPreparation(.importing, totalCount: tracks.count)
         let directory: URL
         do {
-            directory = try MusicLibraryTemporaryFiles.makeDirectory(for: .importStaging, in: temporaryDirectoryURL)
+            directory = try await MusicLibraryTemporaryFiles.makeDirectory(
+                for: .importStaging, in: temporaryDirectoryURL
+            )
         } catch {
-            _ = finishMusicLibraryPreparation(preparation)
+            guard finishMusicLibraryPreparation(preparation) else {
+                return preparation.termination == .replaced ? nil : MusicLibraryImportResult(wasCancelled: true)
+            }
             return MusicLibraryImportResult(messages: [error.localizedDescription])
+        }
+        // The panel can be cancelled or replaced while the directory is created, before a task is attached.
+        guard preparation.termination == nil else {
+            _ = finishMusicLibraryPreparation(preparation)
+            MusicLibraryTemporaryFiles.removeDirectoryInBackground(directory)
+            return preparation.termination == .replaced ? nil : MusicLibraryImportResult(wasCancelled: true)
         }
         // The pre-check runs in the attached task so cancelling the panel also stops its file probes.
         let task = Task {
@@ -109,8 +119,9 @@ private extension LibraryService {
 
     func makeTransientSession(for track: MusicLibraryTrack) async throws -> TransientPlaybackSession {
         let assetURL = try track.validatedAssetURL()
-        let directory = try MusicLibraryTemporaryFiles.makeDirectory(for: .playback, in: temporaryDirectoryURL)
+        let directory = try await MusicLibraryTemporaryFiles.makeDirectory(for: .playback, in: temporaryDirectoryURL)
         do {
+            // `export` checks cancellation first, so a cancellation during the creation removes the directory.
             let output = try await MusicLibraryTrackExporter.export(
                 assetURL: assetURL, to: directory, baseName: track.exportBaseName
             )
