@@ -36,7 +36,9 @@ In a Closed landscape playlist, the system may collapse the tabs into the curren
 
 Keyboard playback commands depend on the providers in the focused scene, not on the device idiom. Compact and expanded layouts provide `AppMenuActions`. When the iOS player scene has no layout-specific provider, as in the Duo portrait player, Space and Command-Left/Right Arrow control the player directly. On macOS these commands stay disabled without a provider.
 
-In the compact layout, Command+Option+E shows or hides the library's equalizer sheet. Library sheets cannot present over the deck, so while the deck is shown, the command shows or hides the deck's equalizer sheet instead. While another deck sheet, popover, or full-screen video is shown, the command discards the request and does nothing.
+In the compact layout, Command+Option+E shows or hides the library's equalizer sheet while the deck is closed. While the deck is shown, its dedicated scene command takes precedence. After changing from Closed to Open landscape, Open portrait, or Book, the command continues to show or hide the same deck sheet, and Show Equalizer / Hide Equalizer follows that sheet's visibility. It preserves the library's equalizer sheet state and its saved inline panel preference ([#146](https://github.com/log5r/simple-media-player/issues/146)).
+
+While another deck sheet, popover, or full-screen video is shown, an equalizer opening request is discarded. A command captured before the deck closed also cannot change the library state afterward.
 
 ## State and Ownership
 
@@ -62,6 +64,25 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
   -clonedSourcePackagesDirPath .build/SourcePackages \
   -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
 ```
+
+`DuoDeckEqualizerTransitionUITests` has three cases that keep the deck's equalizer open while changing from Closed to Open landscape, Open portrait, and Book portrait. This command leaves posture changes and key input to the operator in Device Hub. Environment variables prefixed with `TEST_RUNNER_` reach the test runner as `DUO_INTERACTIVE_POSE_TESTS` and `DUO_INTERACTIVE_KEYBOARD_TESTS`. Omit the keyboard variable when XCTest can deliver key events.
+
+```sh
+TEST_RUNNER_DUO_INTERACTIVE_POSE_TESTS=1 \
+TEST_RUNNER_DUO_INTERACTIVE_KEYBOARD_TESTS=1 \
+./scripts/ci-xcodebuild.sh duo-deck-equalizer-transitions \
+  -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
+  -destination 'platform=iOS Simulator,name=iPhone Duo' \
+  -derivedDataPath .build/DerivedData-ios \
+  -clonedSourcePackagesDirPath .build/SourcePackages \
+  -skipPackagePluginValidation -parallel-testing-enabled NO \
+  -only-testing:SimpleMediaPlayerUITests/DuoDeckEqualizerTransitionUITests \
+  CODE_SIGNING_ALLOWED=NO test
+```
+
+For each case, select Closed portrait in Device Hub when `DuoPostureStep Closed portrait` appears. The test opens the deck. At `DuoKeyboardStep`, enable Capture Keyboard and press Command+Option+E once. Follow the next `DuoPostureStep` to change to the requested posture with the sheet still open, then press the same shortcut once at each following `DuoKeyboardStep`.
+
+The tests check sheet preservation and toggling, the Show/Hide title obtained from the focused command, the library sheet remaining hidden, and preservation of the saved panel preference. They use `--ui-testing-inline-equalizer` to enable the persisted preference before checking it, without a launch-argument preference override or forced compact layout. Also inspect the actual menu title in each posture before and after toggling the sheet.
 
 - Unit suites: LibraryLayoutPolicyTests, DuoPortraitPlayerLayoutTests, LibraryBrowsingStateTests, AdaptiveBottomPanelTests, PlayerPlaybackGenerationTests, SharedExportSessionTests, and iOS IPhoneShareSheetTests. They verify boundary sizes, the portrait visual rows, reserved regions, deletion, playback reloads, and activity-controller recreation.
 - Run `ClosedDuoLandscapeUITests` after selecting Closed landscape (678 × 466pt) in Device Hub. Its four cases check English and Japanese toolbars, Filters with the search keyboard shown, and controls on the left beside the LED on the right without scrolling. They measure the rendered LED plate as well as its assigned frame, check that metadata and the spectrum fit inside the plate, and check for overlap with controls. For the search case, disable the hardware keyboard connection and use Device > Keyboard > Toggle Software Keyboard if needed to show the software keyboard. The suite uses neither synthetic rotation nor `--ui-testing-compact-layout` and skips when the actual posture and dimensions do not match.

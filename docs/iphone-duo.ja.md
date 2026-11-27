@@ -36,7 +36,9 @@ Closedの横向きのプレイリストでは、戻る・Add Tracks・overflow�
 
 再生のキーボードコマンドは、端末のidiomではなく、フォーカス中のシーンにある操作の提供元で判断します。compactと展開の各レイアウトは`AppMenuActions`を提供します。Duoの縦向き再生画面のように、iOSの再生シーンにレイアウト固有の提供元がない場合は、SpaceとCommand+左右矢印キーでplayerを直接操作します。macOSでは提供元がなければ、これらのコマンドは無効のままです。
 
-compactのレイアウトでは、Command+Option+Eでライブラリのイコライザーのシートを開閉します。ライブラリのシートはデッキの上に表示できないため、デッキの表示中はデッキのイコライザーのシートを開閉します。デッキでほかのシート、ポップオーバー、全画面の動画を表示している間は、要求を破棄して何もしません。
+compactのレイアウトでデッキを表示していない間は、Command+Option+Eでライブラリのイコライザーのシートを開閉します。デッキの表示中は、シーンが提供するデッキ専用のイコライザーコマンドを優先します。ClosedからOpenの横向き・縦向きやBookへ切り替えても、同じデッキのシートを開閉し、メニューのShow Equalizer／Hide Equalizerもデッキの表示状態に従います。ライブラリのイコライザーのシートと、保存済みのインラインパネルの設定は変更しません（[#146](https://github.com/log5r/simple-media-player/issues/146)）。
+
+デッキでほかのシート、ポップオーバー、全画面の動画を表示している間は、イコライザーを開く要求を破棄して何もしません。デッキを閉じた後に、閉じる前のコマンドがライブラリの状態を変更することも防ぎます。
 
 ## 状態と処理の所有者
 
@@ -62,6 +64,25 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
   -clonedSourcePackagesDirPath .build/SourcePackages \
   -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
 ```
+
+`DuoDeckEqualizerTransitionUITests`は、Closedで開いたデッキのイコライザーを表示したまま、Openの横向き・Openの縦向き・Bookの縦向きへ切り替える3件のテストです。次の例では、姿勢変更とキー入力をDevice Hubで行います。`TEST_RUNNER_`を付けた環境変数は、テストrunner内では`DUO_INTERACTIVE_POSE_TESTS`と`DUO_INTERACTIVE_KEYBOARD_TESTS`として渡されます。XCTestのキー入力が届く環境では、キーボード用の変数を省略できます。
+
+```sh
+TEST_RUNNER_DUO_INTERACTIVE_POSE_TESTS=1 \
+TEST_RUNNER_DUO_INTERACTIVE_KEYBOARD_TESTS=1 \
+./scripts/ci-xcodebuild.sh duo-deck-equalizer-transitions \
+  -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
+  -destination 'platform=iOS Simulator,name=iPhone Duo' \
+  -derivedDataPath .build/DerivedData-ios \
+  -clonedSourcePackagesDirPath .build/SourcePackages \
+  -skipPackagePluginValidation -parallel-testing-enabled NO \
+  -only-testing:SimpleMediaPlayerUITests/DuoDeckEqualizerTransitionUITests \
+  CODE_SIGNING_ALLOWED=NO test
+```
+
+各テストで、ログに`DuoPostureStep Closed portrait`が出たらDevice HubでClosedの縦向きを選びます。テストがデッキを開き、`DuoKeyboardStep`が出たら「Capture Keyboard」を有効にしてCommand+Option+Eを1回押します。続く`DuoPostureStep`に従い、シートを開いたまま指定の姿勢へ切り替えます。以後も`DuoKeyboardStep`ごとに同じキーを1回押します。
+
+テストはシートの維持と開閉、フォーカス中のコマンドから得たShow／Hideの文言、ライブラリのシートが非表示のままであること、保存済みのパネル設定が変わらないことを確認します。パネルの設定は`--ui-testing-inline-equalizer`で保存値を有効にしてから確認し、起動引数による値の固定や強制compact表示は使いません。実際のメニューの表示も、各姿勢でシートの開閉前後に目視で確認します。
 
 - 単体テスト: LibraryLayoutPolicyTests、DuoPortraitPlayerLayoutTests、LibraryBrowsingStateTests、AdaptiveBottomPanelTests、PlayerPlaybackGenerationTests、SharedExportSessionTests、iOSのIPhoneShareSheetTests。境界サイズ、縦向きの表示部の段組、予約領域、削除、曲の再読み込み、共有コントローラーの再生成を確認します。
 - `ClosedDuoLandscapeUITests` は、Device Hub で Closed の横向き（678 × 466pt）を選んでから実行します。4件のケースで、日英のツールバー、検索キーボード表示中の Filters、左の操作部と右の LED がスクロールなしで収まることを確認します。割り当てた LED の枠だけでなく、描画した板の寸法、情報とスペクトラムが板の内側に収まること、操作部との重なりも調べます。検索のケースではハードウェアキーボード接続を無効にし、必要なら Device > Keyboard > Toggle Software Keyboard でソフトウェアキーボードを表示します。合成回転や `--ui-testing-compact-layout` は使わず、実際の姿勢と寸法が合わない場合は skip します。
