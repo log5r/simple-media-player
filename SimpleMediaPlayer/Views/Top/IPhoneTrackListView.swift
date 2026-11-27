@@ -33,7 +33,8 @@ struct IPhoneTrackListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if playlist != nil {
-                ToolbarItem(placement: .topBarTrailing) {
+                // Keep the primary playlist action outside the Duo's vertical toolbar overflow.
+                ToolbarItem(placement: .topBarPinnedTrailing) {
                     Button("Add Tracks", systemImage: "plus") {
                         if let playlist { actions.showAddTracks(playlist) }
                     }

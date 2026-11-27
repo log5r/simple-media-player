@@ -67,6 +67,9 @@ struct IPhoneDeckArrangementView<Display: View, Controls: View>: View {
             }
             .frame(width: widths.controls)
             display(height, height < IPhoneDeckLayout.regularDisplayHeight)
+                #if DEBUG
+                .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckRenderedDisplay"))
+                #endif
                 .frame(width: widths.display)
                 #if DEBUG
                 .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckCompactDisplay"))

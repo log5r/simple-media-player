@@ -33,21 +33,14 @@ struct PhoneLEDContent: View {
                 )
                 .frame(height: 20)
             }
-            HStack(spacing: 8) {
-                PlaybackTimeView(
-                    player: player, color: palette.primaryColor,
-                    scale: layout == .phoneDeck ? 1.5 : 0.7,
-                    shadowOpacity: palette.timeShadowOpacity, shadowRadius: palette.timeShadowRadius
-                )
-                Spacer(minLength: 0)
-                if layout == .phoneDeck {
-                    AuxiliaryLEDColumns(player: player, palette: palette, informationScale: 1)
-                } else {
-                    if player.isVideoMode == false && player.pitchSemitones != 0 {
-                        Text("KEY " + PitchSpeedTextFormatter.pitch(player.pitchSemitones))
-                            .font(.custom("Dotrice-Regular", size: 9))
-                    }
+            if layout == .phoneDeck {
+                // A narrow LED column must fit both the fixed-width clock and the format information.
+                ViewThatFits(in: .horizontal) {
+                    playbackInformation(timeScale: 1.5)
+                    playbackInformation(timeScale: 1)
                 }
+            } else {
+                playbackInformation(timeScale: 0.7)
             }
             if layout == .phoneDeck {
                 Spacer(minLength: 0)
@@ -64,6 +57,22 @@ struct PhoneLEDContent: View {
         #if DEBUG && os(iOS)
         .modifier(DuoPanelRegionDiagnostics(regionID: "phoneDeckLEDContent"))
         #endif
+    }
+
+    private func playbackInformation(timeScale: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            PlaybackTimeView(
+                player: player, color: palette.primaryColor, scale: timeScale,
+                shadowOpacity: palette.timeShadowOpacity, shadowRadius: palette.timeShadowRadius
+            )
+            Spacer(minLength: 0)
+            if layout == .phoneDeck {
+                AuxiliaryLEDColumns(player: player, palette: palette, informationScale: 1)
+            } else if player.isVideoMode == false && player.pitchSemitones != 0 {
+                Text("KEY " + PitchSpeedTextFormatter.pitch(player.pitchSemitones))
+                    .font(.custom("Dotrice-Regular", size: 9))
+            }
+        }
     }
 
     private var trackNumber: String {
