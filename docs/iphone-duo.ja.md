@@ -30,7 +30,9 @@ iPhoneのデッキの再生操作・ランプ・ミュート・出力先・ペ�
 
 ## ツールバーとキーボードコマンド
 
-iOS 27.1のClosedの外側画面では、ナビゲーションバーとタブバーを右端に縦に並べます。ツールバーの項目は縦に並べられる標準の`ToolbarItem`のままにし、`HStack`でまとめず、ボタンに固定の寸法やアイコンだけのラベルスタイルを指定しません。ライブラリのルート、曲一覧、デッキの補助的な操作は`ToolbarOverflowMenu`に置き、省略記号のボタンはシステムのoverflowボタンだけにします。Filters、Add Tracks、Done、Close、Edit Lyricsには`visibilityPriority(.high)`を指定し、領域が足りない場合もoverflowへ移さないようにします。ほかの項目は既定の順序に従います。Doneは文字だけの項目なので横に残る場合があります。ツールバーの項目がCloseだけのシート（設定、再生の調整、イコライザー）は、iOS 27.1で`toolbarVerticalBehavior(.disabled)`を指定して横のバーを保ちます。狭い画面でボタン1つのために縦の列を使わないためです。
+iOS 27.1のClosedの外側画面では、ナビゲーションバーとタブバーを右端に縦に並べます。ツールバーの項目は縦に並べられる標準の`ToolbarItem`のままにし、`HStack`でまとめず、ボタンに固定の寸法やアイコンだけのラベルスタイルを指定しません。ライブラリのルート、曲一覧、デッキの補助的な操作は`ToolbarOverflowMenu`に置き、省略記号のボタンはシステムのoverflowボタンだけにします。Filters、Add Tracks、Done、Close、Edit Lyricsには`visibilityPriority(.high)`を指定し、ほかの項目より表示を優先します。Add Tracksにはさらに`topBarPinnedTrailing`を指定し、検索中に領域が足りない場合を除いて表示を保ちます。ほかの項目は既定の順序に従います。Doneは文字だけの項目なので横に残る場合があります。ツールバーの項目がCloseだけのシート（設定、再生の調整、イコライザー）は、iOS 27.1で`toolbarVerticalBehavior(.disabled)`を指定して横のバーを保ちます。狭い画面でボタン1つのために縦の列を使わないためです。
+
+Closedの横向きのプレイリストでは、戻る・Add Tracks・overflowを表示するため、タブが現在のPlaylistsのアイコン1つにまとまることがあります。そのアイコンから標準の選択メニューを開き、Searchなどへ移動できます。
 
 再生のキーボードコマンドは、端末のidiomではなく、フォーカス中のシーンにある操作の提供元で判断します。compactと展開の各レイアウトは`AppMenuActions`を提供します。Duoの縦向き再生画面のように、iOSの再生シーンにレイアウト固有の提供元がない場合は、SpaceとCommand+左右矢印キーでplayerを直接操作します。macOSでは提供元がなければ、これらのコマンドは無効のままです。
 
@@ -62,6 +64,7 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
 ```
 
 - 単体テスト: LibraryLayoutPolicyTests、DuoPortraitPlayerLayoutTests、LibraryBrowsingStateTests、AdaptiveBottomPanelTests、PlayerPlaybackGenerationTests、SharedExportSessionTests、iOSのIPhoneShareSheetTests。境界サイズ、縦向きの表示部の段組、予約領域、削除、曲の再読み込み、共有コントローラーの再生成を確認します。
+- `ClosedDuoLandscapeUITests` は、Device Hub で Closed の横向き（678 × 466pt）を選んでから実行します。4件のケースで、日英のツールバー、検索キーボード表示中の Filters、左の操作部と右の LED がスクロールなしで収まることを確認します。検索のケースではハードウェアキーボード接続を無効にし、必要なら Device > Keyboard > Toggle Software Keyboard でソフトウェアキーボードを表示します。合成回転や `--ui-testing-compact-layout` は使わず、実際の姿勢と寸法が合わない場合は skip します。
 - DuoPlayerDesignUITestsは、各ケースの実際の姿勢と向きをDevice Hubで選んでから実行します。`testLandscapeLEDConsumesRightHalf`はOpenの横向き、`testPortraitVisualsStayAboveControlsAndLibraryReturns`はOpenまたはBookの縦向きで実行します。LEDと操作部の配分、44ptの操作領域、Library・Settingsの表示と終了を挟んだ再生継続を確認します。領域の配分はGeometryReaderの診断値を使い、rootの寸法・安全領域を画面座標に対応付けて、Bookでも表示部と操作部が中央で隙間なく接することを確認します。向きや座標の条件が合わない場合、またはactiveなocclusionがある場合はskipします。`testPartiallyFoldedPortraitDoesNotReserveACenterGap`は半折りの縦向き専用で、中央の配分とシークバーの操作可否を確認します。`testPartiallyFoldedPortraitLibraryAndSettingsStayBelowTheFold`も半折りの縦向き専用で、ライブラリが分割領域の下端から画面の下端までを占め、LEDがその上に残ること、設定シートのCloseが分割領域より下にあることを確認します。`XCUIDevice.orientation`は変更しません。向きの通知だけではDuoの実画面が回転しない場合があるためです。起動時にClassicとLED左配置を指定し、展開したDuoのデザインが優先されることも確認します。
 - `DuoPlayerDesignUITests/testLibrarySurvivesRealRotationFromPortrait`はOpenまたはBookの縦向きから起動し、xcodebuildの環境に`TEST_RUNNER_DUO_INTERACTIVE_ORIENTATION_TESTS=1`を指定して実行します。ログの`DuoOrientationStep`に従い、Device Hubで実画面を縦向き→横向き→縦向きに回転します。横向きのライブラリと、縦向きに戻ってLibraryを開いた後の一覧にfixtureの曲が表示され、再生中の項目・キュー・世代が変わらないことを確認します。対話式の回転を有効にしない場合はskipします。
 - `DuoPlayerDesignUITests/testPortraitPlayerSpaceTogglesPlayback` は Open または Book の縦向きで実行します。Xcode 27.2・iOS 27.2 の Duo Simulator では、XCTest の `typeKey` で送った Space が再生画面に届かなかったため、Device Hub から入力します。`xcodebuild` の環境に `TEST_RUNNER_DUO_INTERACTIVE_KEYBOARD_TESTS=1` を指定し、`-parallel-testing-enabled NO` で選んだ端末を使います。Device Hub に縦向きの再生画面が見えていることを確かめ、「Capture Keyboard」を有効にします。ログに `DuoKeyboardStep` が出るたびに、修飾キーなしの Space を1回押します。テストは同じ曲が一時停止してから再開することを確認します。
