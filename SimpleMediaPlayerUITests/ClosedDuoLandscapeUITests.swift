@@ -15,22 +15,31 @@ final class ClosedDuoLandscapeUITests: XCTestCase {
         let display = try regionFrame("phoneDeckCompactDisplayMetrics", in: app)
         let pages = try regionFrame("phoneDeckPageSwitcherMetrics", in: app)
         let seek = try regionFrame("phoneDeckSeekMetrics", in: app)
+        let content = try regionFrame("phoneDeckLEDContentMetrics", in: app)
+        let spectrum = try regionFrame("phoneDeckSpectrumMetrics", in: app)
+        let rendered = try regionFrame("phoneDeckRenderedDisplayMetrics", in: app)
+        attachScreenshot(in: app, name: "Closed landscape Display before geometry checks")
         XCTAssertTrue(app.frame.contains(display), "The LED plate must be visible without scrolling")
+        assertLEDRegionsFit(display: display, rendered: rendered, content: content, spectrum: spectrum)
         XCTAssertGreaterThan(display.width, 200)
         XCTAssertGreaterThan(display.height, 200)
         XCTAssertLessThanOrEqual(display.maxY, pages.minY)
         XCTAssertLessThan(seek.maxX, display.minX, "The seek row belongs to the left controls column")
+        XCTAssertFalse(seek.intersects(rendered), "The rendered LED plate must not cover the seek row")
         for identifier in ["phoneStop", "phonePrevious", "phonePlayPause", "phoneNext", "phoneMute"] {
             let button = app.buttons[identifier]
             assertVisible(button, in: app)
             XCTAssertGreaterThanOrEqual(button.frame.width, 44)
             XCTAssertGreaterThanOrEqual(button.frame.height, 44)
             XCTAssertLessThan(button.frame.maxX, display.minX, identifier)
+            XCTAssertFalse(button.frame.intersects(content), "LED content must not cover \(identifier)")
+            XCTAssertFalse(button.frame.intersects(rendered), "The rendered LED plate must not cover \(identifier)")
             XCTAssertLessThanOrEqual(button.frame.maxY, pages.minY, identifier)
         }
         for control in [app.sliders["Playback Position"], duoDiagnostic("volumeLevel", in: app)] {
             assertVisible(control, in: app)
             XCTAssertLessThan(control.frame.maxX, display.minX, control.identifier)
+            XCTAssertFalse(control.frame.intersects(rendered), "The rendered LED plate must not cover \(control.label)")
             XCTAssertLessThanOrEqual(control.frame.maxY, pages.minY, control.identifier)
         }
         let route = duoDiagnostic("phoneRoutePicker", in: app)
@@ -185,6 +194,18 @@ final class ClosedDuoLandscapeUITests: XCTestCase {
         XCTAssertTrue(element.isHittable, element.label)
         XCTAssertFalse(element.frame.isEmpty, element.label)
         XCTAssertTrue(app.frame.contains(element.frame), element.label)
+    }
+
+    private func assertLEDRegionsFit(display: CGRect, rendered: CGRect, content: CGRect, spectrum: CGRect) {
+        let fitsColumn = "The rendered LED plate must fit its assigned column"
+        XCTAssertEqual(rendered.minX, display.minX, accuracy: 1, fitsColumn)
+        XCTAssertEqual(rendered.minY, display.minY, accuracy: 1, fitsColumn)
+        XCTAssertEqual(rendered.width, display.width, accuracy: 1, fitsColumn)
+        XCTAssertEqual(rendered.height, display.height, accuracy: 1, fitsColumn)
+        XCTAssertTrue(display.contains(content), "LED metadata must fit inside the assigned plate without clipping")
+        XCTAssertTrue(display.contains(spectrum), "The spectrum must fit inside the assigned plate without clipping")
+        XCTAssertGreaterThanOrEqual(spectrum.height, 44, "The spectrum must stay visible")
+        XCTAssertGreaterThan(spectrum.width, 100, "The spectrum must stay visible")
     }
 
     @MainActor private func tapTab(_ title: String, in app: XCUIApplication) {
