@@ -5,7 +5,20 @@ import XCTest
 
 /// Enable DUO_INTERACTIVE_POSE_TESTS=1 and follow DuoPostureStep in Device Hub.
 /// DUO_INTERACTIVE_KEYBOARD_TESTS=1 also leaves Command+Option+E to the operator.
+/// DUO_INTERACTIVE_GATE_TOKEN pauses AX queries until the controller creates each printed ready file.
 final class DuoDeckEqualizerTransitionUITests: XCTestCase {
+    private struct PlaybackIdentity: Equatable {
+        let itemID: String
+        let queueIDs: [String]
+        let generation: UInt64
+        let isPaused: Bool
+    }
+
+    private var playbackBeforeFolding: PlaybackIdentity?
+    private var usesCheckpointGate: Bool {
+        ProcessInfo.processInfo.environment["DUO_INTERACTIVE_GATE_TOKEN"] != nil
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         try XCTSkipUnless(ProcessInfo.processInfo.environment["DUO_INTERACTIVE_POSE_TESTS"] == "1",
@@ -28,7 +41,7 @@ final class DuoDeckEqualizerTransitionUITests: XCTestCase {
     @MainActor private func verifyTransition(to posture: String, portrait: Bool, folded: Bool) throws {
         let app = launch()
         let layout = duoDiagnostic("duoLayoutMetrics", in: app)
-        checkpoint("Closed portrait")
+        try checkpoint("Closed portrait")
         waitForMetrics(layout, timeout: 120, consecutiveMatches: 3) { values in
             let insets = values["safeArea"] as? [String: Double] ?? [:]
             return values["layout"] as? String == "compact" && values["portrait"] as? Bool == true
@@ -38,9 +51,10 @@ final class DuoDeckEqualizerTransitionUITests: XCTestCase {
         try assertEqualizer(isPresented: false, in: app)
         toggleEqualizer(in: app, expectingPresented: true)
         try assertEqualizer(isPresented: true, in: app)
+        playbackBeforeFolding = try playbackIdentity(in: app)
 
         // Keep the same sheet open across the size-class and posture change.
-        checkpoint(posture + " with deck equalizer open")
+        try checkpoint(posture + " with deck equalizer open")
         let diagnostics = duoDiagnostic("duoEqualizerMetrics", in: app)
         waitForMetrics(diagnostics, timeout: 120, consecutiveMatches: 3) { values in
             values["layout"] as? String == "expanded" && values["portrait"] as? Bool == portrait
@@ -49,12 +63,17 @@ final class DuoDeckEqualizerTransitionUITests: XCTestCase {
         try assertEqualizer(isPresented: true, in: app)
         try assertPosture(portrait: portrait, folded: folded, in: app)
         attachDiagnostics(in: app, name: posture + " preserved equalizer")
+        try inspectMenuIfRequested(isPresented: true, in: app, posture: posture, portrait: portrait, folded: folded)
 
         // Both hiding the inherited sheet and opening another sheet must still target the deck.
-        for isPresented in [false, true, false] {
+        for (index, isPresented) in [false, true, false].enumerated() {
             toggleEqualizer(in: app, expectingPresented: isPresented)
             try assertEqualizer(isPresented: isPresented, in: app)
             try assertPosture(portrait: portrait, folded: folded, in: app)
+            if index == 0 {
+                try inspectMenuIfRequested(isPresented: false, in: app,
+                                          posture: posture, portrait: portrait, folded: folded)
+            }
         }
         attachDiagnostics(in: app, name: posture + " after keyboard toggles")
         let close = app.buttons["phoneDeckClose"]
@@ -79,7 +98,7 @@ final class DuoDeckEqualizerTransitionUITests: XCTestCase {
             "-showLyricsPanel", "NO"
         ]
         app.launch()
-        // The simulator can drop the first synthesized key event after launch.
+        // Prepare the simulator's synthesized input target after launch.
         app.typeKey(.F19, modifierFlags: [])
         return app
     }
@@ -95,6 +114,12 @@ final class DuoDeckEqualizerTransitionUITests: XCTestCase {
         XCTAssertTrue(dock.waitForExistence(timeout: 10))
         dock.tap()
         XCTAssertTrue(app.buttons["phoneDeckClose"].waitForExistence(timeout: 5))
+        let playback = duoDiagnostic("duoPlaybackMetrics", in: app)
+        waitForMetrics(playback, timeout: 10) { $0["playing"] as? Bool == true }
+        let pause = app.buttons["phonePlayPause"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 5))
+        pause.tap()
+        waitForMetrics(playback, timeout: 10) { $0["paused"] as? Bool == true }
     }
 
     @MainActor private func toggleEqualizer(in app: XCUIApplication, expectingPresented: Bool) {
@@ -103,6 +128,8 @@ final class DuoDeckEqualizerTransitionUITests: XCTestCase {
             print("DuoKeyboardStep Press Command+Option+E to \(expectingPresented ? "show" : "hide") deck equalizer")
             fflush(nil)
         } else {
+            // Prepare synthesized input after a deck or display change; send the command itself once.
+            app.typeKey(.F19, modifierFlags: [])
             app.typeKey("e", modifierFlags: [.command, .option])
         }
         waitForMetrics(duoDiagnostic("duoEqualizerMetrics", in: app), timeout: interactive ? 120 : 10) { values in
@@ -135,11 +162,57 @@ final class DuoDeckEqualizerTransitionUITests: XCTestCase {
         XCTAssertEqual(values["layout"] as? String, "expanded")
         XCTAssertEqual(values["portrait"] as? Bool, portrait)
         XCTAssertEqual(values["hasActiveDivision"] as? Bool, folded)
+        let expected = try XCTUnwrap(playbackBeforeFolding)
+        XCTAssertEqual(try playbackIdentity(in: app), expected, "Folding and EQ commands must keep the same playback.")
     }
 
-    private func checkpoint(_ posture: String) {
-        print("DuoPostureStep \(posture)")
+    @MainActor private func playbackIdentity(in app: XCUIApplication) throws -> PlaybackIdentity {
+        let values = try metrics(duoDiagnostic("duoPlaybackMetrics", in: app))
+        let itemID = try XCTUnwrap(values["itemID"] as? String)
+        let queueIDs = try XCTUnwrap(values["queueIDs"] as? [String])
+        XCTAssertFalse(itemID.isEmpty, "The deck must have a current item before folding.")
+        XCTAssertTrue(queueIDs.contains(itemID), "The playback queue must contain the current item.")
+        return PlaybackIdentity(
+            itemID: itemID, queueIDs: queueIDs,
+            generation: try XCTUnwrap(values["generation"] as? NSNumber).uint64Value,
+            isPaused: try XCTUnwrap(values["paused"] as? Bool)
+        )
+    }
+
+    @MainActor private func inspectMenuIfRequested(
+        isPresented: Bool, in app: XCUIApplication, posture: String, portrait: Bool, folded: Bool
+    ) throws {
+        guard usesCheckpointGate else { return }
+        let title = isPresented ? "Hide Equalizer" : "Show Equalizer"
+        try checkpoint("Inspect \(title) in \(posture)", marker: "DuoMenuStep")
+        try assertEqualizer(isPresented: isPresented, in: app)
+        try assertPosture(portrait: portrait, folded: folded, in: app)
+    }
+
+    private func checkpoint(_ step: String, marker: String = "DuoPostureStep") throws {
+        print("\(marker) \(step)")
         fflush(nil)
+        guard let token = ProcessInfo.processInfo.environment["DUO_INTERACTIVE_GATE_TOKEN"] else { return }
+        let safeToken = token.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? String($0) : "_" }
+            .joined().prefix(32)
+        let readyFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("duo-\(safeToken)-\(UUID().uuidString).ready")
+        let files = FileManager.default
+        if files.fileExists(atPath: readyFile.path) { try files.removeItem(at: readyFile) }
+        print("DuoInteractiveGate \(readyFile.path)")
+        fflush(nil)
+        // This waits in the test runner only. Simulator AX polling resumes after the host finishes its UI actions.
+        let deadline = ProcessInfo.processInfo.systemUptime + 600
+        while !files.fileExists(atPath: readyFile.path), ProcessInfo.processInfo.systemUptime < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        guard files.fileExists(atPath: readyFile.path) else {
+            throw NSError(domain: "DuoInteractiveGate", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "Timed out after 600 seconds waiting for the controller to create "
+                    + readyFile.path + " after completing: " + step
+            ])
+        }
+        try files.removeItem(at: readyFile)
     }
 
     @MainActor private func waitForMetrics(
