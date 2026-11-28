@@ -64,9 +64,9 @@ struct MainView: View {
     @State var musicAccessProblem: MusicLibraryAccessProblem?
     @State var musicResultMessage: String?
     @Environment(\.openURL) var openURL
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
     @State private var keyboardIndependentSize = CGSize.zero
     #endif
-
     @State var browsingState = LibraryBrowsingState()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
@@ -328,7 +328,7 @@ extension MainView {
         IPhoneLibraryView(
             items: items, playlists: playlists, player: player, libraryService: libraryService,
             isImporterPresented: $isImporterPresented,
-            showsDeck: $isPhoneDeckPresented,
+            showsDeck: phoneDeckPresentation,
             aacResultMessage: $aacVersionResultMessage,
             showsAACResult: $aacVersionResultPresented,
             canCreateAACVersion: canCreateAACVersion,
