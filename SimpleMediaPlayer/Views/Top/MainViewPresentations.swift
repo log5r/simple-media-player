@@ -3,6 +3,14 @@ import UniformTypeIdentifiers
 
 extension MainView {
     #if os(iOS)
+    var phoneDeckPresentation: Binding<Bool> {
+        guard reduceMotion else { return $isPhoneDeckPresented }
+        // The default full-screen cover slides even when Reduce Motion is on.
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        return $isPhoneDeckPresented.transaction(transaction)
+    }
+
     var deckEqualizerCommandContext: PhoneDeckEqualizerCommandContext {
         PhoneDeckEqualizerCommandContext(browsingState: browsingState, showsDeck: $isPhoneDeckPresented)
     }
@@ -46,17 +54,17 @@ extension MainView {
             renamePlaylist: renamePlaylist, deletePlaylist: deletePlaylist, deleteItem: deleteLibraryItem
         ))
         // A later deck must not reopen the equalizer sheet left open when this one closed.
-        .fullScreenCover(isPresented: $isPhoneDeckPresented, onDismiss: {
+        .fullScreenCover(isPresented: phoneDeckPresentation, onDismiss: {
             browsingState.showsDeckEqualizer = false
         }, content: {
             IPhoneDeckView(
                 player: player, libraryService: libraryService, listName: browsingState.playingListName,
                 canCreateAACVersion: canCreateAACVersion, createAACVersion: createAACVersion,
-                isPresented: $isPhoneDeckPresented, aacResultMessage: $aacVersionResultMessage,
+                isPresented: phoneDeckPresentation, aacResultMessage: $aacVersionResultMessage,
                 showsAACResult: $aacVersionResultPresented, showsEqualizer: $browsingState.showsDeckEqualizer,
                 showExpandedLibrary: {
                     showsPortraitLibrary = true
-                    isPhoneDeckPresented = false
+                    phoneDeckPresentation.wrappedValue = false
                 }
             )
         })
