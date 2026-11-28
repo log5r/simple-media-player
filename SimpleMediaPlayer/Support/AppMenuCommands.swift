@@ -87,6 +87,11 @@ struct AppMenuCommands: Commands {
 
     @FocusedValue(\.appMenuActions) private var actions
     @FocusedValue(\.allowsDirectPlaybackCommands) private var allowsDirectPlaybackCommands
+    @FocusedValue(\.deckEqualizerCommand) private var deckEqualizerCommand
+
+    private var equalizerCommand: EqualizerMenuCommand? {
+        .current(deck: deckEqualizerCommand, library: actions)
+    }
 
     private var usesDirectPlayback: Bool {
         allowsDirectPlaybackCommands == true
@@ -294,12 +299,12 @@ struct AppMenuCommands: Commands {
             .disabled(actions?.toggleLyrics.isEnabled != true)
 
             Button(
-                actions?.equalizerIsVisible == true ? L10n.string("Hide Equalizer") : L10n.string("Show Equalizer")
+                equalizerCommand?.isVisible == true ? L10n.string("Hide Equalizer") : L10n.string("Show Equalizer")
             ) {
-                actions?.toggleEqualizer()
+                equalizerCommand?.toggle()
             }
             .keyboardShortcut("e", modifiers: [.command, .option])
-            .disabled(actions?.toggleEqualizer.isEnabled != true)
+            .disabled(equalizerCommand?.toggle.isEnabled != true)
 
             Button(actions?.videoAreaIsVisible == true ? L10n.string("Back to List") : L10n.string("Show Video")) {
                 actions?.toggleVideoArea()

@@ -36,7 +36,9 @@ In a Closed landscape playlist, the system may collapse the tabs into the curren
 
 Keyboard playback commands depend on the providers in the focused scene, not on the device idiom. Compact and expanded layouts provide `AppMenuActions`. When the iOS player scene has no layout-specific provider, as in the Duo portrait player, Space and Command-Left/Right Arrow control the player directly. On macOS these commands stay disabled without a provider.
 
-In the compact layout, Command+Option+E shows or hides the library's equalizer sheet. Library sheets cannot present over the deck, so while the deck is shown, the command shows or hides the deck's equalizer sheet instead. While another deck sheet, popover, or full-screen video is shown, the command discards the request and does nothing.
+In the compact layout, Command+Option+E shows or hides the library's equalizer sheet while the deck is closed. While the deck is shown, its dedicated scene command takes precedence. After changing from Closed to Open landscape, Open portrait, or Book, the command continues to show or hide the same deck sheet, and Show Equalizer / Hide Equalizer follows that sheet's visibility. It preserves the library's equalizer sheet state and its saved inline panel preference ([#146](https://github.com/log5r/simple-media-player/issues/146)).
+
+While another deck sheet, popover, or full-screen video is shown, an equalizer opening request is discarded. A command captured before the deck closed also cannot change the library state afterward.
 
 ## State and Ownership
 
@@ -62,6 +64,35 @@ xcodebuild -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
   -clonedSourcePackagesDirPath .build/SourcePackages \
   -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
 ```
+
+`DuoDeckEqualizerTransitionUITests` has three cases that keep the deck's equalizer open while changing from Closed to Open landscape, Open portrait, and Book portrait. This command leaves posture changes and key input to the operator in Device Hub. Environment variables prefixed with `TEST_RUNNER_` reach the test runner as `DUO_INTERACTIVE_POSE_TESTS` and `DUO_INTERACTIVE_KEYBOARD_TESTS`. Omit the keyboard variable when XCTest can deliver key events. Synthetic input sends an unassigned F19 immediately before each Command+Option+E as an input preparation step. It sends Command+Option+E itself only once.
+
+```sh
+TEST_RUNNER_DUO_INTERACTIVE_POSE_TESTS=1 \
+TEST_RUNNER_DUO_INTERACTIVE_KEYBOARD_TESTS=1 \
+./scripts/ci-xcodebuild.sh duo-deck-equalizer-transitions \
+  -project SimpleMediaPlayer.xcodeproj -scheme SimpleMediaPlayer \
+  -destination 'platform=iOS Simulator,name=iPhone Duo' \
+  -derivedDataPath .build/DerivedData-ios \
+  -clonedSourcePackagesDirPath .build/SourcePackages \
+  -skipPackagePluginValidation -parallel-testing-enabled NO \
+  -only-testing:SimpleMediaPlayerUITests/DuoDeckEqualizerTransitionUITests \
+  CODE_SIGNING_ALLOWED=NO test
+```
+
+Before running, enable `Send keyboard shortcuts to device` in Device Hub's General settings and leave it enabled throughout the run; Command+Option+E must be forwarded to the app. Turn Capture Keyboard on for device key input and off for posture and orientation changes. For each case, select Closed portrait when `DuoPostureStep Closed portrait` appears. The test opens the deck. At each `DuoKeyboardStep`, turn Capture Keyboard on, press F19 once, then press Command+Option+E once. At the next `DuoPostureStep`, turn Capture Keyboard off and change to the requested posture with the sheet still open.
+
+Use Device Hub's native Rotate Right button or choose Portrait or the required Landscape entry under `Device > Orientation`. With shortcut forwarding enabled, Command+Right Arrow reaches the app and cannot be used as a Device Hub rotation shortcut. Prefer an explicit Orientation entry when the current orientation is uncertain, and confirm the actual screen and diagnostic values. If the display connection needs to be selected again, choose another device in Device Hub and then return to Duo, keeping the app and its sheet open.
+
+After an actual display rotation, restore the host's keyboard focus to the simulator display before sending device keys: turn Capture Keyboard on and click a noninteractive blank area inside the displayed app, such as the empty background of the Equalizer sheet. Then press F19 once followed by Command+Option+E once. This step concerns Device Hub's native keyboard focus, separate from the app's `FocusedValue`. In Open portrait, repeated key input with Capture Keyboard and shortcut forwarding enabled remained unhandled until this click restored focus.
+
+When a controller such as CUA operates Device Hub, optionally add `TEST_RUNNER_DUO_INTERACTIVE_GATE_TOKEN=issue146-validation` to the command above. At each posture checkpoint and the expanded deck's Hide/Show inspection checkpoints, the runner prints `DuoInteractiveGate <absolute path>` with a unique path under its temporary directory. While waiting, it checks only for that file and makes no Simulator accessibility (AX) queries. Menu inspection checkpoints are identified by `DuoMenuStep`. Before and after each menu inspection gate, the test compares the title resolved from `FocusedValue` with the actual sheet state, using the same `EqualizerMenuCommand.current` resolution as `AppMenuCommands`.
+
+After completing the actual posture change, any required display reconnection, or inspection of the command title, the controller acknowledges the checkpoint by running `touch '<printed absolute path>'` on the host. Release Command and close any manually displayed menu before acknowledging it. Use the newly printed path for each checkpoint; the test fails if the file is not created within 600 seconds. The normal checks of the actual sheet state and posture still run afterward. Without this variable, the existing manual operation and waiting procedure is unchanged.
+
+The tests check sheet preservation and toggling, the Show/Hide title resolved from `FocusedValue`, the library sheet remaining hidden, and preservation of the saved panel preference. They use `--ui-testing-inline-equalizer` to enable the persisted preference before checking it, without a launch-argument preference override or forced compact layout. The title diagnostic checks the app's command resolution; it does not inspect UIKit's registered key commands or the system-rendered menu. Where holding Command displays the native menu, visually check Show/Hide in each posture before and after toggling the sheet and record that result separately.
+
+After opening the deck, the test taps its actual pause control so the fixture cannot naturally advance to another track during a long menu inspection. It records the item ID, queue, playback generation, and paused state before folding, then checks that they remain the same after the posture change, each equalizer toggle, menu inspection, and deck dismissal.
 
 - Unit suites: LibraryLayoutPolicyTests, DuoPortraitPlayerLayoutTests, LibraryBrowsingStateTests, AdaptiveBottomPanelTests, PlayerPlaybackGenerationTests, SharedExportSessionTests, and iOS IPhoneShareSheetTests. They verify boundary sizes, the portrait visual rows, reserved regions, deletion, playback reloads, and activity-controller recreation.
 - Run `ClosedDuoLandscapeUITests` after selecting Closed landscape (678 × 466pt) in Device Hub. Its four cases check English and Japanese toolbars, Filters with the search keyboard shown, and controls on the left beside the LED on the right without scrolling. They measure the rendered LED plate as well as its assigned frame, check that metadata and the spectrum fit inside the plate, and check for overlap with controls. For the search case, disable the hardware keyboard connection and use Device > Keyboard > Toggle Software Keyboard if needed to show the software keyboard. The suite uses neither synthetic rotation nor `--ui-testing-compact-layout` and skips when the actual posture and dimensions do not match.

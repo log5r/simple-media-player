@@ -104,10 +104,12 @@ struct MainView: View {
                     layoutName: compact ? "compact" : "expanded", player: player, autoplayItems: items
                 ))
                 .modifier(DuoBrowsingDiagnostics(browsingState: browsingState))
+                .modifier(DuoEqualizerDiagnostics(context: deckEqualizerCommandContext))
                 #endif
         }
         #if os(iOS)
         .focusedSceneValue(\.allowsDirectPlaybackCommands, true)
+        .focusedSceneValue(\.deckEqualizerCommand, deckEqualizerCommandContext.command)
         .background {
             // Measure posture independently; the foreground still avoids the keyboard.
             GeometryReader { _ in

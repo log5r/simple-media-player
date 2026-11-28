@@ -37,6 +37,10 @@ enum PhoneLayoutUITestFixture {
 
     static func insert(into context: ModelContext) throws {
         resetLEDSettingsIfRequested()
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-inline-equalizer") {
+            // Keep this mutable: a launch-argument default would hide accidental panel preference writes.
+            UserDefaults.standard.set(true, forKey: AppSettingsKey.showEqualizerPanel)
+        }
         guard let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 2),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000) else { return }
         buffer.frameLength = buffer.frameCapacity

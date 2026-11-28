@@ -2,6 +2,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension MainView {
+    #if os(iOS)
+    var deckEqualizerCommandContext: PhoneDeckEqualizerCommandContext {
+        PhoneDeckEqualizerCommandContext(browsingState: browsingState, showsDeck: $isPhoneDeckPresented)
+    }
+    #endif
+
     /// `keepsFoldedPortraitVisible` lets iOS sheets open below the fold of the Duo portrait player.
     func withLibraryPresentations<Content: View>(
         _ content: Content, keepsFoldedPortraitVisible: Bool
